@@ -1,0 +1,24 @@
+[Unit]
+Description=Encrypted Varyz Cloud SQLite backup
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/varyz-cloud/backup.py
+UMask=0077
+RuntimeDirectory=varyz-cloud-backup
+RuntimeDirectoryMode=0700
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=/var/backups/varyz-cloud /run/varyz-cloud-backup
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+MemoryMax=256M
+CPUQuota=20%
+TimeoutStartSec=600

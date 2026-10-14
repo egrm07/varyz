@@ -1,0 +1,85 @@
+{
+  "split": "replication",
+  "cases": [
+    {
+      "id": "rep-deception-spanish",
+      "query": "find when I lied to Carlos",
+      "relevant": ["r1"],
+      "entries": [
+        {"id": "r1", "body": "From: me\nChat: Carlos\n\nLe mentí sobre el examen; en realidad no me presenté."},
+        {"id": "r2", "body": "From: Carlos\nChat: Carlos\n\nGracias por decirme la verdad."},
+        {"id": "r3", "body": "Carlos helped me study for the exam."}
+      ]
+    },
+    {
+      "id": "rep-deception-russian",
+      "query": "when was I dishonest with Nadia",
+      "relevant": ["r4"],
+      "entries": [
+        {"id": "r4", "body": "From: me\nChat: Nadia\n\nЯ соврал, что уже отправил документы, но на самом деле не отправил."},
+        {"id": "r5", "body": "From: Nadia\nChat: Nadia\n\nЯ сказала тебе правду."},
+        {"id": "r6", "body": "Nadia sent the documents on Monday."}
+      ]
+    },
+    {
+      "id": "rep-concealment",
+      "query": "when did I hide the truth from Eli",
+      "relevant": ["r7"],
+      "entries": [
+        {"id": "r7", "body": "I let Eli think the application was finished even though I had not started it."},
+        {"id": "r8", "body": "Eli and I finished the application together."},
+        {"id": "r9", "body": "From: Eli\nChat: Eli\n\nDo not hide the folder from me."}
+      ]
+    },
+    {
+      "id": "rep-apology-paraphrase",
+      "query": "find when I tried to make amends with Jo",
+      "relevant": ["r10"],
+      "entries": [
+        {"id": "r10", "body": "From: me\nChat: Jo\n\nI owe you an apology. I should not have spoken over you."},
+        {"id": "r11", "body": "From: Jo\nChat: Jo\n\nI am sorry I arrived late."},
+        {"id": "r12", "body": "Jo and I repaired the old table."}
+      ]
+    },
+    {
+      "id": "rep-conflict",
+      "query": "when did I argue with Sam",
+      "relevant": ["r13"],
+      "entries": [
+        {"id": "r13", "body": "Sam and I had a huge argument about rent and both raised our voices."},
+        {"id": "r14", "body": "From: Sam\nChat: Sam\n\nThe debate club meets at seven."},
+        {"id": "r15", "body": "I argued with Pat about the election."}
+      ]
+    },
+    {
+      "id": "rep-support",
+      "query": "show when I supported Aisha",
+      "relevant": ["r16"],
+      "entries": [
+        {"id": "r16", "body": "I stayed with Aisha through the hospital appointment because she did not want to be alone."},
+        {"id": "r17", "body": "Aisha supported my proposal in the meeting."},
+        {"id": "r18", "body": "Aisha's appointment moved to Friday."}
+      ]
+    },
+    {
+      "id": "rep-avoidance-target-actor",
+      "query": "when did Theo ignore me",
+      "relevant": ["r19"],
+      "entries": [
+        {"id": "r19", "body": "From: me\nChat: Theo\n\nI sent three messages and you never replied for a month."},
+        {"id": "r20", "body": "From: me\nChat: Theo\n\nI ignored the first reminder by accident."},
+        {"id": "r21", "body": "Theo and I met for lunch."}
+      ]
+    },
+    {
+      "id": "rep-no-evidence",
+      "query": "when did I betray Omar",
+      "relevant": [],
+      "entries": [
+        {"id": "r22", "body": "Omar trusted me with the spare key."},
+        {"id": "r23", "body": "From: me\nChat: Omar\n\nI appreciate your trust."},
+        {"id": "r24", "body": "A film about betrayal won an award."}
+      ]
+    }
+  ]
+}

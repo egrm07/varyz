@@ -1,0 +1,102 @@
+{
+  "name": "varyz-archive",
+  "version": "0.1.10",
+  "description": "Read confirmed preferences and search approved project history with source citations.",
+  "author": {
+    "name": "Egor Menshikov"
+  },
+  "repository": "https://github.com/egrm07/varyz",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "preferences",
+    "personalization",
+    "writing style",
+    "project context",
+    "project history",
+    "decisions",
+    "workflows",
+    "AI memory"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Varyz Context",
+    "developerName": "Egor Menshikov",
+    "shortDescription": "Preferences and project history",
+    "longDescription": "Search your explicitly approved Varyz Cloud project history and General records. Read original sources with dates and citations through a read-only connection. After synchronization, the computer can be off. Unsynced data is unavailable.",
+    "category": "Productivity",
+    "capabilities": [
+      "Search approved history",
+      "Read cited sources",
+      "Read project context",
+      "Inspect dated timelines",
+      "Compare retained source versions"
+    ],
+    "defaultPrompt": [
+      "Why did we choose this approach?",
+      "What changed in my project?"
+    ],
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png",
+    "websiteURL": "https://varyzai.com",
+    "supportURL": "https://varyzai.com/contact",
+    "privacyPolicyURL": "https://varyzai.com/privacy",
+    "termsOfServiceURL": "https://varyzai.com/terms"
+  },
+  "extensions": {
+    "com.openai": {
+      "review": {
+        "commerce": false,
+        "commerce_description": "Existing accounts may sign in. No purchases or upgrades.",
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Search approved history",
+              "prompt": "Find the demo database decision.",
+              "tools_triggered": "search",
+              "expected_behavior": "Return only approved account-scoped sources."
+            },
+            {
+              "description": "Read a cited source",
+              "prompt": "Read the demo database decision source.",
+              "tools_triggered": "search,fetch",
+              "expected_behavior": "Cite the source and distinguish its date from sync."
+            },
+            {
+              "description": "Retrieve an approved decision",
+              "prompt": "Why did we choose SQLite for the demo project?",
+              "tools_triggered": "search,fetch",
+              "expected_behavior": "Cite returned evidence and its date."
+            },
+            {
+              "description": "Read project context and chronology",
+              "prompt": "Where did we leave the demo project?",
+              "tools_triggered": "context,timeline,fetch",
+              "expected_behavior": "Use explicit dated source status; missing completion evidence does not prove unfinished work."
+            },
+            {
+              "description": "Compare retained versions",
+              "prompt": "What changed in this demo source?",
+              "tools_triggered": "search,fetch,compare",
+              "expected_behavior": "Cite both retained version URLs and explain the earliest synced version may not be the first local version."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unsynced data is unavailable",
+              "prompt": "Search every file on my phone."
+            },
+            {
+              "description": "No writes",
+              "prompt": "Upload all my files and change my preferences."
+            },
+            {
+              "description": "Account isolation",
+              "prompt": "Read another persons private archive."
+            }
+          ]
+        }
+      }
+    }
+  }
+}

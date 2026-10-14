@@ -1,0 +1,8 @@
+# Proposed logging override. Use after host journal retention is activated.
+# Recreating the container changes its logging driver; preserve the state volume.
+services:
+  cloud:
+    logging:
+      driver: journald
+      # Reset inherited json-file options; they are invalid for journald.
+      options: !reset {}

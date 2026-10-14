@@ -1,0 +1,11 @@
+# Static website first. Cloud account service stays private until staging is ready.
+varyzai.com {
+    root * /srv/varyz/website
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options DENY
+    }
+    file_server
+}

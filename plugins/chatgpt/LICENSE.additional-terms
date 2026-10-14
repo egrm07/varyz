@@ -1,0 +1,77 @@
+Additional terms for Varyz, under section 7 of the GNU Affero General Public
+License version 3
+==========================================================================
+
+Varyz is licensed under the GNU Affero General Public License, version 3, whose
+verbatim text is in the file LICENSE.  Section 7 of that License permits the
+copyright holder to supplement it with a limited set of additional terms.  Two
+of those are exercised here.  Nothing below adds a restriction of any other
+kind, and nothing below limits any permission the License grants you.
+
+
+1.  Attribution, under section 7(b)
+-----------------------------------
+
+As permitted by section 7(b), you must preserve the following notice, and it
+must appear in the Appropriate Legal Notices displayed by any work containing
+the covered work, including any modified version:
+
+        Based on varyzai — Copyright (C) 2026 Egor Menshikov
+        Source: https://github.com/egrm07/varyz
+
+This is a requirement to preserve and display an existing notice.  It is not an
+advertising clause: it does not require you to name varyzai in marketing,
+packaging, documentation, a product name, or anywhere other than the legal
+notices the software itself displays.  One line is all that is asked, and it may
+be shown wherever your product shows its other legal notices.
+
+If your version of the work has no interactive user interface, this term is
+satisfied by preserving the notice in the source and in any accompanying licence
+or notice file, as section 5(d) of the License already contemplates.
+
+
+2.  Names and marks, under section 7(e)
+---------------------------------------
+
+As permitted by section 7(e), no rights are granted under trademark, service
+mark, or trade name law to the names "Varyz" or "varyzai", to the varyzai
+wordmark or logo, or to any name confusingly similar to them.
+
+You may state truthfully that your work is based on, derived from, or compatible
+with varyzai — indeed term 1 requires you to preserve that statement.  You may
+not use these names as, or as part of, the name of a modified version or of any
+product or service you offer, and you may not use them to promote it.  A fork is
+free to take the code, and must choose its own name.
+
+
+3.  What this changes, and what it does not
+-------------------------------------------
+
+You may still use, study, modify, sell, resell, host and redistribute Varyz, for
+any purpose, commercial purposes included.  The License's own conditions still
+apply unchanged: source must accompany what you distribute, modified files must
+say that they were changed and when, and a modified version offered to users
+over a network must offer them its corresponding source.
+
+These additional terms are permitted supplements under section 7 and travel with
+the work.  Terms permitted by section 7(a) through 7(f) are not "further
+restrictions" within the meaning of section 10, and may not be stripped from
+this work as it is conveyed onward.
+
+Contributions to this project are accepted under these same terms — the GNU
+Affero General Public License version 3 together with this file — as recorded in
+CONTRIBUTING.md.
+
+
+4.  A note on the trade-off, recorded honestly
+----------------------------------------------
+
+An attribution term of this kind is sometimes called a "badgeware" clause.  It
+is explicitly permitted by section 7 and does not make this work non-free or
+GPL-incompatible.  It does, however, make the licence non-standard: some
+distributions and some corporate legal departments treat any AGPL work carrying
+section 7 terms with more caution than plain AGPL.  That cost was accepted
+deliberately, in exchange for the author's attribution surviving resale.
+
+This file has not been reviewed by qualified counsel.  That review is a separate
+open item.

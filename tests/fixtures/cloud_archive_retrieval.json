@@ -1,0 +1,276 @@
+{
+  "development": [
+    [
+      "startup",
+      "A detached subprocess prevented terminal windows flashing during background startup.",
+      "terminal windows flashing",
+      "How did we stop the console briefly appearing at login?"
+    ],
+    [
+      "storage",
+      "SQLite stores project memory on the device so it remains available without internet.",
+      "SQLite project memory",
+      "Which database keeps the archive usable offline?"
+    ],
+    [
+      "payments",
+      "Billing cancellation takes effect at the end of the paid subscription period.",
+      "billing cancellation period",
+      "When does cancelling my plan remove access?"
+    ],
+    [
+      "privacy",
+      "Unclassified content is blocked before cloud upload until its sensitivity is reviewed.",
+      "unclassified content blocked",
+      "What stops unknown private material being sent to the server?"
+    ],
+    [
+      "sources",
+      "Every retrieved passage carries its original source and date to support verifiable answers.",
+      "passage original source",
+      "How can I check where an answer came from?"
+    ],
+    [
+      "sync",
+      "Each uploaded record is acknowledged and checkpointed so an interrupted transfer resumes safely.",
+      "uploaded record checkpointed",
+      "Will a broken connection force us to send everything again?"
+    ],
+    [
+      "branding",
+      "Marigold accents on a dark background replaced the orange theme after the design review.",
+      "marigold dark background",
+      "Which colour scheme replaced the previous look?"
+    ],
+    [
+      "limits",
+      "A storage quota rejects excess archive data before a write can fill the server disk.",
+      "storage quota rejects",
+      "How do we avoid running out of space from customer uploads?"
+    ]
+  ],
+  "diagnostic_previous_held_out": [
+    [
+      "auth",
+      "Short lived bearer credentials expire after one hour and refresh tokens rotate after use.",
+      "bearer credentials expire",
+      "How long can the sign-in token be used before renewal?"
+    ],
+    [
+      "recovery",
+      "The previous application and a consistent database snapshot are retained to roll back failed upgrades.",
+      "database snapshot upgrades",
+      "How can we return to a working installation after a bad update?"
+    ],
+    [
+      "calendar",
+      "The appointment was postponed from Tuesday to Friday because the clinic had no specialist available.",
+      "appointment postponed Friday",
+      "Why was the medical visit moved to the end of the week?"
+    ],
+    [
+      "research",
+      "The first experiment improved recall but failed replication on a fresh set, so the old ranking stayed active.",
+      "experiment failed replication",
+      "Why did we keep the previous search algorithm despite a promising test?"
+    ],
+    [
+      "font",
+      "The site bundles its own font files to avoid visitors contacting third party font providers.",
+      "site font files",
+      "Why are the typefaces hosted alongside the website?"
+    ],
+    [
+      "notifications",
+      "The monitor sends a notification only when the tracked state changes or needs owner attention.",
+      "monitor notification changes",
+      "Why does the watcher stay quiet when nothing new happens?"
+    ],
+    [
+      "documents",
+      "The document importer skips corrupted PDFs and records a readable error rather than stopping the whole sync.",
+      "importer skips corrupted",
+      "What happens when a downloaded document is damaged?"
+    ],
+    [
+      "sharing",
+      "Project approval includes its eligible existing history and future records while other projects remain excluded.",
+      "project approval future",
+      "Does allowing one workspace also cover the work added to it tomorrow?"
+    ]
+  ],
+  "diagnostic_previous_replication": [
+    [
+      "backup",
+      "Encrypted snapshots are copied to a separate storage service to keep the application disk from filling.",
+      "encrypted snapshots copied",
+      "Where should we keep recovery copies to save space on the main machine?"
+    ],
+    [
+      "deletion",
+      "Revoking a project removes its passages and search index from active cloud retrieval after the next sync.",
+      "revoking project index",
+      "How do I stop the assistant seeing a workspace I previously shared?"
+    ],
+    [
+      "simulation",
+      "Market replay uses historical prices and simulated orders without sending a trade to a broker.",
+      "market replay simulated",
+      "Can I practise investing without buying real shares?"
+    ],
+    [
+      "runtime",
+      "Semantic retrieval runs an embedding model on the server CPU and sends no query to an external model provider.",
+      "semantic server CPU",
+      "Does meaning based search need to transmit my question to another AI service?"
+    ],
+    [
+      "sources",
+      "WhatsApp and Telegram imports remain raw archives and are excluded from agent facing search.",
+      "WhatsApp Telegram excluded",
+      "Can the coding assistant look through my messaging apps?"
+    ],
+    [
+      "connection",
+      "An exact registered callback and PKCE challenge protect the browser authorization flow against intercepted codes.",
+      "callback PKCE challenge",
+      "What prevents someone stealing the code used to connect my account?"
+    ],
+    [
+      "budget",
+      "The automation stops when its spending cap is reached and records the reason in the audit trail.",
+      "spending cap audit",
+      "What happens if the unattended job exhausts its money allowance?"
+    ],
+    [
+      "general",
+      "Records without a clear project are placed in General, which needs its own sharing approval.",
+      "General sharing approval",
+      "Where do conversations outside any workspace belong?"
+    ]
+  ],
+  "held_out": [
+    [
+      "offline",
+      "A local snapshot remains readable without an internet connection. New messages only appear after the next successful synchronization.",
+      "local snapshot",
+      "Can I read old conversations when the network is down?"
+    ],
+    [
+      "cancel",
+      "Cancelling the subscription keeps access until the paid period ends. The account then switches to read-only export for seven days.",
+      "subscription cancelling",
+      "What happens after I stop paying?"
+    ],
+    [
+      "fonts",
+      "The website uses locally hosted font files. No requests to Google Fonts are made when the page loads.",
+      "locally hosted font",
+      "Where does the typography get downloaded from?"
+    ],
+    [
+      "restore",
+      "Restoring an encrypted backup requires the recovery key. Store that key separately from the backup archive.",
+      "recovery key",
+      "What do I need to recover my saved data?"
+    ],
+    [
+      "lease",
+      "A worker renews its lease every minute. Another worker may take over only after the lease expires.",
+      "worker lease",
+      "How do we stop two background jobs doing the same work?"
+    ],
+    [
+      "attachments",
+      "Image attachments are not uploaded to the searchable text archive. Only extracted eligible text can be included.",
+      "image attachments",
+      "Will pictures be included in cloud search?"
+    ],
+    [
+      "timezone",
+      "Scheduled reminders follow Europe Berlin time. Daylight saving transitions preserve the requested local hour.",
+      "scheduled reminders",
+      "Does the clock change shift when my alert runs?"
+    ],
+    [
+      "trial",
+      "The free trial lasts fourteen days. No payment card is required to start testing the service.",
+      "free trial",
+      "Can I try the product before entering billing details?"
+    ],
+    [
+      "retention",
+      "Deleted documents disappear from active search immediately. Encrypted backups retain older copies until their retention period expires.",
+      "deleted documents",
+      "Are removed records still present in older backups?"
+    ],
+    [
+      "names",
+      "Renaming a project changes its display label. The immutable project identifier stays the same for synchronization.",
+      "renaming project",
+      "Does changing a workspace name break its saved identity?"
+    ]
+  ],
+  "replication": [
+    [
+      "deduplicate",
+      "Incoming email records use the provider message identifier as a unique key. Repeated imports update that record instead of creating duplicates.",
+      "provider message identifier",
+      "How are repeated emails prevented from appearing twice?"
+    ],
+    [
+      "budget",
+      "The monthly inference budget is twenty euros. When the ceiling is reached, the agent pauses paid API requests.",
+      "monthly inference budget",
+      "What stops AI usage from spending too much?"
+    ],
+    [
+      "branch",
+      "Feature branches begin with codex slash. Work stays separate from the main branch until review and merge.",
+      "feature branches",
+      "Where do unfinished code changes live before they are accepted?"
+    ],
+    [
+      "audio",
+      "Voice recordings are transcribed locally before indexing. The original audio file remains on the computer.",
+      "voice recordings",
+      "Does cloud search receive sound files or just words?"
+    ],
+    [
+      "retry",
+      "A failed network upload is retried with exponential backoff. The last confirmed cursor prevents replaying acknowledged records.",
+      "exponential backoff",
+      "How does syncing recover after an interrupted connection?"
+    ],
+    [
+      "moderation",
+      "Public comments are queued for moderation. A human approves each comment before it becomes visible on the website.",
+      "public comments",
+      "Can visitors publish replies without being checked?"
+    ],
+    [
+      "password",
+      "Password reset links expire after fifteen minutes. Using a link once invalidates it permanently.",
+      "password reset",
+      "How long is an account recovery link usable?"
+    ],
+    [
+      "export",
+      "CSV export includes date, project and original source fields. File attachments are excluded from the spreadsheet.",
+      "CSV export",
+      "Which information can I download as a table?"
+    ],
+    [
+      "ownership",
+      "Imported third-party material is marked as external evidence. It must never be presented as the owners own words.",
+      "external evidence",
+      "How do answers distinguish what I said from someone elses text?"
+    ],
+    [
+      "mobile",
+      "The phone uses ChatGPT to query the hosted read-only connector. The desktop computer can be switched off after synchronization.",
+      "hosted connector",
+      "Can I ask about my work while my laptop is shut down?"
+    ]
+  ]
+}

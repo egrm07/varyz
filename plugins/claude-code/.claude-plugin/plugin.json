@@ -1,0 +1,10 @@
+{
+  "name": "varyz",
+  "version": "0.1.0",
+  "description": "Apply your preferences and retrieve relevant background from selected sources.",
+  "author": {
+    "name": "Egor Menshikov"
+  },
+  "repository": "https://github.com/egrm07/varyz",
+  "license": "AGPL-3.0-only"
+}

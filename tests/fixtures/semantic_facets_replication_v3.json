@@ -1,0 +1,268 @@
+[
+  {
+    "case_id": "principle-versus-prediction",
+    "messages": [
+      {
+        "id": "principle-versus-prediction-1",
+        "sender": "me",
+        "text": "I reckon equal access to education matters more than prestige.",
+        "target": true
+      },
+      {
+        "id": "principle-versus-prediction-2",
+        "sender": "me",
+        "text": "I think the parcel arrives tomorrow.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "principle-versus-prediction-1",
+        "kind": "belief",
+        "statement_terms": ["education", "prestige"]
+      }
+    ]
+  },
+  {
+    "case_id": "contextual-believe-so",
+    "messages": [
+      {
+        "id": "contextual-believe-so-1",
+        "sender": "Iris",
+        "text": "Do you believe that artists should own the work used to train creative models?"
+      },
+      {
+        "id": "contextual-believe-so-2",
+        "sender": "me",
+        "text": "I believe so.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "contextual-believe-so-2",
+        "kind": "belief",
+        "statement_terms": ["artists", "work"]
+      }
+    ]
+  },
+  {
+    "case_id": "relief-and-policy",
+    "messages": [
+      {
+        "id": "relief-and-policy-1",
+        "sender": "me",
+        "text": "I've never felt so relieved as when the tests came back clear.",
+        "target": true
+      },
+      {
+        "id": "relief-and-policy-2",
+        "sender": "me",
+        "text": "I feel that rent controls should protect long-term tenants.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "relief-and-policy-1",
+        "kind": "feeling",
+        "statement_terms": ["relieved", "tests"]
+      },
+      {
+        "target_id": "relief-and-policy-2",
+        "kind": "belief",
+        "statement_terms": ["rent", "tenants"]
+      }
+    ]
+  },
+  {
+    "case_id": "career-plan-versus-routine",
+    "messages": [
+      {
+        "id": "career-plan-versus-routine-1",
+        "sender": "me",
+        "text": "I'm going to train as an electrician when this contract ends.",
+        "target": true
+      },
+      {
+        "id": "career-plan-versus-routine-2",
+        "sender": "me",
+        "text": "I'm going to brush my teeth.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "career-plan-versus-routine-1",
+        "kind": "plan",
+        "statement_terms": ["train", "electrician"]
+      }
+    ]
+  },
+  {
+    "case_id": "decision-versus-aesthetic-guess",
+    "messages": [
+      {
+        "id": "decision-versus-aesthetic-guess-1",
+        "sender": "me",
+        "text": "I decided to sell my shares and use the proceeds to fund the clinic.",
+        "target": true
+      },
+      {
+        "id": "decision-versus-aesthetic-guess-2",
+        "sender": "me",
+        "text": "I think the blue one looks nicer.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "decision-versus-aesthetic-guess-1",
+        "kind": "decision",
+        "statement_terms": ["shares", "clinic"]
+      }
+    ]
+  },
+  {
+    "case_id": "promise-versus-immediate-future",
+    "messages": [
+      {
+        "id": "promise-versus-immediate-future-1",
+        "sender": "me",
+        "text": "I promise I'll care for the dog for as long as you are deployed.",
+        "target": true
+      },
+      {
+        "id": "promise-versus-immediate-future-2",
+        "sender": "me",
+        "text": "I'll send the link after this call.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "promise-versus-immediate-future-1",
+        "kind": "promise",
+        "statement_terms": ["dog", "deployed"]
+      }
+    ]
+  },
+  {
+    "case_id": "address-request-versus-table-request",
+    "messages": [
+      {
+        "id": "address-request-versus-table-request-1",
+        "sender": "me",
+        "text": "Please don't publish my home address in the court filing.",
+        "target": true
+      },
+      {
+        "id": "address-request-versus-table-request-2",
+        "sender": "me",
+        "text": "Can you pass the salt?",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "address-request-versus-table-request-1",
+        "kind": "request",
+        "statement_terms": ["address", "court"]
+      }
+    ]
+  },
+  {
+    "case_id": "costly-preference",
+    "messages": [
+      {
+        "id": "costly-preference-1",
+        "sender": "me",
+        "text": "I would rather lose a client than mislead them.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "costly-preference-1",
+        "kind": "belief",
+        "statement_terms": ["client", "mislead"]
+      }
+    ]
+  },
+  {
+    "case_id": "spanish-plan-and-belief",
+    "messages": [
+      {
+        "id": "spanish-plan-and-belief-1",
+        "sender": "me",
+        "text": "Planeo estudiar trabajo social el próximo otoño.",
+        "target": true
+      },
+      {
+        "id": "spanish-plan-and-belief-2",
+        "sender": "me",
+        "text": "Creo que una ciudad justa debe ser accesible para todos.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "spanish-plan-and-belief-1",
+        "kind": "plan",
+        "statement_terms": ["trabajo", "social"]
+      },
+      {
+        "target_id": "spanish-plan-and-belief-2",
+        "kind": "belief",
+        "statement_terms": ["ciudad", "accesible"]
+      }
+    ]
+  },
+  {
+    "case_id": "quoted-belief-and-hypothetical",
+    "messages": [
+      {
+        "id": "quoted-belief-and-hypothetical-1",
+        "sender": "me",
+        "text": "The character says \"I believe power excuses cruelty,\" but I think the scene is badly written.",
+        "target": true
+      },
+      {
+        "id": "quoted-belief-and-hypothetical-2",
+        "sender": "me",
+        "text": "If I won the lottery, I would buy a lighthouse.",
+        "target": true
+      }
+    ],
+    "expected": []
+  },
+  {
+    "case_id": "realization-and-loneliness",
+    "messages": [
+      {
+        "id": "realization-and-loneliness-1",
+        "sender": "me",
+        "text": "I realized that I become impatient when I skip breakfast.",
+        "target": true
+      },
+      {
+        "id": "realization-and-loneliness-2",
+        "sender": "me",
+        "text": "I feel lonely even when the house is full.",
+        "target": true
+      }
+    ],
+    "expected": [
+      {
+        "target_id": "realization-and-loneliness-1",
+        "kind": "belief",
+        "statement_terms": ["impatient", "breakfast"]
+      },
+      {
+        "target_id": "realization-and-loneliness-2",
+        "kind": "feeling",
+        "statement_terms": ["lonely", "house"]
+      }
+    ]
+  }
+]

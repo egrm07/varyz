@@ -1,0 +1,67 @@
+#cloud-config
+# Hetzner user data for the cloud.varyzai.com server (Ubuntu 24.04).
+# Docker runs the app on 127.0.0.1:8080; host Caddy terminates TLS in front.
+# Only SSH (key auth) and HTTP/HTTPS are reachable. Secrets arrive later
+# through deploy.py, never through this file.
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - caddy
+  - ufw
+  - unattended-upgrades
+  - ca-certificates
+ssh_pwauth: false
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-varyz.conf
+    permissions: '0644'
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      MaxAuthTries 3
+      LoginGraceTime 20
+      MaxStartups 10:30:60
+      AllowAgentForwarding no
+      X11Forwarding no
+      PermitTunnel no
+  - path: /etc/caddy/Caddyfile
+    permissions: '0644'
+    content: |
+      {
+          servers {
+              timeouts {
+                  read_header 10s
+                  read_body 15s
+                  idle 60s
+              }
+              max_header_size 16KB
+          }
+      }
+
+      # Query strings can contain account-action tokens; do not enable access logs.
+      cloud.varyzai.com {
+          encode zstd gzip
+          header {
+              Strict-Transport-Security "max-age=31536000"
+              -Server
+          }
+          request_body {
+              # Leave room for the app's smaller limit to return a controlled 413.
+              max_size 1MB
+          }
+          reverse_proxy 127.0.0.1:8080
+      }
+runcmd:
+  - [mkdir, -p, /srv/varyz, /etc/varyz-cloud]
+  - [chmod, '700', /etc/varyz-cloud]
+  - [ufw, default, deny, incoming]
+  - [ufw, default, allow, outgoing]
+  - [ufw, allow, OpenSSH]
+  - [ufw, allow, 80/tcp]
+  - [ufw, allow, 443/tcp]
+  - [ufw, --force, enable]
+  - [systemctl, enable, --now, docker]
+  - [systemctl, reload, ssh]
+  - [systemctl, restart, caddy]

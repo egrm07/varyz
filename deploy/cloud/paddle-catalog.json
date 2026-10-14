@@ -1,0 +1,52 @@
+{
+  "recorded_at": "2026-10-07",
+  "customer_signup_enabled": false,
+  "live": {
+    "product_id": "pro_01m3zc5xyfqtqe4atdk2gbcvy4",
+    "currency": "USD",
+    "tax_mode": "internal",
+    "monthly": {
+      "price_id": "pri_01m4bjwrbm5xthqfg7b65cembj",
+      "amount_minor": 1200,
+      "trial": null
+    },
+    "annual": {
+      "price_id": "pri_01m4bk3rzq586bxsm9rfvr4nfw",
+      "amount_minor": 10800,
+      "trial": null
+    },
+    "local_prices": {
+      "EUR 12 / 108": "AD AT AX BE BG BL CY DE EE ES FI FR GF GP GR HR IE IT LT LU LV MC ME MF MQ MT NL PM PT RE SI SK SM VA XK YT (countries and territories that use the euro)",
+      "GBP 9.99 / 89.99": "GB GG IM JE",
+      "elsewhere": "Paddle automatic currency conversion of USD 12 / 108 (on for all currencies)"
+    },
+    "retired": {
+      "monthly_usd_5": "pri_01m3zc9asv9rqnx7scswsm3pnn",
+      "annual_usd_48": "pri_01m3zcbac30bq4n1eybz9gpxxy"
+    }
+  },
+  "sandbox": {
+    "product_id": "pro_01m40gvq8xmmzwgmatf63e8h29",
+    "currency": "USD",
+    "tax_mode": "external",
+    "monthly": {
+      "price_id": "pri_01m40gx74qaya1j3dqmm9arn19",
+      "amount_minor": 500,
+      "trial": null
+    },
+    "annual": {
+      "price_id": "pri_01m40gy1exacg735cmyk2y8ccw",
+      "amount_minor": 4800,
+      "trial": null
+    }
+  },
+  "pending": [
+    "owner identity verification",
+    "payout setup",
+    "sandbox payment tests",
+    "backend hosting: done 2026-10-03 (Hetzner varyz-cloud, sandbox mode)",
+    "sandbox API key, client token and default payment link: done 2026-10-03",
+    "live prices USD 12 / 108 tax-inclusive with EUR and GBP country prices: done 2026-10-07; automatic currency conversion on for all currencies",
+    "sandbox prices still USD 5 / 48 tax-exclusive; the sandbox API key cannot create prices"
+  ]
+}

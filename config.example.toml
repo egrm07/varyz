@@ -1,0 +1,470 @@
+# Varyz configuration. Copy to config.toml and edit.
+# Secrets (Anthropic API key, IMAP passwords, ICS URLs) do NOT go here —
+# they live in Windows Credential Manager. Run: varyz secrets set <name>
+
+[storage]
+# Optional improvement analytics are consented separately in setup, not by config.
+# Inspect or revoke with `varyz analytics status` / `varyz analytics consent off`.
+# Where the SQLite DB and raw-file vault live. Relative paths resolve
+# against this config file's directory.
+data_dir = "data"
+
+[resolution]
+# Every surface is a client of this one local daemon. Loopback is the safe
+# default; a wider bind is rejected unless auth_mode is changed to "token".
+bind_host = "127.0.0.1"
+port = 1207
+auth_mode = "session"
+# One value in the alpha, stamped on every append-only write for future sync.
+device_id = "local"
+
+[embedding]
+model = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"   # 384-dim, ~220MB, local via fastembed
+chunk_tokens = 300
+
+[llm]
+# Which account answers `ask` and runs cloud extraction. Set by `varyz connect <provider>`.
+#   claude   — sign in with your Claude.ai subscription (OAuth) or an API key
+#   openai   — sign in with your ChatGPT subscription (OAuth) or an API key
+#   deepseek — API key (cheap, native)
+# Cloud gating applies to every provider identically; sensitive entries never leave.
+provider = "claude"
+monthly_spend_cap_usd = 25.0
+
+# Per-provider model choices (chat = ask, enrich = graph and model extraction).
+[llm.claude]
+chat_model = "claude-opus-5"
+enrich_model = "claude-haiku-4-5"
+
+[llm.openai]
+chat_model = "gpt-5.5"
+enrich_model = "gpt-5.5"
+
+[llm.deepseek]
+chat_model = "deepseek-chat"
+enrich_model = "deepseek-chat"
+
+[timeline]
+# Entries at or above this significance show in the default timeline view.
+# Everything is always available in search, ask, and the "Everything" toggle.
+threshold = 0.55
+
+[retrieval]
+# `ask` searches candidate_k memories locally, then sends AT MOST send_k short
+# excerpts to the cloud model — never your whole archive.
+candidate_k = 24
+send_k = 8
+# Deep questions first send a moderate context, then the "Dig deeper" button
+# can approve a slightly larger pass up to the max_* ceilings.
+deep_initial_send_k = 12
+max_candidate_k = 80
+max_send_k = 18
+# Ordinary `varyz ask` never starts the managed model as a hidden side effect.
+# It still sends only the matching chunk of each entry. Use --local-distill on
+# one call to opt into local extraction; legacy auto/on values are accepted but
+# do not grant a read or background command permission to reserve the GPU.
+distill = "off"
+
+[local_model]
+# Varyz downloads a pinned llama.cpp runtime plus these exact model weights,
+# verifies both with SHA-256, and starts a hidden loopback child only on demand.
+# Preview/approve the downloads with: varyz local-model install
+backend = "managed"
+model = "gemma4:12b-it-q4_K_M"
+# auto = CUDA when an NVIDIA GPU is present, Vulkan otherwise, Metal on Apple
+# Silicon. On an RTX 5070 the CUDA build processed prompts at 891 tok/s against
+# Vulkan's 751 — 17% less GPU time for the same 40 extractions — at the cost of
+# a 537 MB download instead of 34 MB, so it is only fetched where it is usable.
+runtime_variant = "auto"
+context_window = 8192
+# How many requests the local server may serve at once. Every stage that
+# reads the archive in windows now fills these slots rather than leaving
+# them idle, so this is a throughput setting -- but it is a memory setting
+# first, and that is the half people get wrong. A slot's cache is paid for
+# whether or not it is busy, and the cost is per slot, not per token: a
+# narrower context_window does not buy a slot back.
+#
+# Measured on a 12 GB card with a 12B model, six slots and a q8_0 cache:
+# whatever did not fit on the card sat in host RAM, the server held 18.3 GB
+# of it, and machine commit reached 59.05 of a 60.95 GB limit. An
+# auto-managed Windows page file did not grow to meet that, so the ceiling
+# stayed where it was while demand rose. Raise this only against measured
+# commit headroom under load, and lower it for a larger model, a longer
+# context, or an f16 cache.
+parallel_slots = 1
+# Seconds the weights may sit unused in VRAM before the server is stopped. The
+# managed model holds 7.9 GB while loaded, and a rebuild is the only thing that
+# wants it; the next sync is fifteen minutes away. 0 keeps it resident.
+idle_unload_seconds = 180
+# Seconds without a request before the server unloads the model from the card
+# and from memory while it keeps running; the next request loads it again.
+# This covers a server whose varyz process has exited, which the timer above
+# cannot reach, so it is set to the same number. 0 keeps it loaded.
+sleep_idle_seconds = 180
+request_timeout_seconds = 600
+startup_timeout_seconds = 600
+
+# Existing Ollama users can opt into compatibility mode; it is never required:
+# [local_model]
+# backend = "ollama"
+# [ollama]
+# model = "gemma4:12b-it-q4_K_M"
+# url = "http://localhost:11434"
+
+[sensitivity]
+# Levels: public | personal | sensitive. 'sensitive' never leaves this machine.
+# Unclassified entries are treated as sensitive (fail-closed).
+default = "personal"
+
+[sensitivity.source_defaults]
+manual = "personal"
+# Your turns to coding agents are how you build: agents may quote them. Secrets
+# are redacted on the way out and the patterns below still hold a turn back.
+ai_conversations = "personal"
+personal_archive = "sensitive"
+# varyz does not read chat apps, contacts or browsing history. Rows an older
+# archive still holds from them stay sensitive whatever this table says.
+
+# Regex patterns (case-insensitive) that force an entry to 'sensitive'.
+[sensitivity.rules]
+patterns = [
+    "\\btherap(y|ist)\\b",
+    "\\bdiagnos(is|ed)\\b",
+    "\\bmedication\\b",
+    "\\bsalary\\b",
+    "\\b(iban|account number)\\b",
+]
+
+[graph]
+# Contextual extraction keeps concrete local rules and uses managed Gemma for
+# durable beliefs, feelings, plans, decisions, promises, and
+# requests. Same-thread context resolves short replies such as "I think so."
+# The alpha installs no managed model and builds only extractor = "deterministic",
+# which is its default when this line is left out.
+extractor = "contextual_facets"
+# hybrid = cloud for eligible entries plus the local backend for sensitive entries.
+# local = the local backend for every semantic facet; no archive text leaves.
+semantic_provider = "local"
+# The extraction, predicate and identity versions are part of a generation's
+# key, and each is bumped in code when the reading itself changes. Pinning
+# them here froze a copied config on the reading that shipped with it, so a
+# later correction answered "no-op" forever. Set one only to hold a graph
+# back deliberately.
+candidate_threshold = 0.55
+context_before = 6
+context_after = 2
+context_max_gap_hours = 12
+batch_max_messages = 160
+batch_max_targets = 20
+semantic_min_confidence = 0.80
+# Appending one entry names a new generation, but it does not make the rest of
+# the archive newly unread. With the cache on, a rebuild extracts only entries
+# whose text, sensitivity label or conversation window changed, and stages the
+# rest from what the same extractor already concluded. Turn it off to force a
+# full re-read.
+extraction_cache = true
+# A rebuild stages a whole generation beside the live one; nothing used to
+# delete the old ones. Keep this many activated generations behind the live
+# graph so a bad activation can still be rolled back, and drop the rest along
+# with the failed and abandoned staging runs.
+keep_generations = 2
+# Completed job rows are an audit trail, not a queue. Drop them after this long.
+keep_job_days = 30
+prune_on_sync = true
+# Ingestion is incremental and cheap; a rebuild is not. Three new messages
+# restage the whole archive into a new generation, so the graph keeps its own
+# cadence: rebuild once this many entries have landed since the live graph was
+# built, or once it is this old, whichever comes first. Counting misses entries
+# that were edited rather than added — the age bound is what catches those.
+# `varyz graph rebuild` ignores both.
+rebuild_min_new_entries = 50
+rebuild_max_age_minutes = 60
+# One entry the extractor cannot read twice is quarantined and the run goes on
+# — a slow prompt should not discard a generation. This many consecutive
+# failures means the model is gone, and the run stops instead of activating a
+# graph that says nothing.
+max_consecutive_failures = 5
+# Keep these sources in the archive, but do not spend graph/personal-model
+# compute on them. Retrieval remains available for deliberate archive search.
+excluded_sources = []
+
+[conversations]
+# Chat is the one source where a single message says nothing on its own. varyz
+# groups messages into conversations and has the local model read each one:
+# what it concluded, and whether the exchange was ordinary or private. Only the
+# conclusions and the ordinary conversations can be quoted; a conversation the
+# model calls sensitive, or has never read, stays shut.
+#
+# Cutting the conversations is free and always happens. Reading them costs
+# about a second of GPU each, so a sync reads at most this many and leaves the
+# rest for the next one. The pass is resumable, so a cap delays the backlog
+# rather than dropping any of it. Set read_on_sync = false to read only when
+# you ask, with `varyz conversations read`.
+#
+# Reading in the background starts the same managed model the semantic graph
+# does, so it also requires autosync.semantic_graph = true. Without it a sync
+# says how many conversations are waiting and leaves them to you.
+read_on_sync = true
+max_per_sync = 200
+# Sources to partition and read as conversations: your sessions with coding
+# agents. varyz does not read chat apps, so naming one here has no effect.
+sources = ["ai_conversations"]
+
+[owner]
+# What you are called, so varyz can tell a message written *to* you from one
+# written *by* you. Connectors file both under your own account — an
+# entry headed `From: me` whose body reads "You mean so much to me <name>, I
+# really need you" is somebody else's letter, and without a name to match there
+# is nothing in the text to say so, and the belief becomes one of yours.
+#
+# Only a message that both names you and speaks in the second person is refused;
+# being mentioned in the third person ("<name> pushed the release") is not.
+# Empty by default: unset, nothing changes. Setting it changes what the
+# extractor reads, so the next `varyz graph rebuild` rebuilds rather than
+# reusing the generation before it.
+# names = ["Ann", "Анна"]
+
+[agent]
+# How much of the evidence an agent puts on your screen. This is presentation
+# only: at every setting the answer still rests on what varyz returned, an
+# excerpt is never passed off as the agent's own conclusion, and a question the
+# archive cannot support is still refused.
+#
+#   minimal  the answer first, a reference only where a claim needs one
+#   full     every excerpt cited and quoted under the answer
+#   off      no references printed; the source named the moment you ask
+#
+# `varyz setup` asks this once. Change it with `varyz install --citations full`,
+# which also rewrites any routing skill installed for a client.
+citations = "minimal"
+# Agents connected with `varyz connect` receive the owner's briefing with the
+# first prompt of a session (and again when the kind of work changes).
+briefing_hooks = true
+# Before an agent finishes a turn in which it changed files, send it back once
+# to walk the owner's definition of done for that kind of work.
+done_gate = true
+# skip: a small change to work already there (a fix, a tweak) is not sent
+# back, but only when the local model below is already loaded and says small;
+# a cold or absent model never skips it. check: every edit turn is sent back.
+done_gate_small_changes = "skip"
+
+[workflows]
+# When a task starts at a later step of your usual order while an earlier one is
+# open, agents raise it only for new work; a small change is just done. Which is
+# which is decided on this machine (your prompt never leaves it):
+#   model      the Ollama model below, shown eight authored examples: 98.6% on
+#              the held-out set, ~150 ms once loaded. It is loaded only when a
+#              task needs sizing, and not at all while loading it would leave
+#              the GPU under classifier_vram_headroom free; the embedding
+#              answers instead. Ollama is optional: without it, same fallback.
+#   embedding  the archive's local embedding, no GPU: 89.9%.
+#   lexicon    verbs only: 60.9%.
+task_classifier = "model"
+# The same model answers four more closed questions, each falling back to the
+# rule that was there before (reports/LOCAL_CLASSIFIER_ROLLOUT_2026-09-25.md):
+#   redo_classifier      does a task redo a step already built?
+#                        model 92.3% held out vs the verb list 73.1%
+#   prompt_classifier    is a prompt work or a question (hooks brief only work)?
+#                        model 93.8% vs 75.0%; never waits for a load: a cold
+#                        model is loaded in the background and the rule answers
+#   scope_classifier     is an owner answer a habit or a choice for this project?
+#                        widens to general only at P >= 0.9, else this project
+#   paraphrase_verifier  an ask no stored answer matches word for word: the model
+#                        checks the three closest; recall 13% -> 72%, 0 wrong
+#   evidence_verifier    before an ask is answered from archive passages, is any
+#                        of the top three about the thing asked? None: the owner
+#                        is asked. Held out: wrong answers 11 -> 4, 0 right lost
+redo_classifier = "model"        # model | embedding | rule
+prompt_classifier = "model"      # model | embedding | rule
+scope_classifier = "model"       # model | rule
+paraphrase_verifier = "model"    # model | off
+evidence_verifier = "model"      # model | off
+# `varyz rules mine` reads the owner's turns with the model for standing rules;
+# lexical matches words like "always", which mostly finds one-off requests.
+rule_miner = "model"             # model | lexical
+# The [llm] provider reads those turns first (credentials removed, sensitive
+# turns never); the local model takes over when it cannot. `varyz rules mine
+# --no-cloud` sets false: read on this machine only; `--cloud` sets it back.
+rule_reader_cloud = true
+rule_reader_cloud_max_calls = 30 # the rest wait for the next run
+# May start_task ask your agent to have a subagent on its cheapest model read
+# those turns (same turns as the cloud reader, through the agent's own sign-in)?
+rule_reader_agent = true
+# Live reading: each prompt pulls your newest AI-chat messages into the archive and
+# asks for that subagent to read the ones from the last day it has not read yet,
+# at most every few minutes -- at once when you state a standing rule ("from now
+# on, always ..."), which then goes into effect on trial.
+live_reading = true
+live_reading_min_minutes = 5
+live_reading_hours = 24
+# Who reads: "auto" has varyz start the reader itself, headless, on whichever of
+# Claude Code (`claude -p`) or Codex (`codex exec`) has the most plan left, with
+# only varyz's two reading tools and no transcript; "claude" or "codex" picks
+# one; "agent" leaves it to your working agent's subagent, as before.
+reader_runner = "auto"           # auto | claude | codex | agent
+reader_claude_model = "haiku"    # Claude's cheapest
+reader_codex_model = "auto"      # auto: Codex's newest luna model you can use
+# Plan limits, in percent left. A large reading (the full backlog, `varyz rules
+# mine` through a Claude or ChatGPT sign-in) neither starts nor goes on at or
+# below either large limit; a small (live) one at or below either small limit.
+# Usage is checked every reader_usage_poll_seconds while it reads; a reader that
+# crosses a limit is stopped (what it submitted is kept) and resumes once the
+# window resets. Unknown usage: only small readings run, and stop if it stays unknown.
+large_reading_min_left_5h = 30
+large_reading_min_left_weekly = 25
+small_reading_min_left_5h = 10
+small_reading_min_left_weekly = 5
+reader_usage_poll_seconds = 60
+reader_max_minutes = 90          # one reader run at most this long
+reader_tasks_per_run = 8
+# Trial rules: a rule found with strong evidence (you corrected an agent over it,
+# or said it in two conversations or projects) goes into effect at once, marked
+# as not yet confirmed; the rest wait for `varyz rules review`. `varyz rules
+# trials` shows them; `--off` stops new ones; `--undo-since DATE` withdraws them.
+trial_rules = true
+trial_promote_tasks = 3          # legacy review signal; exposure never confirms a rule
+trial_promote_days = 7           # elapsed time never substitutes for explicit owner approval
+trial_spot_check = 10            # trial rules `rules review` asks you to check
+trial_min_kept = 0.9             # pause new trials when fewer are kept
+classifier_model = "qwen3.5:4b"
+classifier_url = "http://localhost:11434"
+classifier_timeout_seconds = 10.0
+classifier_vram_headroom = 0.3
+# How long the model stays loaded after its last answer (about 3 GB of VRAM).
+# 10m finds it loaded for 75% of prompts; a cold prompt falls back to the rule.
+classifier_keep_alive = "10m"
+
+[privacy]
+# Every cloud call, export, share, and external action crosses this boundary.
+# "shadow" records would-be cloud decisions while preserving the legacy
+# public/personal gate; exports and actions are always enforced.
+mode = "enforce"
+policy_version = "1"
+receipt_version = "1"
+max_context_chars = 9000
+minimum_aggregate_size = 3
+
+[autosync]
+# `varyz autosync install` creates the explicit ENABLED marker and registers a
+# hidden singleton daemon at Windows login. MCP/search/ask also launch a
+# non-blocking refresh when stale.
+enabled = true
+on_use = true
+freshness_minutes = 5
+schedule_minutes = 15
+# How long one cycle may run before stopping at the next checkpoint. The daemon
+# only re-reads its own source, and only notices the kill switch, between
+# cycles — a sync wedged inside a rebuild here held the write lock for 3 h 38
+# min and had to be killed by hand. Staging is checkpointed per entry, so an
+# interrupted cycle loses nothing and the next one resumes. 0 disables it.
+cycle_deadline_minutes = 30
+# Contextual graph extraction loads the 7.4 GB managed model. Keep it out of
+# scheduled and stale-on-use refreshes unless this archive explicitly opts in.
+# Deterministic graph extraction, ingestion, and embedding remain automatic.
+semantic_graph = false
+# Learn the order you guide agents through work (website, product) from your own
+# non-sensitive AI-conversation turns after each sync that brings new ones. Learned
+# orders are used straight away, marked learned; `varyz workflows retract` withdraws
+# one for good.
+learn_workflows = true
+# Record the option you pick when a Claude Code agent asks you a question as that
+# project's decision; a newer pick replaces the older answer. Nothing else in the
+# transcript is read. `varyz knowledge capture` shows what it would record, and
+# `varyz knowledge retract <id>` withdraws one for good.
+capture_decisions = true
+notify_server = "https://ntfy.sh"
+notify_topic = ""                    # optional; failures only, never routine success
+
+# [update]
+# Keep a git checkout of Varyz on the latest commit of the branch it tracks.
+# "notify" checks and your agent tells you, once per new version; "auto" also
+# applies it. Checked once a day, on the
+# first use of the day, by fetching from the branch's remote. It changes the
+# code, so it stays off until you turn it on. Only a
+# fast-forward is applied; local changes and local commits are left alone. The
+# database is backed up before an update that migrates it, and new code that
+# fails to import is rolled back. `varyz update status | check | apply | pause`.
+# mode = "off"
+
+# [news]
+# Posts from varyzai.com/news, checked once an hour while Varyz is in use and
+# passed on by your agent, each post once. On by default: the check is a plain
+# request for the feed and sends nothing about you or your archive. The switch
+# is a command, not a setting: `varyz news off` / `varyz news on`.
+# url = "https://varyzai.com/news.json"
+
+# `varyz bootstrap` writes local document and Git sections after showing the
+# exact paths and receiving approval. Direct edits remain available.
+#
+# [connectors.documents]
+# approved = true
+# paths = ["~/Documents"]
+#
+# [connectors.calendar_import]       # setup: varyz connect calendar
+# approved = true
+# account = "default"
+# subscription_secret = "default"   # URL itself stays in Credential Manager
+#
+# [connectors.personal_archive]
+# approved = true
+# paths = ["data\\imports\\takeout.zip"]
+#
+# [connectors.google_calendar]
+# account = "you@gmail.com"
+#
+# [connectors.google_drive]
+# account = "you@gmail.com"
+#
+# The four Personal Insight sources. At least one must be imported before Varyz
+# will describe you: documents, git, github, gmail and calendar can
+# corroborate a conclusion but never license one. See: varyz sources
+#
+# [connectors.ai_conversations]      # setup: varyz connect ai-conversations
+# approved = true
+# adapters = ["claude_code", "codex", "openclaw", "hermes"]   # omit for all
+# include_assistant = false          # your turns only, by default
+# paths = ["~/path/to/sessions"]    # read these INSTEAD of the default locations,
+#                                    # which are otherwise found automatically
+# since = "2025-01-01"
+# max_turn_chars = 12000
+
+# Optional agent-delivered Cloud notices. Keep off until live service validation
+# and platform-specific review; local execution does not imply permission to advertise.
+# OpenAI and plugin-launched integrations are excluded even when allowlisted.
+[promotions]
+enabled = false
+cloud_ready = false
+reviewed_agent_ids = []
+
+# The sections below are written automatically by `varyz connect <source>`.
+
+# [connectors.gmail]                 # setup: varyz connect gmail
+# account = "you@gmail.com"          # app password or Google OAuth token is in Credential Manager
+# auth = "google"                     # written by the Import Center OAuth flow
+# folders = ["[Gmail]/All Mail"]
+# since = "2020-01-01"               # bound the FIRST backfill; omit for full history
+# max_size_mb = 10                   # skip messages larger than this
+
+# [connectors.github]                # setup: varyz connect github
+# account = "your-login"             # personal access token is in Credential Manager
+# affiliation = "owner"              # "owner,collaborator,organization_member" for work repos
+# visibility = "all"                 # all | public | private
+# include_threads = true             # issues, PR descriptions, and review comments
+# include_forks = false              # forks are somebody else's project
+# include_archived = true
+# since = "2024-01-01"               # bound the FIRST backfill of issues; omit for all history
+# repos = ["owner/name"]             # an explicit list, instead of enumerating your account
+# api_url = "https://gh.corp/api/v3" # GitHub Enterprise
+
+[rule_shadow]
+# Collection is off until `varyz rules shadow control enable`.
+# Pause/disable are read on every observation, including by persistent servers.
+max_comparisons_per_day = 500
+max_source_records = 10000
+max_registry_events = 50000
+max_bytes = 67108864 # 64 MiB shared by the local database and transient journal
+
+[session_reports]
+# Optional original-source-date bound for separately approved Cloud reports.
+# This setting never approves upload. Omit for all eligible reports.
+# cloud_since = "2026-01-01"

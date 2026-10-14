@@ -1,0 +1,32 @@
+# SYNTHETIC. Fictional owner and projects (Kestrel web app, Lumen mobile app, Harbor CLI). No real person's data.
+# Explicit owner knowledge seeded into tier 1 for the vision-conformance benchmark (scripts/vision_bench.py).
+{"id": "k01", "question": "Should the Kestrel public API stay backward compatible?", "answer": "Yes. Keep the v1 endpoints working until at least 2027 and add v2 alongside them."}
+{"id": "k02", "question": "Which database does Kestrel use?", "answer": "Postgres hosted on Supabase."}
+{"id": "k03", "question": "What authentication system should new projects use?", "answer": "Clerk for web apps. Never hand-roll authentication."}
+{"id": "k04", "question": "Which package manager should Python projects use?", "answer": "uv, with a checked-in lockfile."}
+{"id": "k05", "question": "Does the owner prefer morning meetings?", "answer": "No. No meetings before 11:00; afternoons are preferred."}
+{"id": "k06", "question": "Which project is currently the highest priority?", "answer": "Kestrel, until its October launch."}
+{"id": "k07", "question": "Should agents commit changes without being asked?", "answer": "No. Only commit when explicitly asked, and never push."}
+{"id": "k08", "question": "What test framework should the Harbor CLI use?", "answer": "pytest, offline and deterministic."}
+{"id": "k09", "question": "Which cloud provider should be used for hosting?", "answer": "Fly.io for applications and Cloudflare R2 for object storage."}
+{"id": "k10", "question": "Should Lumen onboarding ask users to upload personal data?", "answer": "No. Company-provided data is primary; onboarding must not request personal uploads."}
+{"id": "k11", "question": "What style of code comments does the owner prefer?", "answer": "Sparse comments that explain why, not what."}
+{"id": "k12", "question": "Is it okay to add new third-party dependencies?", "answer": "Only with a clear reason. Prefer the standard library and minimal dependencies."}
+{"id": "k13", "question": "Which email address should be used for commercial enquiries?", "answer": "hello@kestrel.example"}
+{"id": "k14", "question": "What branching strategy should repositories use?", "answer": "Short-lived feature branches, squash-merged into main."}
+{"id": "k15", "question": "Should notifications be sent on weekends?", "answer": "No weekend notifications, except outage alerts."}
+{"id": "k16", "question": "What language variant should user-facing copy be written in?", "answer": "British English."}
+{"id": "k17", "question": "Which LLM provider should be the default?", "answer": "Claude first, with OpenAI as the failover."}
+{"id": "k18", "question": "How should secrets be stored?", "answer": "In Windows Credential Manager or an untracked .env file; never in the repository."}
+{"id": "k19", "question": "What is the pricing for the Lumen app?", "answer": "EUR 8 per month or EUR 60 per year; there is no lifetime tier."}
+{"id": "k20", "question": "Should the Harbor CLI collect telemetry?", "answer": "No telemetry. Crash reports only with explicit opt-in."}
+{"id": "k21", "question": "Which frontend framework should new web projects use?", "answer": "SvelteKit."}
+{"id": "k22", "question": "What timezone does the owner work in?", "answer": "Europe/Amsterdam."}
+{"id": "k23", "question": "Should agents update documentation for every change?", "answer": "Only when behaviour or setup changes."}
+{"id": "k24", "question": "Is Kestrel open source?", "answer": "Yes, under AGPL-3.0. The Kestrel brand is not licensed."}
+{"id": "k25", "question": "Should agents run the full test suite before finishing a task?", "answer": "Yes. Always run pytest and ruff before declaring a task done."}
+{"id": "k26", "question": "Which analytics tool should the websites use?", "answer": "Self-hosted Plausible. No Google Analytics."}
+{"id": "k27", "question": "What should the primary colour of the Lumen app be?", "answer": "Deep teal, #0F766E."}
+{"id": "k28", "question": "Can agents share the owner's calendar with other apps?", "answer": "No. Calendar details are owner-only."}
+{"id": "k29", "question": "Should the Kestrel launch be delayed if tests are flaky?", "answer": "Yes. Fix flaky tests first; never ship over red CI."}
+{"id": "k30", "question": "Which mobile platform should Lumen target first?", "answer": "iOS first; Android after product-market fit."}

@@ -1,0 +1,17 @@
+// Placeholder for cloud.varyzai.com until the Hetzner cloud server exists.
+// It serves no content: every path redirects to the public website, so the
+// subdomain resolves (Paddle domain review) without exposing anything new.
+// Replace it by deleting this Worker and adding a DNS record for the server.
+{
+  "name": "varyz-cloud-placeholder",
+  "account_id": "74b232b672a218e2653dc55478a9f883",
+  "compatibility_date": "2026-10-03",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public"
+  },
+  "routes": [
+    { "pattern": "cloud.varyzai.com", "custom_domain": true }
+  ]
+}

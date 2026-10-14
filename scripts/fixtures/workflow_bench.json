@@ -1,0 +1,69 @@
+{
+  "_about": "Labelled before the first run of scripts/workflow_bench.py (2026-09-24). Labels are what the owner would mean; do not edit them to fit results.",
+  "scope_pairs": [
+    {"q": "Should the site have a favicon?", "a": "Always, every site needs one.", "label": "general"},
+    {"q": "Do you want a dry-run mode for this tool?", "a": "I always want a dry-run first.", "label": "general"},
+    {"q": "Should agents commit when done?", "a": "Never commit unless I ask.", "label": "general"},
+    {"q": "Which package manager for new Python tools?", "a": "uv, in all my projects.", "label": "general"},
+    {"q": "How should secrets be stored?", "a": "Windows Credential Manager or an untracked .env, never in code.", "label": "general"},
+    {"q": "Do you want tests before calling it done?", "a": "Yes, make sure pytest and ruff pass every time.", "label": "general"},
+    {"q": "Should reports lead with numbers?", "a": "I prefer numbers first, failures included.", "label": "general"},
+    {"q": "Scraping or official API for publishing?", "a": "Official APIs only, by default.", "label": "general"},
+    {"q": "Should the page work on phones?", "a": "Every page I ship must work at phone width.", "label": "general"},
+    {"q": "Should I add social share cards?", "a": "Generally yes, Open Graph and Twitter cards.", "label": "general"},
+    {"q": "Do you want a kill switch on autonomous features?", "a": "Whenever something acts on its own, give it a pause switch.", "label": "general"},
+    {"q": "Which accent colour for the landing page?", "a": "#6d5efc", "label": "project"},
+    {"q": "What should the app be called?", "a": "Call it Lumen.", "label": "project"},
+    {"q": "Which font for the headline?", "a": "Inter for this one.", "label": "project"},
+    {"q": "What's the tagline?", "a": "\"Your trades remember.\"", "label": "project"},
+    {"q": "What price for the Pro tier?", "a": "$9.99 a month.", "label": "project"},
+    {"q": "Which domain does this site live on?", "a": "san7.app", "label": "project"},
+    {"q": "Dark or light hero section?", "a": "Dark for this launch.", "label": "project"},
+    {"q": "Should the waitlist form ask for a name?", "a": "Just email here.", "label": "project"},
+    {"q": "Which logo variant goes in the header?", "a": "The lowercase wordmark with the period.", "label": "project"},
+    {"q": "How many pricing tiers on this page?", "a": "Three.", "label": "project"},
+    {"q": "Which analytics for this site?", "a": "Plausible.", "label": "project"},
+    {"q": "Which primary colour?", "a": "rgb(20, 20, 30)", "label": "project"},
+    {"q": "What version number for the release?", "a": "7.14.0", "label": "project"},
+    {"q": "Which hosting?", "a": "Cloudflare Pages for everything I build.", "label": "general"},
+    {"q": "How dense should dashboards be?", "a": "I like dense, information-first layouts.", "label": "general"},
+    {"q": "Should the copy use emoji?", "a": "No emoji in this product's copy.", "label": "project"},
+    {"q": "Which image for the hero?", "a": "The phone mockup screenshot.", "label": "project"},
+    {"q": "Use Tailwind?", "a": "Yes.", "label": "project"},
+    {"q": "Should errors be shown to users in plain words?", "a": "Always plain words, never stack traces.", "label": "general"}
+  ],
+  "domain_tasks": [
+    {"task": "Build a landing page for the waitlist", "domains": ["website"]},
+    {"task": "Make me a site for the new product", "domains": ["website"]},
+    {"task": "Polish the homepage and fix the hero", "domains": ["website"]},
+    {"task": "Add a pricing page", "domains": ["website"]},
+    {"task": "Write a Python CLI that syncs my notes", "domains": ["python-tool"]},
+    {"task": "Add a command-line flag to the exporter script", "domains": ["python-tool"]},
+    {"task": "Ship the new version of the iOS app", "domains": ["mobile-app", "release"]},
+    {"task": "Add a settings screen to the Expo app", "domains": ["mobile-app"]},
+    {"task": "Update the README with install steps", "domains": ["docs"]},
+    {"task": "Benchmark the new model against the baseline", "domains": ["evaluation"]},
+    {"task": "Set up a nightly scheduler that retrains the model", "domains": ["automation"]},
+    {"task": "Add a Gmail connector that ingests my mail", "domains": ["data-connector"]},
+    {"task": "Call the Claude API to summarise each thread", "domains": ["ai-integration"]},
+    {"task": "Build a KPI dashboard for the campaign", "domains": ["dashboard"]},
+    {"task": "Cut a release and publish it", "domains": ["release"]}
+  ],
+  "owner_sim": {
+    "projects": ["lumen", "san7", "persona"],
+    "questions": [
+      {"q": "Should every page ship with a favicon and web manifest?", "a": "Yes, always.", "scope": "general"},
+      {"q": "Which accent colour should the landing page use?", "a": "#6d5efc", "scope": "project"},
+      {"q": "Should the site include a privacy policy page?", "a": "Yes, always, generated from the in-app legal text.", "scope": "general"},
+      {"q": "What tone should the landing page copy have?", "a": "Calm and precise, no hype.", "scope": "general"},
+      {"q": "Which headline should the hero section use?", "a": "It depends on the product.", "scope": "project"},
+      {"q": "Should analytics be cookie-free?", "a": "Yes, cookie-free only, everywhere.", "scope": "general"},
+      {"q": "Which domain should the site be deployed on?", "a": "Its own .app domain.", "scope": "project"},
+      {"q": "Should images be served as optimised WebP with width and height set?", "a": "Always.", "scope": "general"}
+    ],
+    "paraphrases": {
+      "Should every page ship with a favicon and web manifest?": "Does the site need a favicon and a web manifest?",
+      "Should analytics be cookie-free?": "Do the analytics need to be cookie-free?"
+    }
+  }
+}

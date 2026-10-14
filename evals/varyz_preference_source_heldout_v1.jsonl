@@ -1,0 +1,7 @@
+{"id":"explicit_project_style","text":"I prefer a dark background and bright buttons for this website.","project":"varyz","accept":true,"object":"a dark background and bright buttons for this website"}
+{"id":"explicit_dislike","text":"I don't like boxy panels in the memoir site.","project":"memoir","accept":true,"object":"boxy panels in the memoir site"}
+{"id":"approval","text":"I really like how this AI responds, but it needs clearer context.","project":"persona","accept":false}
+{"id":"one_off_instruction","text":"Make the background dark for this page.","project":"varyz","accept":false}
+{"id":"quoted_fixture","text":"{\"external_id\":\"fixture\",\"text\":\"I prefer a red website.\"}","project":"varyz","accept":false}
+{"id":"quoted_markdown","text":"> I prefer a red website.\nThis is an example, not my choice.","project":"varyz","accept":false}
+{"id":"third_party","text":"I prefer a red website.","project":"varyz","authored_by_user":false,"accept":false}

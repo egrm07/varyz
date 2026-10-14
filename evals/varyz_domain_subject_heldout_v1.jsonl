@@ -1,0 +1,17 @@
+{"_about": "Kinds of work for tasks that mention another product as their subject ('a site for my CLI'). Labelled 2026-09-26 before any change to resolution/domains.py, from the tallyho landing-site job whose checklist included the Python-tool items. Labels are what the owner would mean; do not edit them to fit results."}
+{"task": "Build a one-page landing site for tallyho, a small CLI that counts words across markdown files. Static HTML/CSS in this folder, no framework. Make it look good and ready to deploy.", "domains": ["website", "release"]}
+{"task": "Make a landing page for my Python library pathkit", "domains": ["website"]}
+{"task": "Write the README for the wordcount CLI", "domains": ["docs"]}
+{"task": "Build a CLI that counts words and a landing page for it", "domains": ["python-tool", "website"]}
+{"task": "Add a --json flag to the tallyho CLI", "domains": ["python-tool"]}
+{"task": "Design a website for our iOS app", "domains": ["website"]}
+{"task": "Create a pricing page for the SAN7 iPhone app", "domains": ["website"]}
+{"task": "Write docs for the Typer-based CLI", "domains": ["docs"]}
+{"task": "Build a FastAPI backend and a static landing page", "domains": ["python-tool", "website"]}
+{"task": "Make a site that showcases my pytest plugin", "domains": ["website"]}
+{"task": "Fix the favicon on the site of my Python package", "domains": ["website"]}
+{"task": "Ship the landing page for the Expo app", "domains": ["website", "release"]}
+{"task": "Build a Python CLI that generates static HTML sites", "domains": ["python-tool"]}
+{"task": "Write a landing page for the persona API, with an OpenAI-compatible example", "domains": ["website"]}
+{"task": "Write tests for the CLI", "domains": ["python-tool"]}
+{"task": "Add an iOS widget to the SAN7 app", "domains": ["mobile-app"]}

@@ -1,0 +1,31 @@
+{
+    servers {
+        timeouts {
+            read_header 10s
+            read_body 15s
+            idle 60s
+        }
+        max_header_size 16KB
+    }
+}
+
+# Query strings can contain account-action tokens; do not enable access logs.
+cloud.varyzai.com {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        -Server
+    }
+    request_body {
+        # Leave room for the app's smaller limit to return a controlled 413.
+        max_size 1MB
+    }
+    # Public publisher-ownership proof only; never put credentials in this folder.
+    handle /.well-known/openai-apps-challenge {
+        root * /var/lib/caddy/varyz-public
+        file_server
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8080
+    }
+}

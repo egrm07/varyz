@@ -1,0 +1,103 @@
+{
+  "note": "Findings of scripts/audit_publication.py that a person has looked at and judged safe to publish, named by a hash so this file carries none of what it accepts. An entry with an empty reason is not accepted and --gate still fails on it.",
+  "accepted": [
+    {
+      "path": "src/varyz/connectors/google_auth.py",
+      "kind": "archive_quotation",
+      "digest": "deda0104a3098307",
+      "entry_source": "documents",
+      "reason": "Source-code comment shared with the memoir OAuth connector; it documents token storage and is not user prose."
+    },
+    {
+      "path": "src/varyz/db/migrations/0001_init.sql",
+      "kind": "archive_quotation",
+      "digest": "b14e016c4787460c",
+      "entry_source": "documents",
+      "reason": "SQL schema vocabulary shared with the memoir database migration; it is an enum definition, not user prose."
+    },
+    {
+      "path": "src/varyz/db/migrations/0003_context_platform.sql",
+      "kind": "archive_quotation",
+      "digest": "b14e016c4787460c",
+      "entry_source": "documents",
+      "reason": "SQL schema vocabulary shared with the memoir database migration; it is an enum definition, not user prose."
+    },
+    {
+      "path": "src/varyz/llm/openai_oauth.py",
+      "kind": "archive_quotation",
+      "digest": "9abd2c55594085b6",
+      "entry_source": "documents",
+      "reason": "HTTP protocol header shared with the persona OAuth implementation; it is vendor/API syntax, not user prose."
+    },
+    {
+      "path": "src/varyz/privacy/broker.py",
+      "kind": "archive_quotation",
+      "digest": "5280d685f47b4352",
+      "entry_source": "documents",
+      "reason": "Python method signature inherited from the memoir privacy broker; it is source code, not archive prose."
+    },
+    {
+      "path": "src/varyz/privacy/broker.py",
+      "kind": "archive_quotation",
+      "digest": "f20c60c3a99586cf",
+      "entry_source": "documents",
+      "reason": "Python method signature inherited from the memoir privacy broker; it is source code, not archive prose."
+    },
+    {
+      "path": "src/varyz/privacy/broker.py",
+      "kind": "archive_quotation",
+      "digest": "52ed339a10672723",
+      "entry_source": "documents",
+      "reason": "Python method signature inherited from the memoir privacy broker; it is source code, not archive prose."
+    },
+    {
+      "path": "src/varyz/privacy/receipts.py",
+      "kind": "archive_quotation",
+      "digest": "0e77099accc61f15",
+      "entry_source": "documents",
+      "reason": "Structured receipt-field serialization shared with memoir; it is source-code vocabulary, not user prose."
+    },
+    {
+      "path": "src/varyz/ui/templates/claim.html",
+      "kind": "archive_quotation",
+      "digest": "b84e2e9035b2f4f1",
+      "entry_source": "documents",
+      "reason": "Jinja template expression shared with the memoir UI; it is rendering code, not user prose."
+    },
+    {
+      "path": "src/varyz/ui/templates/claim.html",
+      "kind": "archive_quotation",
+      "digest": "41addbc5f4951853",
+      "entry_source": "documents",
+      "reason": "Jinja template expression shared with the memoir UI; it is rendering code, not user prose."
+    },
+    {
+      "path": "src/varyz/ui/templates/record.html",
+      "kind": "archive_quotation",
+      "digest": "b84e2e9035b2f4f1",
+      "entry_source": "documents",
+      "reason": "Jinja template expression shared with the memoir UI; it is rendering code, not user prose."
+    },
+    {
+      "path": "src/varyz/ui/templates/record.html",
+      "kind": "archive_quotation",
+      "digest": "41addbc5f4951853",
+      "entry_source": "documents",
+      "reason": "Jinja template expression shared with the memoir UI; it is rendering code, not user prose."
+    },
+    {
+      "path": "tests/test_secrets_scan.py",
+      "kind": "private_key",
+      "digest": "2a32024a29355c82",
+      "entry_source": null,
+      "reason": "PEM headers in the secret scanner's own fixtures. A test that a private key is detected has to contain the header it detects."
+    },
+    {
+      "path": "tests/test_secrets_scan.py",
+      "kind": "private_key",
+      "digest": "2a32024a29355c82",
+      "entry_source": null,
+      "reason": "PEM headers in the secret scanner's own fixtures. A test that a private key is detected has to contain the header it detects."
+    }
+  ]
+}

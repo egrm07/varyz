@@ -1,0 +1,119 @@
+name: Mac signed installer candidates
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/launch-candidate-*']
+    paths:
+      - '.github/workflows/macos-signed-installer.yml'
+      - 'scripts/macos/**'
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'tests/test_macos_signing.py'
+permissions:
+  contents: read
+jobs:
+  signing:
+    # Forks may dispatch explicitly with their own signing identities.
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'egrm07/varyz'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: 0.11.2
+          enable-cache: false
+      - name: Build architecture-specific payload
+        run: sh scripts/macos/build.sh
+      - name: Verify both Developer ID keys using disposable code and package
+        shell: bash
+        env:
+          APPLICATION_P12: ${{ secrets.MACOS_APPLICATION_P12_BASE64 }}
+          APPLICATION_PASSWORD: ${{ secrets.MACOS_APPLICATION_P12_PASSWORD }}
+          INSTALLER_P12: ${{ secrets.MACOS_INSTALLER_P12_BASE64 }}
+          INSTALLER_PASSWORD: ${{ secrets.MACOS_INSTALLER_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$APPLICATION_P12" && test -n "$INSTALLER_P12"
+          folder=$(mktemp -d "$RUNNER_TEMP/varyz-signing.XXXXXX")
+          keychain="$folder/signing.keychain-db"
+          cleanup() {
+            security delete-keychain "$keychain" >/dev/null 2>&1 || true
+            rm -f "$folder/application.p12" "$folder/installer.p12"
+          }
+          trap cleanup EXIT
+          keychain_password=$(openssl rand -hex 32)
+          echo "::add-mask::$keychain_password"
+          export SIGNING_FOLDER="$folder"
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          folder = Path(os.environ['SIGNING_FOLDER'])
+          for kind in ('application', 'installer'):
+              path = folder / (kind + '.p12')
+              path.write_bytes(base64.b64decode(os.environ[kind.upper() + '_P12'], validate=True))
+              path.chmod(0o600)
+          PY
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 1800 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+          security import "$folder/application.p12" -k "$keychain" -P "$APPLICATION_PASSWORD" -T /usr/bin/codesign
+          security import "$folder/installer.p12" -k "$keychain" -P "$INSTALLER_PASSWORD" -T /usr/bin/pkgbuild -T /usr/bin/productsign
+          echo 'Both PKCS12 identities imported; setting signing access.'
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          echo 'Signing access set; finding validated identities.'
+          security find-identity -v "$keychain"
+          application=$(security find-identity -v -p codesigning "$keychain" | sed -nE 's/^ *[0-9]+\) ([A-F0-9]{40}) "Developer ID Application:.*$/\1/p')
+          test "${#application}" = 40
+          echo 'Application identity selected.'
+          installer=$(security find-identity -v -p basic "$keychain" | sed -nE 's/^ *[0-9]+\) ([A-F0-9]{40}) "Developer ID Installer:.*$/\1/p')
+          test -n "$installer"
+          echo 'Installer identity selected; compiling disposable executable.'
+          printf 'int main(void) { return 0; }\n' > "$folder/check.c"
+          clang "$folder/check.c" -o "$folder/check"
+          echo 'Signing disposable executable.'
+          codesign --force --sign "$application" --keychain "$keychain" --options runtime --timestamp "$folder/check"
+          codesign --verify --strict --verbose=2 "$folder/check"
+          mkdir -p "$folder/root/usr/local/share/varyz-signing-preflight"
+          printf 'Disposable signing check; not a Varyz release.\n' > "$folder/root/usr/local/share/varyz-signing-preflight/README"
+          pkgbuild --root "$folder/root" --identifier com.varyzai.signing-preflight --version 0.0.1 --sign "$installer" --keychain "$keychain" "$folder/check.pkg"
+          pkgutil --check-signature "$folder/check.pkg"
+          echo 'PASS Application code signing with hardened runtime/timestamp and Installer package signature.'
+          stage=$(find .build-cache -maxdepth 1 -type d -name 'macos-stage-*' -print -quit)
+          arch=$(uname -m)
+          mkdir -p dist/signed-candidate
+          python3 scripts/macos/sign.py --stage "$stage" --keychain "$keychain" \
+            --application-identity "$application" --installer-identity "$installer" \
+            --output "dist/signed-candidate/VaryzSetup-0.1.0-macos-$arch.pkg"
+          export UV_TOOL_DIR="$RUNNER_TEMP/varyz-signed-tools"
+          export UV_TOOL_BIN_DIR="$RUNNER_TEMP/varyz-signed-bin"
+          export VARYZ_CONFIG="$RUNNER_TEMP/varyz-signed-archive/config.toml"
+          mkdir -p "$RUNNER_TEMP/varyz-signed-archive"
+          printf 'synthetic preserved data\n' > "$RUNNER_TEMP/varyz-signed-archive/keep.txt"
+          payload="$stage/root/Applications/Varyz Setup.app/Contents/Resources/payload"
+          "$payload/runtime/bin/python3" "$payload/native.py" install --app "$RUNNER_TEMP/varyz-signed-app"
+          "$UV_TOOL_DIR/varyzai/bin/python" -c 'import onnxruntime, fastembed, numpy; print(onnxruntime.__version__, numpy.__version__)'
+          "$payload/runtime/bin/python3" "$payload/native.py" install --app "$RUNNER_TEMP/varyz-signed-app"
+          "$payload/runtime/bin/python3" "$payload/native.py" uninstall --app "$RUNNER_TEMP/varyz-signed-app"
+          test -f "$RUNNER_TEMP/varyz-signed-archive/keep.txt"
+          test ! -e "$UV_TOOL_DIR/varyzai/uv-receipt.toml"
+          pkgutil --expand-full "dist/signed-candidate/VaryzSetup-0.1.0-macos-$arch.pkg" "$RUNNER_TEMP/signed-expanded"
+          expanded=$(find "$RUNNER_TEMP/signed-expanded" -name payload.json -print -quit)
+          test -n "$expanded"
+          runtime=$(dirname "$expanded")
+          "$runtime/runtime/bin/python3" "$runtime/native.py" verify
+          python3 scripts/release_manifest.py --output dist/signed-candidate/native-release-provenance.json
+          echo 'PASS actual signed payload, offline/repeat install, inference imports and preserved-data removal. Not notarized or published.'
+      - name: Retain private signed candidates, awaiting notarization
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Varyz-signed-awaiting-notarization-${{ matrix.runner }}
+          path: dist/signed-candidate/
+          if-no-files-found: error
+          retention-days: 14

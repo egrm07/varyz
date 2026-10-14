@@ -1,0 +1,23 @@
+#cloud-config
+package_update: true
+packages:
+  - caddy
+  - ufw
+  - ca-certificates
+ssh_pwauth: false
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-varyz.conf
+    permissions: '0644'
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+runcmd:
+  - [mkdir, -p, /srv/varyz/website]
+  - [ufw, default, deny, incoming]
+  - [ufw, default, allow, outgoing]
+  - [ufw, allow, OpenSSH]
+  - [ufw, allow, 80/tcp]
+  - [ufw, allow, 443/tcp]
+  - [ufw, --force, enable]
+  - [systemctl, reload, ssh]

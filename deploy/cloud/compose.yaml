@@ -1,0 +1,73 @@
+# Private local/staging example. Put an HTTPS edge in front for remote clients.
+# Never scale this SQLite-backed service or delete its volume unintentionally.
+services:
+  cloud:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile
+    image: varyz-cloud:local
+    restart: unless-stopped
+    environment:
+      SHARED_VARYZ_ENABLED: ${SHARED_VARYZ_ENABLED:-false}
+      SHARED_VARYZ_ACCOUNTS: ${SHARED_VARYZ_ACCOUNTS:-}
+      SHARED_VARYZ_CHATGPT_PLUGIN_URL: ${SHARED_VARYZ_CHATGPT_PLUGIN_URL:-}
+      VARYZ_ANALYTICS_ENABLED: ${VARYZ_ANALYTICS_ENABLED:-false}
+      VARYZ_ANALYTICS_ADMIN_TOKEN: ${VARYZ_ANALYTICS_ADMIN_TOKEN:-}
+      VARYZ_CLOUD_DATABASE: /var/lib/varyz-cloud/cloud.sqlite3
+      VARYZ_CLOUD_PUBLIC_URL: ${VARYZ_CLOUD_PUBLIC_URL:-http://127.0.0.1:8080}
+      VARYZ_PADDLE_API_KEY: ${VARYZ_PADDLE_API_KEY:-}
+      VARYZ_PADDLE_CLIENT_TOKEN: ${VARYZ_PADDLE_CLIENT_TOKEN:-}
+      VARYZ_PADDLE_WEBHOOK_SECRET: ${VARYZ_PADDLE_WEBHOOK_SECRET:-}
+      VARYZ_PADDLE_PRICE_IDS: ${VARYZ_PADDLE_PRICE_IDS:-}
+      VARYZ_PADDLE_SANDBOX: ${VARYZ_PADDLE_SANDBOX:-true}
+      VARYZ_CLOUD_SMTP_HOST: ${VARYZ_CLOUD_SMTP_HOST:-}
+      VARYZ_CLOUD_SMTP_PORT: ${VARYZ_CLOUD_SMTP_PORT:-587}
+      VARYZ_CLOUD_SMTP_USERNAME: ${VARYZ_CLOUD_SMTP_USERNAME:-}
+      VARYZ_CLOUD_SMTP_PASSWORD: ${VARYZ_CLOUD_SMTP_PASSWORD:-}
+      VARYZ_CLOUD_SMTP_FROM: ${VARYZ_CLOUD_SMTP_FROM:-}
+      VARYZ_CLOUD_GOOGLE_CLIENT_ID: ${VARYZ_CLOUD_GOOGLE_CLIENT_ID:-}
+      VARYZ_CLOUD_GOOGLE_CLIENT_SECRET: ${VARYZ_CLOUD_GOOGLE_CLIENT_SECRET:-}
+      VARYZ_CLOUD_GITHUB_CLIENT_ID: ${VARYZ_CLOUD_GITHUB_CLIENT_ID:-}
+      VARYZ_CLOUD_GITHUB_CLIENT_SECRET: ${VARYZ_CLOUD_GITHUB_CLIENT_SECRET:-}
+      VARYZ_CLOUD_DB_POOL_MAX: ${VARYZ_CLOUD_DB_POOL_MAX:-8}
+      VARYZ_CLOUD_ARCHIVE_ENCRYPTION_KEY: ${VARYZ_CLOUD_ARCHIVE_ENCRYPTION_KEY:-}
+      VARYZ_CLOUD_ARCHIVE_LIMIT_BYTES: ${VARYZ_CLOUD_ARCHIVE_LIMIT_BYTES:-104857600}
+      VARYZ_CLOUD_ARCHIVE_EMBEDDING_CACHE: ${VARYZ_CLOUD_ARCHIVE_EMBEDDING_CACHE:-}
+      VARYZ_CLOUD_STORAGE_LIMIT_BYTES: ${VARYZ_CLOUD_STORAGE_LIMIT_BYTES:-1048576}
+      VARYZ_CLOUD_CHANGE_LIMIT: ${VARYZ_CLOUD_CHANGE_LIMIT:-10000}
+      VARYZ_CLOUD_MAX_ACCOUNTS: ${VARYZ_CLOUD_MAX_ACCOUNTS:-10000}
+      VARYZ_CLOUD_MAX_REGISTERED_CLIENTS: ${VARYZ_CLOUD_MAX_REGISTERED_CLIENTS:-1000}
+      VARYZ_CLOUD_MAX_EMAILS_PER_DAY: ${VARYZ_CLOUD_MAX_EMAILS_PER_DAY:-100}
+      # The host edge (Caddy) reaches the container through this network's
+      # gateway. Trusting only it gives each visitor their own rate limit.
+      FORWARDED_ALLOW_IPS: ${VARYZ_CLOUD_FORWARDED_ALLOW_IPS:-172.31.250.1}
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - edge
+    volumes:
+      - cloud-state:/var/lib/varyz-cloud
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 0.5
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  cloud-state:
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+          gateway: 172.31.250.1

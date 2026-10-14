@@ -1,0 +1,6 @@
+# Optional external PostgreSQL backend. Creates no database service or provider
+# resource. Keep one application instance until shared admission limits are ready.
+services:
+  cloud:
+    environment:
+      VARYZ_CLOUD_DATABASE: ${VARYZ_CLOUD_POSTGRES_DSN:?Set VARYZ_CLOUD_POSTGRES_DSN to an isolated PostgreSQL database}

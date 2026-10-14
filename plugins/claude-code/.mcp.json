@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "varyz": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/runtime/launcher.mjs",
+        "claude-code"
+      ]
+    }
+  }
+}

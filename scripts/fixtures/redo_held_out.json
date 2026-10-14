@@ -1,0 +1,295 @@
+{
+ "version": 1,
+ "labels_written": "2026-09-25",
+ "role": "held-out: written with the dev set before any run; never tuned on",
+ "definition": "redo: the task remakes or substantially reworks something already made at this step (start over, a different direction, a replacement version, rethinking it). not: making it for the first time, continuing it, or a small change to what is there. Labels are authored, not from any owner archive.",
+ "workflows": {
+  "website": [
+   "colour",
+   "logo",
+   "page content"
+  ],
+  "product": [
+   "vision",
+   "design",
+   "monetization"
+  ],
+  "app": [
+   "data model",
+   "API",
+   "screens"
+  ],
+  "video": [
+   "script",
+   "storyboard",
+   "edit"
+  ],
+  "docs": [
+   "outline",
+   "draft",
+   "publish"
+  ]
+ },
+ "items": [
+  {
+   "workflow": "website",
+   "task": "the logo looks off, make a new one from scratch",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "go back to the colours, they clash with the new logo, pick them again",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "the page content reads like a brochure, redo it",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "i want a different logo altogether",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "replace the palette with something warmer",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "build the page content again now that the vision changed",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "take another stab at the logo",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "tweak the logo spacing",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "the button colour is slightly off",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "write the content for the pricing page",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "create a logo for the site",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "reload the page content preview",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "add a testimonials section to the page",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "look at the colours again and tell me if they pass contrast",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "the vision is outdated, write a fresh one",
+   "label": "redo"
+  },
+  {
+   "workflow": "product",
+   "task": "we need to redo the monetization, nobody will pay for seats",
+   "label": "redo"
+  },
+  {
+   "workflow": "product",
+   "task": "go back and redesign the product from the user's side",
+   "label": "redo"
+  },
+  {
+   "workflow": "product",
+   "task": "the design misses the point, start it over",
+   "label": "redo"
+  },
+  {
+   "workflow": "product",
+   "task": "draft the monetization options",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "fix a typo in the vision",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "make the first design mockups",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "add a yearly plan to the monetization doc",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "again, what was the monetization plan?",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "keep going with the design",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "the data model wont scale, rebuild it",
+   "label": "redo"
+  },
+  {
+   "workflow": "app",
+   "task": "redo the api so it is rest instead of rpc",
+   "label": "redo"
+  },
+  {
+   "workflow": "app",
+   "task": "rework every screen for the new navigation",
+   "label": "redo"
+  },
+  {
+   "workflow": "app",
+   "task": "scrap the screens and start fresh with the design system",
+   "label": "redo"
+  },
+  {
+   "workflow": "app",
+   "task": "start the api",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "add pagination to the list endpoint",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "the save button on the profile screen does nothing",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "sketch the data model for comments",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "deploy the api again after the fix",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "align the icons on the home screen",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "the storyboard feels flat, redo it with a stronger opening",
+   "label": "redo"
+  },
+  {
+   "workflow": "video",
+   "task": "write a new script, this one is too long",
+   "label": "redo"
+  },
+  {
+   "workflow": "video",
+   "task": "recut the edit around the new voiceover",
+   "label": "redo"
+  },
+  {
+   "workflow": "video",
+   "task": "make the storyboard",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "swap the music in the edit",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "fix the caption typo at 0:42",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "write the script",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "render the edit again",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "the outline doesnt work, redo it",
+   "label": "redo"
+  },
+  {
+   "workflow": "docs",
+   "task": "rewrite the draft for beginners",
+   "label": "redo"
+  },
+  {
+   "workflow": "docs",
+   "task": "throw out the draft and write a shorter one",
+   "label": "redo"
+  },
+  {
+   "workflow": "docs",
+   "task": "set up the publishing again with a different host",
+   "label": "redo"
+  },
+  {
+   "workflow": "docs",
+   "task": "outline the migration guide",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "correct the version number in the draft",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "publish it",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "add a screenshot to the draft",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "check the outline again for gaps",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "finish the draft",
+   "label": "not"
+  }
+ ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "varyz",
+  "owner": {
+    "name": "Egor Menshikov"
+  },
+  "plugins": [
+    {
+      "name": "varyz",
+      "source": "./claude-code",
+      "description": "Apply your preferences and retrieve relevant background from selected sources."
+    },
+    {
+      "name": "varyz-cloud",
+      "source": "./claude-cloud",
+      "description": "Preferences and approved history through Varyz Cloud."
+    }
+  ]
+}

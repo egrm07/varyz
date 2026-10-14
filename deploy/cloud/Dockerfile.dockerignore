@@ -1,0 +1,30 @@
+# Fail closed: only public package source and build metadata enter the context.
+**
+!pyproject.toml
+!README.md
+!LICENSE
+!LICENSE.additional-terms
+!NOTICE
+!src/
+!src/varyz/
+!src/varyz/**
+!deploy/
+!deploy/cloud/
+!deploy/cloud/Dockerfile
+!deploy/cloud/Dockerfile.dockerignore
+!deploy/cloud/requirements.txt
+!deploy/cloud/requirements-search.txt
+# Exclusions after the allowlist also cover accidentally nested private files.
+**/.git/**
+**/.env
+**/.env.*
+**/config.toml
+**/data/**
+**/reports/**
+**/__pycache__/**
+**/*.pyc
+**/*.sqlite*
+**/*.db
+**/*.pem
+**/*.key
+**/secrets/**

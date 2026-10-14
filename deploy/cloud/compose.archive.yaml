@@ -1,0 +1,11 @@
+# Optional hybrid archive build; use alongside compose.yaml. Configure a secret
+# Fernet key outside the checkout before allowing HTTPS uploads.
+services:
+  cloud:
+    build:
+      args:
+        VARYZ_CLOUD_SEARCH: "1"
+    environment:
+      VARYZ_CLOUD_ARCHIVE_EMBEDDING_CACHE: /opt/varyz/models
+    mem_limit: 1536m
+    cpus: 1.5

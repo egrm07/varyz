@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "answers": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "answer": {"type": "string"},
+          "citations": {"type": "array", "items": {"type": "string"}},
+          "abstained": {"type": "boolean"}
+        },
+        "required": ["id", "answer", "citations", "abstained"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["answers"],
+  "additionalProperties": false
+}

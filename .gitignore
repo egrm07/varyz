@@ -1,0 +1,125 @@
+# Life data — never in git
+data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.pytest*/
+.ruff_cache/
+.uv-cache/
+*.cloud-sync.json
+*.cloud-sync.lock
+*.cloud-archive.json
+*.cloud-computer.json
+*.cloud-computer.json.tmp
+*.cloud-archive.lock
+varyz-cloud.sqlite3*
+dist/
+.build-cache/
+
+# Local previews, private document work and plugin repair snapshots are not release inputs.
+/output/
+/tmp/
+/.plugin-*.py
+
+# Local config with machine-specific paths (config.example.toml IS tracked)
+config.toml
+.env
+.env.*
+!.env.example
+
+# Model caches
+.fastembed_cache/
+
+# Raw eval output — lists absolute paths of every indexed file. Regenerable:
+# scripts/evaluate_retrieval.py --json-out
+reports/baseline_*.json
+
+# Private, resumable agent A/B transcripts and gold evidence. Dated aggregate
+# reports may be committed; raw model context must not be.
+reports/agent_ab_runs/
+
+# 2026-08-30: and a run's own JSON is raw model context. The A/B campaign of
+# 2026-08-23 wrote 106 of these; 47 of them quote the archive verbatim in
+# `source_message`, `quotes`, `proposition` and `exact_literal` fields, and the
+# QWEN_REVIEW dumps name the chats and the people who wrote the messages. None
+# of that belongs in a public repository, and none of it is the finding: the
+# finding is in the report written beside it. So the written .md reports are
+# committed and the machine-written evidence stays here. If a particular JSON
+# really should be public, read it first and `git add -f` it deliberately.
+# Already-tracked report JSON is unaffected by this line and was checked
+# separately.
+reports/*.json
+reports/*.txt
+
+# A compile's own console log, written next to the reports it belongs with. It
+# is the raw transcript -- entry ids, window text, the names of the people the
+# annotator was reading -- and the finding is in the dated report beside it.
+reports/*.log
+
+# Business documents -- pricing, strategy, creator terms. They are written next to
+# the docs they reference but are not part of the AGPL source, and the repository
+# is going public.
+docs/private/
+
+# Dated run reports and the old site comparisons stay on the owner's machine
+# (decided 2026-09-25). Code comments may still name a report; it is the local
+# record of a measurement, not something a user needs.
+reports/
+website-comparison/
+# Operational measurements remain private even when an earlier run wrote them in docs.
+/docs/*_CAPACITY_20??-??-??.*
+/docs/CLOUD_SPIKE_PROTECTION_20??-??-??.*
+
+# Where a session parks a one-off script it needed for a single operation. It is
+# working material for one machine on one day, not part of the tool.
+.scratch/
+
+# Safety snapshots made by the unattended compile supervisor must live outside
+# `data/`: `varyz backup` deliberately refuses to copy an archive into itself.
+.compile-backups/
+
+# What a script wrote while it ran, next to the script. `purge_scratch_dirs.ps1`
+# logs the repository root it worked in, which is the owner's home directory --
+# the mark the publication audit exists to catch. The script is the artefact
+# worth keeping; its log is one run of it on one machine.
+scripts/*.log
+
+# Scratch archives written by tests that need a real data directory. They are
+# throwaway, and 78 of them once made `git status` unreadable in this repo.
+.test-tmp-*/
+.test-tmp/
+.tmp_public_eval_tests_*/
+# The egress failure-path tests deliberately make their archive unreadable, so
+# git cannot even stat what is inside them.
+.pytest-tmp-*/
+.pytest-tmp/
+.tmp/
+.tmp-*
+/.deploy-secrets/
+
+# One directory in this repository is a bug's fossil, not a scratch archive: a
+# 2026-08-13 session wrote a Windows temp path through a shell that ate the
+# backslashes, so an absolute path landed here as one relative name. It is
+# unreadable without elevation, which is why it is still here, and it makes
+# `git status` warn on every run until it is ignored. Delete it in the same
+# elevated shell that clears the .test-tmp-* directories.
+Usersegor*/
+
+# The public tree is the code, its tests and fixtures, and the docs a user reads
+# (decided 2026-09-27). Plans, work queues, launch notes and the site the alpha
+# does not ship stay on the owner's machine. Code comments may still name one of
+# these; like a report, it is the local record the comment was written against.
+.claude/
+pivot/
+TODO.md
+MANIFEST.md
+docs/BUILD.md
+docs/PIVOT_PLAN.md
+docs/TEMPORAL_TRUTH_AND_PRIVATE_CONTEXT.md
+docs/RELEASE_CHECKLIST.md
+docs/SHIPPING.md
+website/
+scripts/site/

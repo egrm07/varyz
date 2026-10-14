@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "answers": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "answer": {"type": "string"},
+          "citations": {"type": "array", "items": {"type": "string"}},
+          "abstained": {"type": "boolean"},
+          "withheld_sensitive": {"type": "boolean"}
+        },
+        "required": ["id", "answer", "citations", "abstained", "withheld_sensitive"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["answers"],
+  "additionalProperties": false
+}

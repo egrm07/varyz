@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily encrypted Varyz Cloud SQLite backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+Unit=varyz-cloud-backup.service
+
+[Install]
+WantedBy=timers.target

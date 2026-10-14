@@ -1,0 +1,77 @@
+name: macOS installer candidates
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/macos-installer-build, 'codex/launch-candidate-*']
+    paths:
+      - '.github/workflows/macos-installer.yml'
+      - 'scripts/macos/**'
+      - 'scripts/windows/native.py'
+      - 'src/varyz/release_upgrade.py'
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'docs/NATIVE_INSTALLER.md'
+      - 'LICENSE*'
+      - 'NOTICE'
+      - 'scripts/release_manifest.py'
+      - 'tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.2
+          enable-cache: false
+      - name: Build architecture-specific package
+        run: sh scripts/macos/build.sh
+      - name: Verify payload without opening setup
+        run: |
+          for package in dist/VaryzSetup-*-macos-*.pkg; do
+            pkgutil --expand-full "$package" "$RUNNER_TEMP/expanded"
+            test -f "$RUNNER_TEMP/expanded/PackageInfo"
+          done
+          payload=$(find .build-cache/macos-stage-*/root -name payload.json -print -quit)
+          runtime=$(dirname "$payload")
+          "$runtime/runtime/bin/python3" "$runtime/native.py" verify
+      - name: Check offline install, repeat install and data-preserving removal
+        run: |
+          export UV_TOOL_DIR="$RUNNER_TEMP/varyz-tools"
+          export UV_TOOL_BIN_DIR="$RUNNER_TEMP/varyz-bin"
+          export VARYZ_CONFIG="$RUNNER_TEMP/varyz-archive/config.toml"
+          mkdir -p "$RUNNER_TEMP/varyz-archive"
+          printf 'synthetic preserved data\n' > "$RUNNER_TEMP/varyz-archive/keep.txt"
+          payload=$(find .build-cache/macos-stage-*/root -name payload.json -print -quit)
+          runtime=$(dirname "$payload")
+          "$runtime/runtime/bin/python3" "$runtime/native.py" install --app "$RUNNER_TEMP/varyz-app"
+          "$UV_TOOL_DIR/varyzai/bin/python" -c 'import onnxruntime, fastembed, numpy; print(onnxruntime.__version__, numpy.__version__)'
+          "$runtime/runtime/bin/python3" "$runtime/native.py" install --app "$RUNNER_TEMP/varyz-app"
+          "$runtime/runtime/bin/python3" "$runtime/native.py" uninstall --app "$RUNNER_TEMP/varyz-app"
+          test -f "$RUNNER_TEMP/varyz-archive/keep.txt"
+          test ! -e "$UV_TOOL_DIR/varyzai/uv-receipt.toml"
+      - name: Record commit and package checksums
+        run: python3 scripts/release_manifest.py --output dist/native-release-provenance.json
+      - name: Save unsigned installer candidates
+        # Integrity and a real offline tool install are required before retaining a candidate.
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Varyz-macOS-${{ matrix.runner }}
+          path: |
+            dist/VaryzSetup-*-macos-*.pkg
+            dist/VaryzSetup-*-macos-*.sha256
+            dist/native-release-provenance.json
+          if-no-files-found: error
+          retention-days: 14

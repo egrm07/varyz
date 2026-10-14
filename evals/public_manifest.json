@@ -1,0 +1,14 @@
+{
+  "version": "public-retrieval-v1",
+  "frozen_at": "2026-08-01",
+  "corpus_sha256": "08e3514ffa606b9c0c5fa8fa1c4aaf0083fabe80eb9694771ded63c374aa5804",
+  "tasks_sha256": "0ce277331168937cf0d1c2a0a5dcedac54e1acb215de2fb643370ebdb2cb9101",
+  "dev_ids_sha256": "25837abc1a168889097cd342147bda09c12b853a2b866ab7e53c39ae593a3633",
+  "held_out_ids_sha256": "f15a20e5979f2854a37200587eec1bd8872e07b001a29383106a34559836d8ef",
+  "corpus_files": 48,
+  "tasks": 60,
+  "dev_tasks": 36,
+  "held_out_tasks": 24,
+  "split_policy": "Frozen before retrieval scoring; tuning may inspect dev only.",
+  "privacy": "All people, places, organisations, events and facts are synthetic."
+}

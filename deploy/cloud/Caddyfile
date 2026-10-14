@@ -1,0 +1,19 @@
+# Prepare DNS for varyzai.com and cloud.varyzai.com before starting this edge.
+# Run Caddy on the same approved Hetzner host as the loopback-only cloud service.
+# No access log is enabled: do not log OAuth or verification query strings.
+varyzai.com {
+    root * /srv/varyz/website
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options DENY
+    }
+    file_server
+}
+
+# Activate only after cloud staging, seller details and privacy processing are ready.
+cloud.varyzai.com {
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy 127.0.0.1:8080
+}

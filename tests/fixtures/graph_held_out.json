@@ -1,0 +1,54 @@
+[
+  {
+    "id": "held-1",
+    "body": "I moved to Berlin on 2021-03-02.",
+    "entities": [
+      {"entity_type": "person", "label": "Me"},
+      {"entity_type": "place", "label": "Berlin"}
+    ],
+    "claims": [
+      {
+        "predicate": "moved_to",
+        "object_surface": "Berlin",
+        "modality": "fact",
+        "valid_from": "2021-03-02",
+        "asserted_by_key": "self"
+      }
+    ]
+  },
+  {
+    "id": "held-2",
+    "body": "I dreamed I moved to Lisbon.",
+    "entities": [
+      {"entity_type": "person", "label": "Me"},
+      {"entity_type": "place", "label": "Lisbon"}
+    ],
+    "claims": [
+      {
+        "predicate": "moved_to",
+        "object_surface": "Lisbon",
+        "modality": "dream",
+        "valid_from": null,
+        "asserted_by_key": "self"
+      }
+    ]
+  },
+  {
+    "id": "held-3",
+    "body": "From: Anna\nChat: Anna\n\nI may move to Madrid next month.",
+    "entities": [
+      {"entity_type": "person", "label": "Me"},
+      {"entity_type": "person", "label": "Anna"},
+      {"entity_type": "place", "label": "Madrid"}
+    ],
+    "claims": [
+      {
+        "predicate": "moved_to",
+        "object_surface": "Madrid",
+        "modality": "plan",
+        "valid_from": null,
+        "asserted_by_key": "display:manual:held-3:anna"
+      }
+    ]
+  }
+]
