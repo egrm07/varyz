@@ -1224,3 +1224,8 @@ All notable changes to Varyz are recorded here. The format follows
 - Retain the exact unsigned Windows candidate with provenance and checksums.
 - Complete clean and returning-user onboarding using only an isolated fictional document.
 - Verify configured reinstall, uninstall/reinstall, and preserved synthetic preferences through the installed CLI.
+
+## 2026-10-15 Isolated native daemon restart
+
+- Preserve isolated Python mode when the native CLI starts its daemon child, so inherited foreign PYTHONHOME/PYTHONPATH cannot break restart after installation.
+- Add a live synthetic daemon regression reproducing the failure and verifying authenticated startup and shutdown.

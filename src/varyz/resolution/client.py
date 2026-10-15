@@ -498,6 +498,10 @@ def ensure_daemon(
     if is_paused(cfg):
         return None
     command = [sys.executable, "-m", "varyz", "daemon", "run", "--config", str(config_path)]
+    if sys.flags.isolated:
+        # The native launcher deliberately ignores foreign PYTHONHOME/PYTHONPATH.
+        # Keep that isolation when its CLI starts the long-lived daemon too.
+        command.insert(1, "-I")
     process = subprocess.Popen(  # noqa: S603 - fixed local module invocation
         command,
         stdin=subprocess.DEVNULL,
