@@ -32,7 +32,7 @@ def main() -> None:
     uv = shutil.which("uv")
     if not uv or not run(uv, "--version").startswith("uv 0.11.2 "):
         raise SystemExit("The reviewed uv version is required")
-    runtime = Path(run(uv, "python", "find", "3.12")).parent
+    runtime = Path(run(uv, "python", "find", "--system", "3.12")).parent
     shutil.copyfile(uv, folder / "uv.exe")
     hashes = {
         "MIT": "860e3d7a86b84e6a7012c7a635fc64df475cebc6cce34dfeb73a5982ec58176c",
