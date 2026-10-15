@@ -1218,3 +1218,9 @@ All notable changes to Varyz are recorded here. The format follows
 
 - Regenerate the separate read-only archive draft after the hosted plugin version and data-limit guidance update.
 - Restore the archive export reproducibility check without changing the submitted main plugin package.
+
+## 2026-10-15 Windows release acceptance
+
+- Retain the exact unsigned Windows candidate with provenance and checksums.
+- Complete clean and returning-user onboarding using only an isolated fictional document.
+- Verify configured reinstall, uninstall/reinstall, and preserved synthetic preferences through the installed CLI.
