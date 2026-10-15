@@ -1207,3 +1207,9 @@ All notable changes to Varyz are recorded here. The format follows
   fixed by a new regression and fresh resolver output, not by rewriting that score.
 - Local model evaluation is synthetic and small. Gemma remains the conservative default;
   Qwen and SemIf speed paths are not promoted.
+
+## 2026-10-15 Plugin 0.1.13 hosted-data safeguards
+
+- State hosted prohibited-data limits before tool calls and respect withheld records.
+- Preserve existing-installation onboarding and native OAuth; retain five positive and three negative review cases.
+- Clarify that no hosted special-category-data process is currently supported; align privacy and compliance documentation.

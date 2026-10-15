@@ -5,6 +5,15 @@ description: Retrieve approved Varyz Cloud history, project context, chronology 
 
 # Approved Cloud history
 
+Do not put credentials, payment-card details, government identifiers, personal
+health records, special-category personal information or children's personal
+information below the applicable digital-consent age into hosted search arguments.
+The age is 16 in the Netherlands. No hosted process currently accepts special-category
+personal information. Use a general query without prohibited details where useful.
+Respect withheld records; do not repeat sensitive content, change labels, switch
+backends or widen access to retrieve it. Approval and automated filtering cannot
+establish every person's consent or legal rights. See https://varyzai.com/privacy.
+
 Use the connected server's actual schemas. The plugin and context endpoints expose
 read-only `context`, `search`, `fetch`, `timeline`, `compare` and `session_history`. An older
 archive-only connection may expose only `search` and `fetch`; do not call missing

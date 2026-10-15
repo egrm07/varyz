@@ -5,6 +5,20 @@ description: Apply confirmed Varyz preferences, retrieve approved Cloud history 
 
 # Hosted Varyz
 
+## Hosted data limits
+
+Do not send credentials, payment-card details, government identifiers, personal
+health records, special-category personal information or personal information
+about children below the applicable digital-consent age to Varyz Cloud. The age
+is 16 in the Netherlands. There is currently no supported hosted process for
+accepting special-category personal information. Check the intended arguments
+before calling a hosted tool; a project approval does not override these limits.
+Use a general question that omits prohibited details when that can serve the task.
+If Cloud withholds a record, explain the limit without repeating sensitive content,
+switching backends, relabeling data or widening access to obtain it. Automated
+checks are incomplete and do not establish consent, age or legal permission.
+The privacy notice is https://varyzai.com/privacy; terms are https://varyzai.com/terms.
+
 ## Continuation and completion evidence
 
 Use `start_task.continuation` for already approved work reports. Preserve project,

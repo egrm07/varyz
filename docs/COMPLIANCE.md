@@ -19,7 +19,7 @@ Last updated: 15 October 2026
 
 ## Content rules
 
-Do not put credentials, government identifiers, payment-card information, protected health information or personal information about children below the applicable digital-consent age into the hosted service or plugin. The Netherlands uses 16 where consent rules apply. Keep other special-category information out unless a separately supported lawful process permits it. Do not infer such permission from a project selection, an AI request or an earlier approval of another record.
+Do not put credentials, government identifiers, payment-card information, protected health information or personal information about children below the applicable digital-consent age into the hosted service or plugin. The Netherlands uses 16 where consent rules apply. Keep other special-category information out; Varyz Cloud currently provides no supported process for accepting it. Do not infer such permission from a project selection, an AI request or an earlier approval of another record.
 
 Content may concern someone other than the uploader. Upload authorization does not automatically establish that person's consent, a lawful basis, an Article 9 condition, or copyright permission. A scanner cannot reliably infer those rights or determine age. Ordinary discussions of medicine, security, parenting or regulation are not automatically personal records; blanket keyword bans would misrepresent that distinction. Minimize what reaches Cloud and connected AI providers.
 
