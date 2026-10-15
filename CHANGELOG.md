@@ -11,6 +11,10 @@ All notable changes to Varyz are recorded here. The format follows
 
 ### Changed
 
+- **Native acceptance pipeline (2026-10-15):** Public standard runners can build an unsigned Windows installer from locked inputs and test its actual install, reinstall, removal and Start Menu startup on a disposable Windows host. The workflow retains synthetic receipts and holds the unsigned installer. Mac notarization verifies the exact signing run, source and package hashes before Apple submission, stapling and Gatekeeper assessment.
+
+- **Attributed special-category records (2026-10-15):** Hosted screening also refuses detected explicit personal religion, sexuality, political, union, racial/ethnic, genetic and biometric records where no separately supported consent process exists. General discussion and schemas remain usable; quotations or fiction containing explicit personal declarations can conservatively be refused. This remains incomplete pattern detection.
+
 - **Hosted data boundaries and legal readiness (2026-10-15):** Refuse detected government identifiers, personal health records and attributed under-16 personal records at Cloud writes and hosted retrieval, including legacy sources; preserve privacy exports and stored records. Explain prohibited content before upload approval and OAuth consent. Privacy disclosures cover processing bases, recipients, transfers and rights; new compliance documentation states the limits of automated screening. Heuristics do not establish age, legal consent or comprehensive sensitive-data recognition.
 
 - **Account privacy notice (2026-10-15):** Show the canonical privacy notice before account forms and social sign-in, so users can read how account data is handled before continuing. This notice is not treated as blanket consent to upload history.

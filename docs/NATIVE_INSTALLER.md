@@ -30,6 +30,14 @@ Use Windows **Installed apps → Varyz → Uninstall**, or **Uninstall Varyz** i
 
 ## Reproducible build
 
+The `Windows native acceptance` workflow builds on a disposable standard public
+Windows runner using the locked dependency wheelhouse, managed Python, reviewed uv
+licences and the official runner image's Inno compiler. It compares the EXE with
+captured source provenance before isolated installation and actual shortcut startup.
+Only synthetic test receipts and checksums are retained; it does not distribute the
+unsigned EXE. A successful run establishes automated native lifecycle/startup checks,
+not a visual wizard review or an Authenticode signature.
+
 Use Windows x64, Python 3.12, uv and Inno Setup 6.7+. The builder is local-only and requires an existing standalone Python runtime and hash-verified wheelhouse. The Inno compiler is a build dependency only; users never install it. Obtain it from the official signed distribution. Review its commercial licensing terms before commercial distribution.
 
 ```powershell

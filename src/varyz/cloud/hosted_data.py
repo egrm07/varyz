@@ -1,7 +1,8 @@
 """Conservative Cloud-only prohibited-data guard, not a compliance classifier.
 
 Detected credentials/cards, explicit government identifiers, and clearly attributed
-health or under-16 personal records are refused. Unlabelled, multilingual or encoded
+health, explicit special-category or under-16 personal records are refused.
+Unlabelled, multilingual or encoded
 records can escape these heuristics. Age, identity, legal consent and the absence of
 sensitive data cannot be established by this scanner. Keep the service policy and
 explicit upload selection; never advertise this as comprehensive DLP or age checking.
@@ -20,7 +21,8 @@ from varyz.privacy.secrets_scan import MAX_SCAN_CHARS, redact_tree
 
 POLICY = (
     "Varyz Cloud does not accept credentials, payment-card numbers, government "
-    "identifiers, personal health records or personal data about children below "
+    "identifiers, personal health or other special-category records, or personal data "
+    "about children below "
     "the applicable digital-consent age. Do not upload these records. "
     "Automated checks are incomplete; review selected data before syncing."
 )
@@ -60,6 +62,38 @@ _CHILD_PERSONAL = re.compile(
 _AGE_FIELD = re.compile(
     r"\b(?:child[ _-]*age|patient[ _-]*age|age)\s*[\"']?\s*[:=]\s*[\"']?(\d{1,2})\b"
 )
+# Generic project/OAuth approval is not a separately supported Article 9 flow.
+# Match attributed records, not every mention of religion, politics or medicine.
+_SPECIAL_FIELDS = (
+    r"religion|religious[ _-]*beliefs?|philosophical[ _-]*beliefs?|"
+    r"sexual[ _-]*orientation|sex[ _-]*life|political[ _-]*(?:opinion|affiliation|belief)s?|"
+    r"trade[ _-]*union(?:[ _-]*membership)?|union[ _-]*membership|"
+    r"racial[ _-]*origin|ethnic[ _-]*origin|ethnicity|"
+    r"genetic[ _-]*(?:profile|data)|dna[ _-]*(?:profile|sequence)|"
+    r"(?:fingerprint|face|biometric)[ _-]*(?:template|identity|identifier)"
+)
+_SPECIAL_DECLARATION = re.compile(
+    rf"\bmy (?P<field>{_SPECIAL_FIELDS})\s*(?:is|are|:|=)\s*"
+    r"(?P<value>[^\n\r\";{}\[\]]{1,120})"
+)
+_SPECIAL_FIELD = re.compile(
+    rf"\b(?:{_SPECIAL_FIELDS})\s*[\"']?\s*[:=]\s*[\"']?"
+    r"(?P<value>[^\n\r\"',;:{}\[\]]{1,120})"
+)
+_SPECIAL_SELF = re.compile(
+    r"\bi(?: am|'m) (?:gay|lesbian|bisexual|homosexual|heterosexual|"
+    r"a (?:muslim|christian|buddhist|hindu|jew|socialist|communist|trade union member)|"
+    r"an atheist|a member of (?:the |a )?trade union)"
+    r"(?=$|[\s]*(?:[.,;!\"}\]]|and\b|who\b))"
+)
+_UNDISCLOSED = re.compile(
+    r"^(?:unknown|unspecified|undisclosed|private|confidential|not disclosed|"
+    r"prefer not to (?:say|disclose)|none of your business|null|n/?a)\b"
+)
+
+
+def _disclosed(value: str) -> bool:
+    return bool(value.strip()) and not _UNDISCLOSED.match(value.strip())
 
 
 def _text(value: Any, depth: int = 0) -> str:
@@ -91,6 +125,12 @@ def require_hosted_safe(value: Any) -> None:
         raise HostedDataRejected("Cloud content contains a detected government identifier")
     if _PERSONAL_HEALTH.search(text):
         raise HostedDataRejected("Cloud content contains a detected personal health record")
+    if _SPECIAL_SELF.search(text) or any(
+        _disclosed(match.group("value")) for match in _SPECIAL_DECLARATION.finditer(text)
+    ):
+        raise HostedDataRejected(
+            "Cloud content contains a detected special-category personal record"
+        )
     for match in _CHILD_PERSONAL.finditer(text):
         age = next(
             match.group(k)
@@ -104,6 +144,10 @@ def require_hosted_safe(value: Any) -> None:
             continue
         if _HEALTH_FIELD.search(record):
             raise HostedDataRejected("Cloud content contains a detected personal health record")
+        if any(_disclosed(match.group("value")) for match in _SPECIAL_FIELD.finditer(record)):
+            raise HostedDataRejected(
+                "Cloud content contains a detected special-category personal record"
+            )
         if any(int(m.group(1)) < 16 for m in _AGE_FIELD.finditer(record)):
             raise HostedDataRejected("Cloud content contains detected personal data about a child")
 

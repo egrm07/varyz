@@ -56,6 +56,56 @@ def test_benign_general_discussion(value):
     require_hosted_safe(value)
 
 
+@pytest.mark.parametrize("value", [
+    "My religion is Buddhist",
+    "My sexual orientation is bisexual",
+    "I am gay.",
+    "I'm a Muslim and prefer brief answers",
+    "My political affiliation is Example Party",
+    "My political opinions are socialist",
+    "I am a member of a trade union.",
+    "My trade union membership is Example Union",
+    "My ethnicity is Example ethnicity",
+    "My genetic profile is ACTGACTG",
+    "My fingerprint template is template-example-123",
+    {"full_name": "Alice Example", "religion": "Buddhist"},
+    {"email": "person@example.test", "sexual_orientation": "bisexual"},
+    {"full_name": "Alice Example", "political_opinion": "Example Party"},
+    {"full_name": "Alice Example", "union_membership": "Example Union"},
+    {"full_name": "Alice Example", "dna_sequence": "ACTGACTG"},
+    {"full_name": "Alice Example", "biometric_identifier": "template-example-123"},
+])
+def test_explicit_special_category_personal_records(value):
+    with pytest.raises(HostedDataRejected, match="special-category") as error:
+        require_hosted_safe(value)
+    assert "Alice" not in str(error.value)
+    assert "Example Party" not in str(error.value)
+
+
+@pytest.mark.parametrize("value", [
+    "Write a guide to political opinions and religious freedom",
+    "Discuss trade union membership and workplace rights",
+    "Build a database schema for genetic profiles and biometric identifiers",
+    "Explain why sexual orientation is special-category data",
+    "I am conservative with the retry budget",
+    "I am Christian Smith, the developer",
+    "I use fingerprint authentication",
+    "My religion is private",
+    "My sexual orientation is prefer not to say",
+    {"full_name": "Alice Example", "religion": "undisclosed"},
+    {"email": "person@example.test", "political_opinion": "not disclosed"},
+    {"properties": {"religion": {"type": "string"}, "full_name": {"type": "string"}}},
+    [{"full_name": "Alice Example"}, {"religion": "Example schema value"}],
+])
+def test_special_category_topics_and_undisclosed_fields_remain_available(value):
+    require_hosted_safe(value)
+
+
+def test_special_category_guard_reaches_existing_preference_write_boundary():
+    with pytest.raises(HostedDataRejected, match="special-category"):
+        canonical_payload("rule", {"statement": "My religion is Buddhist", "scope": "varyz"})
+
+
 def test_scanner_limits_are_fail_closed():
     with pytest.raises(HostedDataRejected, match="safety scan limit"):
         require_hosted_safe("a" * 1_000_001)
@@ -151,14 +201,18 @@ def test_legacy_preference_egress_is_explicitly_withheld(hosted):
         assert "123456782" in db.execute("SELECT payload FROM records").fetchone()[0]
 
 
-def test_legacy_archive_report_source_pages_and_mcp_do_not_leak(hosted):
+@pytest.mark.parametrize(("text", "private_value"), [
+    ("My BSN: 123456782", "123456782"),
+    ("My religion is Buddhist", "Buddhist"),
+    ("My political affiliation is Example Party", "Example Party"),
+])
+def test_legacy_archive_report_source_pages_and_mcp_do_not_leak(hosted, text, private_value):
     client, store, auth = hosted
     client.post("/api/archive/permit", headers=auth(), json={"project": "varyz"})
     assert push(client, auth(), payload()).status_code == 200
     permit(client, auth())
     assert upload(client, auth(), report()).status_code == 200
     archive = client.app.state.session_reports.archive
-    text = "My BSN: 123456782"
     doc = payload()
     doc["text"] = text
     doc["chunks"] = [{"text": text}]
@@ -171,11 +225,11 @@ def test_legacy_archive_report_source_pages_and_mcp_do_not_leak(hosted):
                        ("session_history", {"project": "varyz"})):
         result = rpc(client, plugin_auth(store), name, args)
         assert result["isError"], result
-        assert "123456782" not in str(result)
+        assert private_value not in str(result)
     for url in ("/archive/one", "/reports/one"):
         response = client.get(url, headers=plugin_auth(store))
         assert response.status_code == 404
-        assert "123456782" not in response.text
+        assert private_value not in response.text
     # Data rights operations are preserved; no silent destruction or inaccessible export.
-    assert "123456782" in str(archive.export("alice"))
-    assert "123456782" in str(client.app.state.session_reports.export("alice"))
+    assert private_value in str(archive.export("alice"))
+    assert private_value in str(client.app.state.session_reports.export("alice"))
