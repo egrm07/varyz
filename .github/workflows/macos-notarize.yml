@@ -1,0 +1,68 @@
+name: Notarize verified Mac candidates
+on:
+  workflow_dispatch:
+    inputs:
+      signing_run_id:
+        description: Successful signed installer workflow run in this repository
+        required: true
+        type: string
+      expected_source_commit:
+        description: Exact reviewed source commit from the signing run
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  notarize:
+    if: github.repository == 'egrm07/varyz'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Validate the exact signed source and fetch its artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          RUNNER_LABEL: ${{ matrix.runner }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          run_id = os.environ['SIGNING_RUN_ID']
+          expected = os.environ['EXPECTED_SOURCE_COMMIT']
+          assert run_id.isdigit(), 'Invalid run id'
+          assert re.fullmatch('[0-9a-f]{40}', expected), 'Invalid source commit'
+          repository = os.environ['GITHUB_REPOSITORY']
+          run = json.loads(subprocess.check_output(['gh', 'api', 'repos/'+repository+'/actions/runs/'+run_id]))
+          assert run['head_sha'] == expected, 'Unexpected source revision'
+          assert run['path'] == '.github/workflows/macos-signed-installer.yml', 'Wrong workflow'
+          assert run['conclusion'] == 'success' and run['event'] == 'workflow_dispatch', 'Signing run not accepted'
+          subprocess.run(['gh', 'run', 'download', run_id, '--repo', repository,
+              '--name', 'Varyz-signed-awaiting-notarization-'+os.environ['RUNNER_LABEL'], '--dir', 'signed-input'], check=True)
+          PY
+      - name: Notarize, staple and assess the verified package
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+          SIGNED_ARTIFACT: signed-input
+          NOTARIZED_OUTPUT: notarized-output
+        run: |
+          test -n "$APPLE_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$APPLE_TEAM_ID"
+          python3 scripts/macos/notarize_candidate.py
+      - name: Retain notarization proof and candidate for native acceptance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Varyz-notarized-${{ matrix.runner }}
+          path: notarized-output/
+          if-no-files-found: warn
+          retention-days: 14

@@ -110,7 +110,7 @@ jobs:
           "$runtime/runtime/bin/python3" "$runtime/native.py" verify
           python3 scripts/release_manifest.py --output dist/signed-candidate/native-release-provenance.json
           echo 'PASS actual signed payload, offline/repeat install, inference imports and preserved-data removal. Not notarized or published.'
-      - name: Retain private signed candidates, awaiting notarization
+      - name: Retain signed candidates, awaiting notarization and native acceptance
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Varyz-signed-awaiting-notarization-${{ matrix.runner }}

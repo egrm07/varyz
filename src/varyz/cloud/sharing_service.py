@@ -15,6 +15,7 @@ from varyz.privacy.secrets_scan import redact_tree
 
 from . import sharing_notify as notices
 from .billing import effective_account
+from .hosted_data import HostedDataRejected, require_hosted_safe
 from .payloads import canonical_payload, normalize_scope
 from .sharing_store import migrate
 from .signup import normalize_email
@@ -86,6 +87,10 @@ def clean(value):
     _, labels = redact_tree(value)
     if labels:
         fail(422, "credentials_detected", "Remove detected credentials before sharing")
+    try:
+        require_hosted_safe(value)
+    except HostedDataRejected as error:
+        fail(422, "prohibited_data_detected", str(error))
 
 
 def fills(level, fill_gaps):

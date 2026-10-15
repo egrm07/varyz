@@ -6,6 +6,8 @@ import unicodedata
 from varyz.privacy.secrets_scan import redact_tree
 from varyz.scopes import normalize_scope as canonical_scope
 
+from .hosted_data import require_hosted_safe
+
 
 def normalize_scope(scope):
     value = canonical_scope(scope)
@@ -20,6 +22,7 @@ def canonical_payload(kind, payload):
     _, labels = redact_tree(payload)
     if labels:
         raise ValueError("Preference contains detected credentials; remove them before cloud sync")
+    require_hosted_safe(payload)
     result = dict(payload)
     for key, value in result.items():
         if isinstance(value, str):

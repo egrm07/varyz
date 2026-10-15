@@ -22,6 +22,10 @@ def test_computer_shortcut_is_paid_and_keeps_setup_and_upload_choices_separate()
     assert 'id="computer-all-projects"' in text
     assert "Select projects with clear evidence" in text
     assert "Approve and finish" in text and "Review what will sync" in text
+    assert text.index("Varyz Cloud does not accept credentials") < text.index(
+        'id="computer-finish-button"'
+    )
+    assert "Automated checks are incomplete" in text
     assert 'id="computer-done-step"' in text
     assert 'id="connect-computer"' not in render_dashboard(
         {**OWNER, "status": "inactive"},

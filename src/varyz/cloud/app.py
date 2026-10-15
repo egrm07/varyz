@@ -38,6 +38,8 @@ from varyz.resolution.questioning import QUESTION_POLICY
 from .admission import Admission, Backpressure
 from .billing import effective_account, event_time, record_payment, record_refund
 from .browser import delete_cookie, read_cookie, set_cookie
+from .hosted_data import POLICY as HOSTED_DATA_POLICY
+from .hosted_data import HostedDataRejected, require_hosted_safe
 from .payloads import canonical_payload, normalize_scope
 from .signup import InvalidSignupEmail, SignupDNSUnavailable, normalize_email, validate_signup_email
 from .store import Conflict, QuotaExceeded, Store, digest
@@ -898,6 +900,15 @@ def create_app(settings=None):
     ):
         if not auth and "<main" not in content:
             content = '<main class="cloud-document">' + content + '</main>'
+        # Social completion, recovery and consent pages also collect account data.
+        # Keep the notice available before their controls, not just on password signup.
+        if auth and 'href="https://varyzai.com/privacy"' not in content:
+            content = (
+                '<p>Before continuing, read the '
+                '<a href="https://varyzai.com/privacy">Privacy notice</a> '
+                'for account data, connected services and your rights.</p>'
+                + content
+            )
         # Public pages (a creator's profile) carry their own title and link preview.
         head = "<title>" + html.escape(title or "Varyz Cloud") + "</title>"
         if description:
@@ -1037,6 +1048,9 @@ def create_app(settings=None):
             f"<h1>{'Create your account' if action == 'signup' else 'Sign in'}</h1>"
             + "<p>Your preferences, ready for every AI you use.</p>"
             + (f'<p role="alert">{html.escape(error)}</p>' if error else "")
+            + '<p>Before continuing, read the '
+            '<a href="https://varyzai.com/privacy">Privacy notice</a> '
+            'for account data, connected services and your rights.</p>'
             + social.buttons()
             + f'<form method="post" action="/{action}"><input type="hidden" '
             f'name="csrf" value="{token}">{username_field}<label>Email '
@@ -2178,6 +2192,9 @@ def create_app(settings=None):
                 if data["client_id"] == LOCAL_CLIENT and data.get("scope", "varyz") == "varyz"
                 else "It cannot change billing or delete your account.</p>"
             )
+            + '<p>Read the <a href="https://varyzai.com/privacy">Privacy notice</a> '
+            'before sharing data with this connection.</p>'
+            + '<p class="cloud-guidance">' + html.escape(HOSTED_DATA_POLICY) + '</p>'
             + '<form method="post">'
             + fields
             + f'<input type="hidden" name="csrf" value="{token}"><button>Allow connection</button></form>'  # noqa: E501
@@ -2942,6 +2959,7 @@ def create_app(settings=None):
             if not isinstance(args, dict):
                 raise HTTPException(400, "Invalid tool arguments")
             try:
+                require_hosted_safe(args)
                 if name == "session_history":
                     value = reports.history(owner["id"], ReportQuery.model_validate(args))
                 elif name == "search" and set(args) <= {
@@ -2973,10 +2991,13 @@ def create_app(settings=None):
                     }
                 else:
                     raise ValueError("Read-only archive tool unavailable")
+                require_hosted_safe(value)
                 result = {
                     "structuredContent": value,
                     "content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}],
                 }
+            except HostedDataRejected as error:
+                return tool_error(identifier, str(error) + ". " + HOSTED_DATA_POLICY)
             except (KeyError, ValueError, TypeError):
                 return tool_error(identifier, "Archive record or read-only tool unavailable")
         elif method != "ping":
@@ -3262,6 +3283,10 @@ def create_app(settings=None):
             args = params.get("arguments", {})
             if not isinstance(args, dict):
                 raise HTTPException(400, "Tool arguments must be an object")
+            try:
+                require_hosted_safe(args)
+            except HostedDataRejected as error:
+                return tool_error(identifier, str(error) + ". " + HOSTED_DATA_POLICY)
             if combined and settings.shared_varyz_enabled:
                 from pydantic import ValidationError
 
@@ -3291,6 +3316,9 @@ def create_app(settings=None):
                         )
                 else:
                     value = await asyncio.to_thread(call_tool, owner, name, args)
+                require_hosted_safe(value)
+            except HostedDataRejected as error:
+                return tool_error(identifier, str(error) + ". " + HOSTED_DATA_POLICY)
             except HTTPException as error:
                 return tool_error(identifier, str(error.detail))
             except QuotaExceeded:

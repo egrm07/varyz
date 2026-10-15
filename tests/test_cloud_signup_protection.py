@@ -25,6 +25,17 @@ def signup(tmp_path):
         yield client, app.state.store, mail
 
 
+@pytest.mark.parametrize("path", ["/signup", "/login", "/recover"])
+def test_privacy_notice_precedes_account_data_collection(signup, path):
+    client, _, _ = signup
+    response = client.get(path)
+    assert response.status_code == 200
+    notice = '<a href="https://varyzai.com/privacy">Privacy notice</a>'
+    assert notice in response.text
+    assert response.text.index(notice) < response.text.index('<form method="post"')
+    assert response.text.index(notice) < response.text.index('name="email"')
+
+
 def enroll(client, email="owner@gmail.com", username="owner_name"):
     client.get("/signup")
     return client.post(

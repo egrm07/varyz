@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from varyz.cloud.hosted_data import require_hosted_safe
 from varyz.cloud.store import QuotaExceeded
 from varyz.privacy.secrets_scan import redact_tree
 
@@ -63,6 +64,7 @@ class Report(BaseModel):
             raise ValueError("Inconsistent report state")
         if len(self.model_dump_json()) > 6000 or redact_tree(self.model_dump())[1]:
             raise ValueError("Report exceeds bounds or contains credentials")
+        require_hosted_safe(self.model_dump())
         if self.evidence is not None:
             allowed = {
                 "coverage",
@@ -275,7 +277,9 @@ class SessionReports:
             ).fetchone()
         if not row:
             raise KeyError("Report unavailable")
-        return {**json.loads(self.archive.open(row["payload"])), "synced_at": row["synced_at"]}
+        value = {**json.loads(self.archive.open(row["payload"])), "synced_at": row["synced_at"]}
+        require_hosted_safe(value)
+        return value
 
     def export(self, account):
         with self.store.connection() as db:

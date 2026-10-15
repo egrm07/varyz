@@ -91,8 +91,13 @@ def complete(client, username="Social_Owner"):
 @pytest.mark.parametrize("provider", ["google", "github"])
 def test_social_signup_requires_chosen_username_and_reuses_stable_identity(social, provider):
     client, store, identity, requests = social
+    signup_page = client.get("/signup")
+    notice = '<a href="https://varyzai.com/privacy">Privacy notice</a>'
+    assert signup_page.text.index(notice) < signup_page.text.index(f'/auth/{provider}/start')
     state = start(client, provider)
     assert callback(client, state, provider).headers["location"] == "/auth/complete"
+    completion_page = client.get("/auth/complete")
+    assert completion_page.text.index(notice) < completion_page.text.index('<form method="post"')
     with store.connection() as db:
         assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
     assert complete(client, "ab").status_code == 422

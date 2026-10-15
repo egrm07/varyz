@@ -10,6 +10,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from .hosted_data import POLICY as HOSTED_DATA_POLICY
+
 
 def _escape(value: Any) -> str:
     return html.escape(str(value), quote=True)
@@ -665,7 +667,7 @@ def render_connection_guide(connections, current, public_url, account_id="", csr
             '<div id="computer-projects" class="cloud-projects"></div></fieldset>'
             '<p class="cloud-guidance">Each selected project includes confirmed preferences, '
             "eligible conversations, documents, Git history and work reports. "
-            "Private records and credentials stay on your computer. "
+            "Records labelled sensitive or unclassified and detected credentials stay local. "
             "Nothing uploads until you approve the next screen.</p>"
             '<button type="button" id="computer-preview-button">Review what will sync</button>'
             '<p id="computer-selection-status" class="cloud-guidance" role="status" aria-live="polite"></p>'
@@ -677,6 +679,7 @@ def render_connection_guide(connections, current, public_url, account_id="", csr
             '<details><summary>What is included</summary><p id="computer-preview-details"></p></details>'
             '<p class="cloud-guidance">New eligible context in these projects will sync automatically. '
             "New projects stay local until you select them. Change your selection at any time.</p></div>"
+            '<p class="cloud-guidance">' + _escape(HOSTED_DATA_POLICY) + '</p>'
             '<button type="button" id="computer-finish-button">Approve and finish</button> '
             '<button type="button" id="computer-back-button" class="cloud-secondary">Change projects</button>'
             '<p id="computer-finish-status" class="cloud-guidance" role="status" aria-live="polite"></p>'

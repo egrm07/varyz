@@ -9,6 +9,8 @@ from datetime import datetime
 
 from varyz.scopes import normalize_scope
 
+from .hosted_data import require_hosted_safe
+
 
 class ArchiveViews:
     def revision_usage(self, account):
@@ -170,6 +172,7 @@ class ArchiveViews:
         if not row:
             raise KeyError("Retained source version unavailable")
         doc = json.loads(self.open(row["payload"]))
+        require_hosted_safe(doc)
         return {
             "id": identity,
             "title": doc["title"],

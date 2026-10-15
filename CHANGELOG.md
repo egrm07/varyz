@@ -11,6 +11,10 @@ All notable changes to Varyz are recorded here. The format follows
 
 ### Changed
 
+- **Hosted data boundaries and legal readiness (2026-10-15):** Refuse detected government identifiers, personal health records and attributed under-16 personal records at Cloud writes and hosted retrieval, including legacy sources; preserve privacy exports and stored records. Explain prohibited content before upload approval and OAuth consent. Privacy disclosures cover processing bases, recipients, transfers and rights; new compliance documentation states the limits of automated screening. Heuristics do not establish age, legal consent or comprehensive sensitive-data recognition.
+
+- **Account privacy notice (2026-10-15):** Show the canonical privacy notice before account forms and social sign-in, so users can read how account data is handled before continuing. This notice is not treated as blanket consent to upload history.
+
 - **Source publication documentation (2026-10-15):** Security reporting covers local and hosted boundaries, including Cloud account isolation and revocation. Source installation instructions and release status distinguish public source availability from pending native and plugin release checks.
 
 - **Cloud consent preview ordering (2026-10-15):** Validate the approved preference preview before reading Cloud project-pause state. Changed previews stop before that extra request or any upload; project pause behavior remains applied to accepted syncs.

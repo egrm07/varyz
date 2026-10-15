@@ -17,6 +17,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from varyz.cloud.archive_views import ArchiveViews
+from varyz.cloud.hosted_data import require_hosted_safe
 from varyz.cloud.payloads import normalize_scope
 from varyz.cloud.store import QuotaExceeded
 from varyz.privacy.secrets_scan import redact_tree
@@ -167,6 +168,7 @@ class Document(BaseModel):
         _, labels = redact_tree(self.model_dump())
         if labels:
             raise ValueError("Archive contains detected credentials")
+        require_hosted_safe(self.model_dump())
         return self
 
 
@@ -486,6 +488,7 @@ class Archive(ArchiveViews):
         if not row or row["payload"] == "null":
             raise KeyError("Archive record unavailable")
         doc = json.loads(self.open(row["payload"]))
+        require_hosted_safe(doc)
         if project is not None and doc["project"] != normalize_scope(project):
             raise KeyError("Archive record unavailable")
         return {

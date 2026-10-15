@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: 12 October 2026
+Last updated: 15 October 2026
 
 This is the privacy notice for the Varyz website (varyzai.com) and for the Varyz software it
 distributes. It is the canonical copy: the website's privacy page is generated from this file
@@ -133,16 +133,26 @@ service cannot guarantee that every AI host follows those instructions.
 
 ## Purpose and control
 
-Cloud account, synchronization and billing processing are intended to provide the service you request. Essential security processing protects accounts and limits abuse; required transaction records support legal obligations. Cloud synchronization is optional. Keep sensitive personal information out of preferences unless you intend to share it with the tools you connect.
+We use account, authentication and subscription information to provide the service you request and administer your contract (GDPR Article 6(1)(b)). Necessary security logging, rate limits and abuse prevention support our legitimate interests in keeping accounts and the service safe (Article 6(1)(f)); we limit their scope and retention as described above. Records that we must retain for tax, accounting or other legal obligations are processed on that legal basis (Article 6(1)(c)), rather than optional synchronization consent.
+
+Optional improvement analytics and the optional synchronization of selected preferences or separately approved history rely on your informed choice and consent (Article 6(1)(a)). You can withdraw that permission through the relevant consent, project revocation or connection controls. Withdrawal does not invalidate earlier lawful processing. Disconnecting a tool stops its future access but does not itself delete previously synchronized records or copies already delivered to another provider. Use the account or project deletion controls to request removal of active Cloud copies.
+
+Your connected AI provider processes the information it receives under its own terms and privacy notice. It may be outside the EEA. Read that provider's notice before connecting it; a German Cloud server does not mean that every recipient or backup stays in Germany. The suppliers and transfer information described above apply to their respective functions. Contact us for information about the safeguards applicable to a transfer and how to obtain a copy where available.
+
+Do not synchronize or send through the hosted plugin payment-card details, government identifiers, passwords, API keys, protected health information, or personal information about children below the applicable age of digital consent (16 in the Netherlands). Keep special-category information, such as identifiable health, sexuality or religious information, out of hosted preferences and history unless a separately supported lawful process explicitly permits it. A project approval or a connected tool's request is not blanket permission for sensitive data. Automated checks cannot reliably recognize every sensitive record; you must also choose carefully what to share.
+
+Only share content you are entitled to process and disclose. An imported conversation can contain someone else's personal information or copyrighted words. Your approval does not provide that person's consent or transfer their rights. This notice does not grant permission to upload unlawful content. If you believe information about you was uploaded by another person, contact us without sending an entire private conversation; we will assess the request and the applicable rights.
 
 ## Your rights
 
 The public information website keeps the short-lived logs described above. Private
 Cloud accounts keep account information, selected preferences and separately approved
 history. You can export account data or request deletion through the account page.
-You can also ask us to access, correct, export or delete the data kept with your account. Write to
-the address above and we will answer. You can also complain to your data protection
-authority.
+You can also ask us for access, correction, erasure, restriction of processing and, where applicable, a portable copy of your data. You may object to processing based on legitimate interests and withdraw consent for optional processing. These rights have legal conditions and exceptions; for example, necessary accounting records may need to be retained after account deletion. We may ask for proportionate information to verify your identity, without routinely requiring an identity-document copy.
+
+Write to the contact address above. We normally respond within one month; where the law allows an extension for complexity or volume, we explain it within that first month. You can complain to the [Autoriteit Persoonsgegevens](https://autoriteitpersoonsgegevens.nl/) in the Netherlands or your relevant data protection authority. You do not have to contact us first.
+
+Account email and authentication information are needed for a Cloud account; without them we cannot provide that account. Local Varyz remains available without one. Optional analytics and optional history synchronization can be declined. Varyz's preference suggestions are assistance for your chosen AI tools; we do not use them to make solely automated decisions with legal or similarly significant effects about you.
 
 ## Changes
 

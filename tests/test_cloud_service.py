@@ -827,6 +827,12 @@ def test_oauth_browser_continuation_and_all_device_logout(cloud):
     )
     consent = client.get(response.headers["location"])
     assert "Allow connection" in consent.text
+    assert consent.text.index('href="https://varyzai.com/privacy"') < consent.text.index(
+        '<form method="post">'
+    )
+    assert consent.text.index("Varyz Cloud does not accept credentials") < consent.text.index(
+        "Allow connection"
+    )
     params["csrf"] = client.cookies.get("csrf")
     response = client.post("/oauth/authorize", data=params, follow_redirects=False)
     assert response.headers["location"].startswith("http://127.0.0.1:8766/callback?code=")
