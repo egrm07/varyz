@@ -1213,3 +1213,8 @@ All notable changes to Varyz are recorded here. The format follows
 - State hosted prohibited-data limits before tool calls and respect withheld records.
 - Preserve existing-installation onboarding and native OAuth; retain five positive and three negative review cases.
 - Clarify that no hosted special-category-data process is currently supported; align privacy and compliance documentation.
+
+## 2026-10-15 Archive package generation
+
+- Regenerate the separate read-only archive draft after the hosted plugin version and data-limit guidance update.
+- Restore the archive export reproducibility check without changing the submitted main plugin package.
