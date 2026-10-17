@@ -340,6 +340,8 @@ def test_auto_waits_for_an_installed_model_on_a_gpu(tmp_path, monkeypatch):
 
 
 def test_auto_falls_back_to_the_classifier_model_on_a_gpu(tmp_path, monkeypatch):
+    monkeypatch.setattr(judge_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(judge_module.platform, "machine", lambda: "x86_64")
     cfg = Config(base_dir=tmp_path)
     cfg.workflows.classifier_keep_alive = "90s"
     assert cfg.retrieval.judge == "auto"
@@ -362,6 +364,25 @@ def test_auto_falls_back_to_the_classifier_model_on_a_gpu(tmp_path, monkeypatch)
     assert ollama.keep_alive == "90s"
     assert ollama.format_schema == judge_module.JUDGE_SCHEMA
     assert ollama.request_timeout_seconds == 60.0
+
+
+@pytest.mark.parametrize("system,machine,expected", [
+    ("Darwin", "arm64", True),
+    ("Darwin", "aarch64", True),
+    ("Darwin", "x86_64", False),
+    ("Linux", "arm64", False),
+    ("Windows", "AMD64", False),
+])
+def test_classifier_judge_recognizes_apple_gpu_without_nvidia_memory(
+    tmp_path, monkeypatch, system, machine, expected
+):
+    monkeypatch.setattr(judge_module.platform, "system", lambda: system)
+    monkeypatch.setattr(judge_module.platform, "machine", lambda: machine)
+    monkeypatch.setattr("varyz.resolution.local_classifier.gpu_memory_mib", lambda: None)
+    monkeypatch.setattr("varyz.llm.ollama_local.OllamaProvider.available", lambda self: True)
+    assert isinstance(judge_module._classifier_judge(Config(base_dir=tmp_path)), Judge) is expected
+    monkeypatch.setattr("varyz.llm.ollama_local.OllamaProvider.available", lambda self: False)
+    assert judge_module._classifier_judge(Config(base_dir=tmp_path)) is None
 
 
 def test_the_classifier_judge_is_not_asked_when_it_would_crowd_the_card(

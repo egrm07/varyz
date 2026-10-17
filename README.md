@@ -49,14 +49,14 @@ setup also has a small **Skip to dashboard** link. **Choose projects** reopens t
 chooser when you want to change sharing.
 See [session progress](docs/SESSION_PROGRESS.md) for the contract and owner controls.
 
-The prepared Windows native installer bundles Python and dependencies, opens
+The Windows native installer bundles Python and dependencies, opens
 consent-based setup in your browser, and retains your data on uninstall. See
 [Native installer](docs/NATIVE_INSTALLER.md). The main public download entry point
-is [varyzai.com/download.html](https://varyzai.com/download.html); public release
-files will be hosted on GitHub Releases. The installer is currently an unsigned
-local candidate and is not publicly downloadable yet.
+is [varyzai.com/download](https://varyzai.com/download); release files and checksums
+are hosted on GitHub Releases. The initial Windows release is unsigned;
+Windows may show a security warning or block it under stricter security policies.
 
-Apple Silicon and Intel macOS PKG candidates are signed, notarized, stapled and
+Apple Silicon and Intel macOS PKGs are signed, notarized, stapled and
 Gatekeeper-verified. Their signed payloads passed offline installation, repeat
 installation and preserved-data removal on native runners. Real-Mac browser setup
 and Installer GUI tests remain pending. See [macOS installer](docs/MACOS_INSTALLER.md).
@@ -66,8 +66,8 @@ Plugin bundles and the optional paid cloud implementation are described in
 packages combine confirmed preferences with approved synced project history,
 timelines and retained-version comparisons. Local Claude Code/Codex packages use
 the full local engine. See [plugin capabilities](docs/PLUGIN_PARITY.md) for differences.
-Cloud has **no free trial**. Its backend is deployed; public distribution and
-native/phone platform validation remain pending.
+Cloud has **no free trial**. Its backend is deployed. Hosted marketplace approval
+and phone interoperability remain separate from the local release.
 The Cloud account page's **Connect this computer** button reuses a running local
 installation for browser sign-in. Setup instructions remain available when local
 Varyz cannot be reached. Then choose your projects, review a count-only preview,

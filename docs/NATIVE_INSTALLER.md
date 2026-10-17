@@ -2,7 +2,15 @@
 
 **Download VaryzSetup, install for your Windows user, and choose sources and agents in the browser. Python and runtime dependencies are bundled.**
 
-Prepared on 2026-10-04. This is a local Windows x64 candidate, not a signed or published release. Windows 10 version 1809 or later is required. No administrator rights, Python installation, GitHub login or manual extraction is required. Selected local models still need network access and disk space during consent-based setup.
+The initial Windows x64 release is unsigned, as authorized by the publisher on
+2026-10-18. Windows may show an unknown-publisher warning or block installation
+under stricter security policies. Download only through varyzai.com or the linked
+GitHub release and compare the published SHA-256. A checksum verifies file
+integrity; it does not establish a trusted publisher signature.
+
+Windows 10 version 1809 or later is required. No administrator rights, Python
+installation, GitHub login or manual extraction is required. Selected local models
+still need network access and disk space during consent-based setup.
 
 **2026-10-17 launch review:** The retained r27 EXE still reports `NotSigned`.
 Its SHA-256 matches the successful disposable Windows VM acceptance receipt:
@@ -12,7 +20,9 @@ uninstall/reinstall and preserved synthetic preferences passed on that VM.
 The first licence screen was visually inspected; later wizard screens remain
 unverified. These results apply to r27, not the newer working tree or signed bytes.
 
-1. Download the published `VaryzSetup-<version>-windows-x64.exe` once available. Verify its independently published SHA-256 and publisher signature before running it.
+1. Download `VaryzSetup-<version>-windows-x64.exe` and verify its published SHA-256.
+   The initial release has no publisher signature; later signed releases must also
+   pass Windows Authenticode verification.
 2. Close Varyz agents and stop its daemon/background sync before upgrading. The installer refuses active tools or unsupported receipts; it never force-kills them.
 3. Run the installer, review the licence, and finish installation. Leave **Open Varyz setup in your browser** selected for first setup.
 4. Choose sources and agent connections on the setup page. No account is needed for local use. Cloud selection and uploads require separate approval.
@@ -58,7 +68,7 @@ uv run --no-project --python 3.12 --with pip python -m pip download --require-ha
 .venv/Scripts/python.exe scripts/windows/build.py --runtime <standalone-python-folder> --uv <uv.exe> --wheelhouse .build-cache/native-tools/wheelhouse --stage <new-staging-folder> --compiler <ISCC.exe>
 ```
 
-Only package/source distributions, locked wheels, standalone Python, uv, the installer worker, upgrade worker and explicit notices enter the payload. No recursive repository packaging, local configuration, transcript, credential or archive directory is allowed. `payload.json` verifies every included file; `native-release-checksums.json` publishes the final EXE digest. Embedded checksums establish integrity, not publisher identity. Authenticode signing, native wizard/startup testing, clean Windows VM installation, upgrade and uninstall checks are required before public distribution.
+Only package/source distributions, locked wheels, standalone Python, uv, the installer worker, upgrade worker and explicit notices enter the payload. No recursive repository packaging, local configuration, transcript, credential or archive directory is allowed. `payload.json` verifies every included file; `native-release-checksums.json` publishes the final EXE digest. Embedded checksums establish integrity, not publisher identity. Retain native installation, startup, upgrade and removal receipts for the exact distributed bytes. The publisher authorized the initial unsigned release with an explicit download notice; signing remains available for future releases.
 
 ## Publisher signing
 

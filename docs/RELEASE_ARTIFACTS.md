@@ -2,6 +2,10 @@
 
 **Build from a reviewed commit, test the installed wheel, and retain its checksums.**
 
+**2026-10-18 release policy:** The initial Windows release is unsigned, with a clear
+security warning on the download page. Artifact checksums and exact-byte native
+acceptance remain required; macOS signing/notarization stays in place.
+
 The application remains version 0.1.0 until publication is approved. Hosted plugin
 versions come from their manifests (ChatGPT 0.1.8 and Claude Cloud 0.1.6 on
 2026-10-12). A candidate artifact does not close

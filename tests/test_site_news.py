@@ -78,6 +78,77 @@ def test_download_metadata_cannot_inject_an_external_destination():
         )
 
 
+def _public_release(monkeypatch, tmp_path):
+    import hashlib
+    import io
+    import json
+
+    prefix = site.REPOSITORY + "/releases/download/v0.1.0/"
+    content = {name: ("synthetic " + name).encode() for name in (
+        "VaryzSetup-0.1.0-windows-x64.exe",
+        "VaryzSetup-0.1.0-macos-arm64.pkg",
+        "VaryzSetup-0.1.0-macos-x86_64.pkg",
+        "varyzai-0.1.0-py3-none-any.whl",
+    )}
+    checksums = {name: hashlib.sha256(data).hexdigest() for name, data in content.items()}
+    release = {"tag_name": "v0.1.0", "draft": False, "prerelease": False, "assets": [
+        {"name": name, "browser_download_url": prefix + name, "size": len(data)}
+        for name, data in content.items()
+    ] + [{"name": "native-release-checksums.json",
+          "browser_download_url": prefix + "native-release-checksums.json"}]}
+    requests = []
+
+    def response(request, timeout):
+        assert "Authorization" not in request.headers
+        requests.append(request.full_url)
+        if request.full_url.endswith("/releases/latest"):
+            data = json.dumps(release).encode()
+        elif request.full_url.endswith("/native-release-checksums.json"):
+            data = json.dumps(checksums).encode()
+        else:
+            data = content[request.full_url.removeprefix(prefix)]
+        return io.BytesIO(data)
+
+    monkeypatch.setattr(site.urllib.request, "urlopen", response)
+    target = tmp_path / "download-release.json"
+    target.write_text('{"available": false}', encoding="utf-8")
+    monkeypatch.setattr(site, "DOWNLOAD_RELEASE", target)
+    return content, release, target, requests
+
+
+def test_all_download_platforms_require_anonymous_byte_verification(monkeypatch, tmp_path):
+    import json
+
+    content, _, target, requests = _public_release(monkeypatch, tmp_path)
+    site.refresh_download_release()
+    snapshot = json.loads(target.read_text())
+    assert set(snapshot["assets"]) == set(content)
+    assert len(requests) == len(content) + 2
+    body = site.download_body(snapshot)
+    assert "macos-arm64.pkg" in body and "macos-x86_64.pkg" in body
+    assert 'href="#linux-installation"' in body
+    assert "Windows installer is unsigned" in body
+    assert "Windows may show a security warning or block it" in body
+    assert "--package " + site.REPOSITORY + "/releases/download/v0.1.0/" in body
+
+
+def test_corrupt_mac_download_does_not_replace_a_safe_snapshot(monkeypatch, tmp_path):
+    content, _, target, _ = _public_release(monkeypatch, tmp_path)
+    before = target.read_bytes()
+    content["VaryzSetup-0.1.0-macos-arm64.pkg"] = b"corrupt package"
+    with pytest.raises(ValueError, match="does not match"):
+        site.refresh_download_release()
+    assert target.read_bytes() == before
+
+
+def test_release_asset_cannot_redirect_downloads_elsewhere(monkeypatch, tmp_path):
+    _, release, target, _ = _public_release(monkeypatch, tmp_path)
+    release["assets"][1]["browser_download_url"] = "https://unrelated.example/package.pkg"
+    with pytest.raises(ValueError, match="Unexpected public release destination"):
+        site.refresh_download_release()
+    assert target.read_text() == '{"available": false}'
+
+
 def test_every_post_in_docs_news_reaches_an_install_whole():
     _, posts = site.parse_news((ROOT / "docs" / "NEWS.md").read_text(encoding="utf-8"), date.max)
     assert posts, "docs/NEWS.md has no posts"

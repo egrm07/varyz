@@ -1,5 +1,12 @@
 # macOS installer
 
+> **Public release preparation 2026-10-18:** Apple Silicon and Intel packages
+> passed Developer ID signing, Apple notarization, stapling and Gatekeeper
+> assessment on native runners. Offline and repeat installation of their signed
+> payloads, inference imports and data-preserving removal passed. The owner will
+> deploy the Mac update separately; real-device browser setup and Installer GUI
+> acceptance have not been certified by these automated checks.
+
 > **Current preparation 2026-10-14:** Signed, notarized, stapled and
 > Gatekeeper-verified Apple Silicon and Intel candidates were produced from the
 > 2026-10-14 source, including task-completion repair and bundled interpreter

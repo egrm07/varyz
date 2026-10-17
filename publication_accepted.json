@@ -10241,6 +10241,13 @@
       "digest": "d996d96d6fb6ce9a",
       "entry_source": "ai_conversations",
       "reason": "Reviewed test function identifier describing setup waiting for an open review. The match is a source-code identifier repeated in an imported handoff, not private conversation prose."
+    },
+    {
+      "path": "tests/test_site_news.py",
+      "kind": "archive_quotation",
+      "digest": "0b8ebed643996a68",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed filename of the public Varyz wheel, used in a synthetic download-verification fixture. It is the package distribution name and wheel tag, not private conversation prose."
     }
   ]
 }
