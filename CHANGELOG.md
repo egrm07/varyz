@@ -4,10 +4,16 @@ All notable changes to Varyz are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> **Release candidate 2026-10-12.** Version 0.1.0 remains unreleased; `v0.1.0`
-> is created only after the release checks pass and publication is approved.
+> **Public release 2026-10-18.** Version 0.1.0 ships local Varyz for Windows,
+> macOS and Linux. The initial Windows installer is unsigned; Mac packages are signed and notarized.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-10-18
+
+### Fixed
+
+- **Setup test synchronization (2026-10-18):** Setup checks wait for the asynchronous learning offer and reading startup to finish before asserting their completed states. This removes a Windows scheduling race without changing setup behavior.
 
 ### Added
 

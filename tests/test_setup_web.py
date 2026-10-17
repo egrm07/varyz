@@ -990,19 +990,21 @@ def test_the_offer_is_asked_while_the_search_models_download(machine, monkeypatc
     session = SetupSession(machine.config)
     session.start(["claude-code"], ["ai_conversations"])
 
-    state = _until(session, lambda state: state["extract"] is not None)
-    assert state["steps"][3]["state"] == "running"  # still downloading
-    assert state["extract"]["state"] == "offered"
-    assert machine.extract.asked == [machine.config]
+    try:
+        state = _until(session, lambda state: state["extract"] is not None
+                       and state["extract"]["state"] == "offered")
+        assert state["steps"][3]["state"] == "running"  # still downloading
+        assert state["extract"]["state"] == "offered"
+        assert machine.extract.asked == [machine.config]
 
-    assert session.choose_extract(True) is None
-    assert started == [OFFER]
-    view = session.snapshot()["extract"]
-    assert (view["state"], view["phase"], view["plan"]) == ("accepted", "reading", "ChatGPT")
-    assert session.choose_extract(False) == "nothing to answer"
-
-    release.set()
-    _finished(session)
+        assert session.choose_extract(True) is None
+        view = _until(session, lambda state: state["extract"]["state"] == "accepted")["extract"]
+        assert started == [OFFER]
+        assert (view["state"], view["phase"], view["plan"]) == ("accepted", "reading", "ChatGPT")
+        assert session.choose_extract(False) == "nothing to answer"
+    finally:
+        release.set()
+        _finished(session)
     # Asked once, though step 4 says the sources are read twice.
     assert machine.extract.asked == [machine.config]
     assert session.extract_accepted
