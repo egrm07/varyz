@@ -37,6 +37,10 @@ CloseApplications=no
 RestartApplications=no
 SetupLogging=yes
 Uninstallable=yes
+#ifdef SignInstaller
+SignTool=VaryzSign
+SignedUninstaller=yes
+#endif
 
 [Files]
 Source: "{#Payload}\*"; DestDir: "{tmp}\native"; Flags: dontcopy recursesubdirs createallsubdirs

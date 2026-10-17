@@ -93,13 +93,17 @@ def _set_in_section(cfg_path: Path, section: str, key: str, value: str, old: str
     ``old`` matches the value being replaced, so a comment after it stays.
     """
     text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+    _write(cfg_path, _replace_in_section(text, section, key, value, old))
+
+
+def _replace_in_section(text: str, section: str, key: str, value: str, old: str) -> str:
+    """Pure text edit so a multi-setting consent change can be published atomically."""
     line = f"{key} = {value}"
     assignment = re.compile(rf"(?m)^[ \t]*{re.escape(key)}[ \t]*=[ \t]*(?:{old})")
     header = re.search(rf"(?m)^[ \t]*\[{re.escape(section)}\][ \t]*(?:#.*)?$", text)
     if header is None:
         prefix = "" if not text or text.endswith("\n\n") else "\n"
-        _write(cfg_path, text + prefix + f"[{section}]\n{line}\n")
-        return
+        return text + prefix + f"[{section}]\n{line}\n"
     body_start = text.find("\n", header.start())
     if body_start < 0:
         text += "\n"
@@ -110,7 +114,7 @@ def _set_in_section(cfg_path: Path, section: str, key: str, value: str, old: str
     body = (
         assignment.sub(line, body, count=1) if assignment.search(body) else f"{line}\n{body}"
     )
-    _write(cfg_path, text[: body_start + 1] + body + text[end:])
+    return text[: body_start + 1] + body + text[end:]
 
 
 def set_resolution_port(cfg_path: Path, port: int) -> None:
@@ -146,6 +150,33 @@ def set_classifier_url(cfg_path: Path, url: str) -> None:
     _set_in_section(
         cfg_path, "workflows", "classifier_url", json.dumps(url), r"\"[^\"\n]*\"|'[^'\n]*'"
     )
+
+
+def set_inference_mode(cfg_path: Path, mode: str, *, cloud_conversations: bool) -> None:
+    """Persist setup's mode and consent without widening any source approvals."""
+    if mode not in {"local", "conversations"}:
+        raise ValueError("inference mode must be local or conversations")
+    local = mode == "local"
+    cloud = cloud_conversations and not local
+    values = {
+        "inference_mode": mode,
+        "task_classifier": "model" if local else "embedding",
+        "redo_classifier": "model" if local else "rule",
+        "prompt_classifier": "model" if local else "rule",
+        "scope_classifier": "model" if local else "rule",
+        "paraphrase_verifier": "model" if local else "off",
+        "evidence_verifier": "model" if local else "off",
+        "rule_miner": "model" if local or cloud else "lexical",
+        "rule_reader_cloud": cloud,
+        "rule_reader_agent": cloud,
+        "live_reading": cloud,
+    }
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+    for key, value in values.items():
+        encoded = json.dumps(value)
+        text = _replace_in_section(text, "workflows", key, encoded,
+                                   r'"[^"\n]*"|\x27[^\x27\n]*\x27|true|false')
+    _write(cfg_path, text)
 
 
 def ensure_section(cfg_path: Path, section: str, content: str) -> bool:

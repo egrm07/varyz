@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from varyz.config import Config, WorkflowsConfig
 from varyz.db.connection import open_db
 from varyz.resolution.local_classifier import machine_fit
 from varyz.resolution.rule_miner import MiningStats
@@ -65,7 +66,7 @@ def test_an_8gb_mac_is_tight_and_a_16gb_one_fits() -> None:
 
 def test_the_cloud_reads_first_and_the_local_model_where_the_machine_runs_it() -> None:
     def order(level, cloud):
-        cfg = type("Cfg", (), {"workflows": type("W", (), {"rule_reader_cloud": cloud})()})()
+        cfg = Config(workflows=WorkflowsConfig(inference_mode="legacy", rule_reader_cloud=cloud))
         return reading_order(cfg, (level, ""))
 
     assert order("fits", True) == ["cloud", "local"]

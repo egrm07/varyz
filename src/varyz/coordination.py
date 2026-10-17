@@ -13,7 +13,7 @@ from varyz.scopes import normalize_scope
 WORKFLOW_TOOLS = frozenset({
     "start_task", "ask", "finish_check", "owner_questions", "answer_owner_question",
     "remember_owner_rule", "remember_owner_workflow", "away", "resolve", "advise",
-    "record_workflow_nudge", "answer_workflow_review",
+    "record_workflow_nudge", "answer_workflow_review", "record_progress", "claim_work",
 })
 
 ROUTE_SCHEMA: dict[str, Any] = {

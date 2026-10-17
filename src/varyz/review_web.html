@@ -141,6 +141,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   main { padding: 28px 16px 170px; }
   .row { flex-direction: column; }
   .bar { padding: 12px 16px; }
+  .bar .count { flex-basis: 100%; min-width: 0; }
   .statuses { grid-template-columns: repeat(2, 1fr); }
   .status-tab { padding: 12px; }
   .toolbar label:not(.search) { flex: 1; min-width: 130px; }
@@ -173,6 +174,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 <div class="bar">
   <div class="bar-inner">
     <span class="count" id="count" aria-live="polite"></span>
+    <button class="primary" id="keep-all" disabled>Keep all</button>
     <button class="primary" id="save" disabled>Save changes</button>
     <button id="close">Done</button>
   </div>
@@ -287,7 +289,15 @@ function setChoice(id, value) {
   paint();
 }
 
+function keepAllItems() {
+  return visibleItems().filter(item => item.status === "pending");
+}
+
 function paint() {
+  const remaining = keepAllItems();
+  $("keep-all").disabled = saving || remaining.length === 0;
+  $("keep-all").title = `Keep and save all ${remaining.length} shown suggestions`;
+
   for (const node of document.querySelectorAll(".item")) {
     const value = choices.get(node.dataset.id) || "";
     node.dataset.choice = value;
@@ -512,11 +522,8 @@ async function load() {
   }
 }
 
-$("save").addEventListener("click", async () => {
+async function saveDecisions(decisions) {
   if (saving) return;
-  const decisions = [...choices].map(([id, action]) => (
-    action === "keep" ? { id, action, ...(edits.get(id) || {}) } : { id, action }
-  ));
   saving = true; paint();
   try {
     const result = await api("/api/decide", { decisions });
@@ -532,6 +539,21 @@ $("save").addEventListener("click", async () => {
   } finally {
     saving = false; paint();
   }
+}
+
+$("save").addEventListener("click", () => {
+  const decisions = [...choices].map(([id, action]) => (
+    action === "keep" ? { id, action, ...(edits.get(id) || {}) } : { id, action }
+  ));
+  saveDecisions(decisions);
+});
+
+$("keep-all").addEventListener("click", () => {
+  if (saving) return;
+  const shown = keepAllItems();
+  if (!shown.length) return;
+  for (const item of shown) choices.set(item.id, "keep");
+  saveDecisions(shown.map(item => ({id: item.id, action: "keep", ...(edits.get(item.id) || {})})));
 });
 
 $("close").addEventListener("click", async () => {

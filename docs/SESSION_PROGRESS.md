@@ -203,3 +203,37 @@ Validation: deterministic offline tests in `tests/test_session_progress.py`
 exercise chronology, retry conflict, current-state retrieval, isolation, secret
 redaction, sensitivity, paging, erasure and MCP authentication. Broader checks and
 their outcomes are recorded in `reports/SESSION_PROGRESS_2026-10-07.md`.
+
+
+## Cloud writes and pickup (2026-10-16)
+
+The hosted workflow exposes `record_progress` with the same six-fact bounds and
+3000-character checkpoint limit as local recording. A deterministic checkpoint
+identity makes identical retries safe; changing a previously written checkpoint
+fails. The Cloud account and project approval are authenticated; the optional
+`agent` field labels the reported client, not independently verified authorship.
+Sensitive checkpoints stay local. Hosted writes require an existing report grant,
+respect archive/project pauses and revocations, and use encrypted report storage.
+They do not enter preference knowledge.
+
+`start_task.open_threads` shows up to three unfinished matching threads, within
+4000 characters, without requiring a resume keyword. Matching uses whole current
+session snapshots from at most 200 recent sessions; a completed pickup closes its
+root thread. Search remains bounded: absence is not proof that no unfinished work
+exists. `session_history` provides the full checkpoint timeline for a known chat.
+
+Before pickup, call `claim_work(project, conversation_id, thread_id)`. Its 15-minute
+lease is renewed by subsequent pickup checkpoints. A competing conversation gets
+a conflict; expired leases can be claimed, and `action="release"` releases one.
+Write the supplied `thread_id` into every pickup checkpoint. Marking that linked
+thread complete or abandoned releases the lease. Claims are advisory coordination
+for cooperating agents, not authorization to edit code or a replacement for Git
+conflict handling. Local registered agents use the same Cloud lease through
+`cloud/report_bridge.py`; pickup writes must reach Cloud before the local copy.
+
+Existing `LiveCloudSync` and background sync automatically upload future eligible
+checkpoints after report-project selection. They recheck project revocation and
+privacy each batch. No account login, payment, transcript upload or new project
+approval is inferred from enabling this feature. The 2026-10-16 owner instruction
+authorized report upload for existing selected project scopes; future unselected
+projects still require approval.

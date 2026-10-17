@@ -35,6 +35,10 @@ runner = CliRunner()
 def machine(tmp_path, monkeypatch):
     """A home with Claude Code, a repository, a documents folder and AI histories."""
     home = tmp_path / "home"
+    from varyz.setup_machine import GIB, Machine
+
+    monkeypatch.setattr("varyz.setup_machine.inspect_machine", lambda _path:
+                        Machine("Darwin", "arm64", 8, 16 * GIB, 8 * GIB, 40 * GIB))
     docs = home / "Documents"
     repo = home / "projects" / "demo"
     docs.mkdir(parents=True)
@@ -215,7 +219,7 @@ def test_a_run_approves_only_what_was_ticked(machine):
     result = state["result"]
     assert result["verdict"] == "GO"
     assert result["summary"] == "Agents are briefed from this archive."
-    assert result["next"][0] == "Restart your agents so they load Varyz."
+    assert result["next"][0] == "Restart Claude Code so it loads Varyz."
 
 
 def test_setup_ends_saying_the_agents_first_use_learns_how_the_owner_works(
@@ -245,7 +249,8 @@ def test_setup_ends_saying_the_agents_first_use_learns_how_the_owner_works(
     monkeypatch.setattr(cli, "_sync_sources", sync)
     session = SetupSession(machine.config)
 
-    session.start(["claude-code"], ["ai_conversations"])
+    session.start(["claude-code"], ["ai_conversations"],
+                  inference_mode="conversations", cloud_conversations=True)
     reading = _finished(session)["result"]["reading"]
 
     assert reading == {"turns_waiting": 1, "agents": ["Claude Code"], "restart": True}
@@ -357,7 +362,7 @@ def test_the_last_steps_that_fail_are_a_no_go_that_names_them(machine):
     assert result["privacy"] is None
 
 
-def test_a_classifier_moved_to_a_new_port_restarts_the_daemon_and_the_agents(machine):
+def test_a_classifier_move_restarts_daemon_without_unconnected_agent_instructions(machine):
     machine.finishing.classifier = (
         "done", "Ollama 0.11.11 is too old, so a newer one serves on port 11435", True,
     )
@@ -368,8 +373,8 @@ def test_a_classifier_moved_to_a_new_port_restarts_the_daemon_and_the_agents(mac
     state = session.snapshot()
     assert machine.finishing.restarted == [machine.config]
     assert state["steps"][6]["state"] == "done"
-    assert state["result"]["restart"] is True
-    assert state["result"]["next"][0] == "Restart your agents so they load Varyz."
+    assert state["result"]["restart"] is False
+    assert not any(line.startswith("Restart") for line in state["result"]["next"])
 
 
 def test_a_daemon_that_does_not_come_back_fails_the_classifier(machine, monkeypatch):
@@ -418,7 +423,7 @@ def test_a_step_that_raises_stops_setup_and_says_where(machine, monkeypatch):
     assert state["finished"] is True
     assert state["steps"][2]["state"] == "failed"
     assert state["result"]["verdict"] == "NO-GO"
-    assert state["result"]["problems"] == [["Agents", "the client config is unreadable"]]
+    assert state["result"]["problems"] == [["Claude Code", "the client config is unreadable"]]
 
 
 def _until(session: SetupSession, holds, timeout: float = 10.0) -> dict:
@@ -519,7 +524,7 @@ def test_the_page_carries_the_card_palette_and_the_token():
         assert colour in page
     assert '"tok-123"' in page
     assert "Varyz Card Serif" in page
-    assert "Seven steps" in page
+    assert "Choose where Varyz learns." in page
     for index in range(len(setup_web.STEPS)):
         assert f'data-step="{index}"' in page
     assert f'data-step="{len(setup_web.STEPS)}"' not in page
@@ -694,9 +699,9 @@ def test_folder_access_opens_only_for_what_the_run_found(server, monkeypatch):
 def test_the_permission_panel_explains_itself_and_can_be_skipped():
     page = render_page("tok").decode("utf-8")
 
-    assert "one more permission" in page and "Files and Folders" in page
-    assert "nothing leaves" in page
-    assert 'id="privacy-skip"' in page and "varyz sync" in page
+    assert "Folder access" in page and "Files and Folders" in page
+    assert "files stay on this Mac" in page
+    assert 'id="privacy-skip"' in page and "Folders skipped" in page
     # Full Disk Access is named only as what it is: more than these folders.
     assert "opens more than these folders" in page
     assert '<h2 class="label">Full Disk Access</h2>' not in page
@@ -705,6 +710,8 @@ def test_the_permission_panel_explains_itself_and_can_be_skipped():
 def test_only_the_bundled_fonts_are_served(server):
     status, kind, body = _request(server, "GET", "/fonts/VaryzCardSerif-Regular.ttf")
     assert status == 200 and kind == "font/ttf" and len(body) > 1000
+    status, kind, body = _request(server, "GET", "/fonts/marcellus-400.woff2")
+    assert status == 200 and kind == "font/woff2" and len(body) > 1000
 
     for path in ("/fonts/../setup_web.py", "/fonts/OFL-SourceSerif4.txt", "/setup_web.html"):
         assert _request(server, "GET", path)[0] in {403, 404}, path
@@ -1008,7 +1015,8 @@ def test_without_a_connected_agent_nothing_is_offered(machine, monkeypatch):
     _downloading_after_reading(monkeypatch, release)
     session = SetupSession(machine.config)
 
-    session.start([], ["ai_conversations"])
+    session.start([], ["ai_conversations"], inference_mode="conversations",
+                  cloud_conversations=True)
     state = _finished(session)
 
     assert machine.extract.asked == []
@@ -1047,10 +1055,10 @@ def test_the_offer_answered_through_the_api(server, machine):
 def test_the_page_asks_in_percent_and_minutes():
     page = render_page("tok").decode("utf-8")
 
-    assert "Extract preferences from your existing chats?" in page
+    assert "Learn from your past chats now?" in page
     assert '"/api/extract"' in page
     assert "5-hour limit" in page and "weekly limit" in page
-    assert "Yes, extract (recommended)" in page
+    assert "Start learning" in page
     assert "All downloads: " in page
     assert "—" not in page  # no em dashes in the copy
 

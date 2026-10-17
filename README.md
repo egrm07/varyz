@@ -6,6 +6,25 @@ You open Claude Code, Codex or any MCP agent and give it a task. Varyz briefs th
 
 ## Quickstart
 
+Local Varyz is free and needs no account. Native downloads are being prepared;
+check [download availability](https://varyzai.com/download). To install from source,
+with uv and Git installed:
+
+```powershell
+uv tool install git+https://github.com/egrm07/varyz
+varyz setup
+```
+
+Setup opens in your browser: choose where Varyz learns, connect your AI tools,
+then select the sources it may read. Wait for setup to finish and restart your
+connected agent. Cloud is optional and has a separate sharing approval.
+
+Already installed? Open **Varyz Setup** from the Windows Start menu, or run
+`varyz setup` to change your choices. Existing data is kept.
+Agent-assisted and double-click installation are described below.
+
+## Availability and capabilities
+
 Shared Varyz has a separate guest consultation resource and connector. An owner
 reviews selected preferences before publishing; recipients can consult them and
 ask questions using their own verified account (a free Varyz Cloud email sign-in is
@@ -58,6 +77,8 @@ Prepared release bundles, existing-account activation and the native-agent launc
 checks are documented in [Local setup](docs/LOCAL_SETUP.md) and
 [Journey checks](docs/PLUGIN_JOURNEY_CHECKS.md).
 
+## Other installation methods
+
 Varyz is not on a package index yet. Its source repository is
 [egrm07/varyz](https://github.com/egrm07/varyz). Install from a copy of the repository
 or directly from GitHub; final native installer publication has separate release checks.
@@ -103,7 +124,30 @@ second run keeps everything already there.
 | 4/7 Data sources | Finds your AI conversation histories, git repositories and documents folder. It lists the exact paths, asks about each one, then indexes the ones you approve on this machine. |
 | 5/7 Graph | Builds the graph from what was indexed and compiles the personal model from it, which `lookup` and `interpret` answer from. |
 | 6/7 Autosync | Turns on the background sync, which keeps the sources, the graph and the personal model current (see `varyz autosync` below). It waits until a data source is connected. |
-| 7/7 Classifier | Readies the local model that tells new work from small changes (`qwen3.5:4b` through Ollama). It uses an Ollama already there when it is recent enough, and otherwise installs Ollama silently, with no admin rights: into `~/.varyz/ollama` on macOS and Linux (Linux needs `zstd` or Python 3.14 to unpack it), with Ollama's own installer on Windows. An older Ollama keeps running; the new one serves beside it on the next free port. |
+| 7/7 AI mode | **More privacy** readies `qwen3.5:4b` through Ollama and reads conversations locally. **Lighter on your device** skips Ollama/Qwen and uses the connected AI for conversation learning only when allowed; simple local classifiers remain available. |
+
+Before the seven steps, setup checks total and available memory, free disk, CPU
+cores and GPU headroom. It automatically selects **Lighter on your device** on
+constrained machines, including 8 GB Macs. Machines with comfortable headroom get
+both choices. The conservative local thresholds are 16 GB installed memory
+(allowing hardware-reserved memory), 8 GB currently available, 12 GB free disk,
+four logical cores, and Apple Silicon or an NVIDIA GPU that can fit the model
+while retaining 30% headroom. Unknown capacity selects the lighter mode.
+These are admission thresholds, not measured speed guarantees.
+
+Cloud conversation reading has its own permission, separate from data-source
+access and anonymous analytics. Only eligible AI conversation excerpts are sent
+by that reader; local documents, repositories and older file-derived rules are
+excluded. Conversations can contain project data pasted into chats. Sensitive
+and unclassified excerpts are withheld; detected credentials are redacted.
+Without permission or a connected AI, learning waits and local fallbacks work.
+More privacy disables the automatic cloud reader and starts a bounded local
+reader after setup and as new conversation messages arrive. Both modes retain
+the working agent's existing, separately granted context permissions.
+
+Terminal setup supports `--ai-mode local` or `--ai-mode conversations`.
+`--cloud-conversations` explicitly permits the conversation reader; `--yes`
+alone does not. The selected mode and permission survive setup reruns.
 
 It ends with the **Data sources** table: every source, whether it is connected, how many
 items it holds and when it last synced. After that comes **GO** (agents are briefed
@@ -158,9 +202,10 @@ learned. It is mentioned again at most once a month.
 Before anything runs, preview it with `varyz setup --dry-run`. `--yes` connects every
 agent and source it finds without asking. `--source git` (repeatable) offers only the
 sources you name, and `--no-sources` skips step 4. The first indexing downloads the local
-models it uses: about 1.3 GB, once per archive. Step 7 downloads the classifier model
-once (3.4 GB) and, where Ollama is missing or too old, Ollama itself (about 160 MB on a
-Mac).
+models it uses: about 1.4 GB, once per archive. Only More privacy downloads the
+classifier model once (about 3.4 GB) and, where Ollama is missing or too old,
+Ollama itself (about 160 MB on a Mac; 1.57 GB on Windows). Lighter on your device
+does not download or start Ollama/Qwen, including when Ollama is already installed.
 
 After setup you rarely need a terminal. Ask your agent for what a command does ("update
 Varyz", "review my rules", "connect GitHub", "is Varyz working?"), and it runs the
@@ -685,7 +730,7 @@ Cloud charges for managed hosting and account access; its source remains open un
 the same licence. **No answer is ever improved by paying.** The same archive and
 question use the same resolution rules regardless of who operates the hardware.
 
-**Commercial and company enquiries** are welcome at egrmenshikov@gmail.com.
+**Commercial and company enquiries** are welcome at hello@varyzai.com.
 
 To remove the installed package after unregistering integrations, run
 `uv tool uninstall varyzai`.

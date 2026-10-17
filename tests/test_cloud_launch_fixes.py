@@ -55,9 +55,12 @@ def csrf_from(response):
 
 
 def test_account_computer_script_has_nonce_and_narrow_csp(tmp_path):
-    app = cloud_app.create_app(cloud_app.Settings(
-        database=str(tmp_path / "computer.sqlite3"), public_url="https://cloud.varyzai.com",
-    ))
+    app = cloud_app.create_app(
+        cloud_app.Settings(
+            database=str(tmp_path / "computer.sqlite3"),
+            public_url="https://cloud.varyzai.com",
+        )
+    )
     store = app.state.store
     with store.connection() as db:
         for owner, status in (("alice", "active"), ("unpaid", "inactive")):
@@ -200,7 +203,9 @@ def test_connector_tokens_cannot_manage_billing_or_delete(cloud):
     result = json.loads(questions["content"][0]["text"])
     assert result["questions"] == []
     assert result["away_mode"] == {
-        "active": False, "scope": "task", "conversation_id": None,
+        "active": False,
+        "scope": "task",
+        "conversation_id": None,
     }
     assert client.delete("/api/account", headers=bearer(store, "alice")).status_code == 200
 
@@ -300,7 +305,9 @@ def test_dashboard_prices_every_plan_and_dates_the_subscription(cloud, monkeypat
             "scheduled_change": {"action": "cancel", "effective_at": "2026-11-07T10:00:00Z"},
         },
     }
-    monkeypatch.setattr(cloud_app, "paddle_read", lambda url, key: provider.get(urlparse(url).path))
+    monkeypatch.setattr(
+        cloud_app, "paddle_read", lambda url, key, missing=None: provider.get(urlparse(url).path)
+    )
     client.cookies.set("session", store.credential("unpaid", "session", 3600))
     unpaid = client.get("/?view=dashboard").text
     assert "Subscribe, $5 a month" in unpaid and "Subscribe, $48 a year" in unpaid
@@ -517,7 +524,9 @@ def test_buyer_sees_and_pays_in_their_own_currency(tmp_path, monkeypatch):
         previews.append(body)
         return preview_for("EUR", "€12.00", "€108.00", "DE")
 
-    monkeypatch.setattr(cloud_app, "paddle_read", lambda url, key: provider.get(urlparse(url).path))
+    monkeypatch.setattr(
+        cloud_app, "paddle_read", lambda url, key, missing=None: provider.get(urlparse(url).path)
+    )
     monkeypatch.setattr(cloud_app, "paddle_write", preview)
     paddle = Paddle(monkeypatch)
     client = TestClient(app, base_url=BASE, client=("91.0.0.1", 50000))
@@ -549,7 +558,9 @@ def test_local_address_keeps_the_base_price_and_says_tax_is_included(cloud, monk
             "tax_mode": "internal",
         },
     }
-    monkeypatch.setattr(cloud_app, "paddle_read", lambda url, key: provider.get(urlparse(url).path))
+    monkeypatch.setattr(
+        cloud_app, "paddle_read", lambda url, key, missing=None: provider.get(urlparse(url).path)
+    )
     monkeypatch.setattr(cloud_app, "paddle_write", lambda url, key, body: pytest.fail("no preview"))
     client.cookies.set("session", store.credential("unpaid", "session", 3600))
     page = client.get("/?view=dashboard").text
@@ -568,8 +579,11 @@ def test_public_pricing_sends_only_a_country(cloud, monkeypatch):
     answer = client.get("/api/pricing?country=gb")
     assert answer.status_code == 200
     assert answer.json() == {
-        "country": "GB", "currency": "GBP", "tax_included": True,
-        "monthly": "£9.99", "annual": "£89.99",
+        "country": "GB",
+        "currency": "GBP",
+        "tax_included": True,
+        "monthly": "£9.99",
+        "annual": "£89.99",
     }
     assert client.get("/api/pricing?country=GB").status_code == 200
     assert len(sent) == 1 and sent[0]["address"] == {"country_code": "GB"}

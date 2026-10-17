@@ -1,4 +1,4 @@
-"""varyz's own rule reader: it runs on the sign-in with most plan left and stops before the limits.
+"""varyz's own rule reader: usage ranks sign-ins but only real provider refusals delay learning.
 
 No CLI or model is started: the readers are fake processes and the usage is handed in.
 """
@@ -18,7 +18,7 @@ from varyz.config import load_config
 from varyz.db.connection import open_db
 from varyz.resolution import headless_reader as hr
 from varyz.resolution import usage
-from varyz.resolution.rule_reader import ReaderUnavailable, UsageGuard, guarded
+from varyz.resolution.rule_reader import UsageGuard, guarded
 from varyz.resolution.usage import Gate, Usage, Window
 
 T0 = 1_800_000_000.0
@@ -123,36 +123,24 @@ def test_codex_usage_counts_a_reached_limit_as_all_used(tmp_path: Path) -> None:
 # -- choosing a runner --------------------------------------------------------------
 
 
-def test_the_large_reading_needs_more_than_30_and_25_percent_left(cfg: Any) -> None:
+def test_legacy_threshold_settings_no_longer_block_learning(cfg: Any) -> None:
+    cfg.workflows.large_reading_min_left_5h = 99
     full = usage.gates(cfg)["full"]
-    assert full.blocks(_usage("claude", 30, 90))  # at the limit is too low
-    assert full.blocks(_usage("claude", 90, 25))
-    assert not full.blocks(_usage("claude", 31, 26))
-    live = usage.gates(cfg)["live"]
-    assert not live.blocks(_usage("claude", 11, 6))
-    assert live.blocks(_usage("claude", 10, 50)) and live.blocks(_usage("claude", 50, 5))
+    assert full.five_hour == 0 and full.weekly == 0
+    assert hr.choose("full", full, {"codex": _usage("codex", 0, 0)}, T0).runner == "codex"
 
 
-def test_the_runner_with_most_room_reads_and_a_low_one_waits_for_its_reset(cfg: Any) -> None:
-    gates = usage.gates(cfg)
-    usages = {"claude": _usage("claude", 60, 4), "codex": _usage("codex", 44, 70)}
-    assert hr.choose("full", gates["full"], usages, T0).runner == "codex"
-
-    usages["codex"] = _usage("codex", 20, 70)
-    blocked = hr.choose("full", gates["full"], usages, T0)
-    assert blocked.runner is None
-    # Codex's five hours reset first; Claude's week resets later.
-    assert blocked.resume_after == FIVE_HOUR_RESET
-    # The small reading still runs where more than 10% / 5% is left.
-    assert hr.choose("live", gates["live"], usages, T0).runner == "codex"
+def test_the_runner_with_most_room_reads_even_when_every_plan_is_low(cfg: Any) -> None:
+    usages = {"claude": _usage("claude", 60, 4), "codex": _usage("codex", 20, 70)}
+    for kind in ("full", "live"):
+        choice = hr.choose(kind, Gate(30, 25), usages, T0)
+        assert choice.runner == "codex" and choice.resume_after is None
 
 
-def test_unknown_usage_allows_only_the_small_reading(cfg: Any) -> None:
-    gates = usage.gates(cfg)
-    usages: dict[str, Usage | None] = {"claude": None, "codex": None}
-    full = hr.choose("full", gates["full"], usages, T0)
-    assert full.runner is None and full.resume_after == T0 + hr.RECHECK_SECONDS
-    assert hr.choose("live", gates["live"], usages, T0).runner == "claude"
+def test_unknown_usage_allows_every_reading(cfg: Any) -> None:
+    for kind in ("full", "live"):
+        choice = hr.choose(kind, Gate(30, 25), {"claude": None, "codex": None}, T0)
+        assert choice.runner == "claude" and choice.resume_after is None
 
 
 def test_codex_reads_with_its_newest_usable_luna(tmp_path: Path, monkeypatch) -> None:
@@ -224,60 +212,51 @@ def killed(monkeypatch) -> list[Any]:
 RUNNER = hr.Runner("codex", "codex.exe", "agent-token")
 
 
-def test_a_reader_that_crosses_the_limit_is_told_to_stop_and_resumes_at_the_reset(
-    cfg: Any, killed: list[Any]
-) -> None:
+def test_a_reader_that_crosses_an_old_threshold_continues(cfg: Any, killed: list[Any]) -> None:
     clock = _Clock()
-    process = _Process(cfg, clock=clock)
-
-    def read_usage(name: str) -> Usage:
-        # 35% of the five hours left at first, 28% two minutes in.
-        return _usage(name, 35 if clock.now < T0 + 100 else 28, 70, clock.now)
-
-    result = hr.run_one(cfg, RUNNER, "full", ["codex.exe"], gate=usage.gates(cfg)["full"],
-                        read_usage=read_usage, launch=lambda *a: process, clock=clock,
-                        sleep=clock.sleep)
-    assert result.stopped == "usage: 5h 28% left, weekly 70% left"
-    assert result.resume_after == FIVE_HOUR_RESET
-    assert result.exit_code == 0 and not killed  # it stopped on the MCP tool's word
-    assert T0 + 120 <= clock.now < T0 + 130
+    process = _Process(cfg, clock=clock, ends_at=T0 + 140)
+    result = hr.run_one(cfg, RUNNER, "full", ["codex.exe"], gate=Gate(30, 25),
+        read_usage=lambda name: _usage(name, 28, 70, clock.now),
+        launch=lambda *a: process, clock=clock, sleep=clock.sleep)
+    assert result.stopped is None and result.resume_after is None
+    assert result.exit_code == 0 and not killed
+    assert clock.now >= T0 + 140
 
 
 def test_a_reader_that_ignores_the_stop_is_killed_after_the_grace(
     cfg: Any, killed: list[Any]
 ) -> None:
+    cfg.workflows.reader_max_minutes = 1
     clock = _Clock()
     process = _Process(cfg, obeys_stop=False)
     result = hr.run_one(cfg, RUNNER, "full", ["codex.exe"], gate=usage.gates(cfg)["full"],
                         read_usage=lambda name: _usage(name, 20, 70, clock.now),
                         launch=lambda *a: process, clock=clock, sleep=clock.sleep)
-    assert result.stopped and result.stopped.startswith("usage")
+    assert result.stopped == "time"
     assert killed == [process]
     assert clock.now >= T0 + hr.STOP_GRACE_SECONDS
 
 
-def test_a_small_reading_whose_usage_never_shows_is_stopped(
-    cfg: Any, killed: list[Any]
-) -> None:
+def test_a_reading_whose_usage_never_shows_keeps_running(cfg: Any, killed: list[Any]) -> None:
     clock = _Clock()
-    process = _Process(cfg)
-    result = hr.run_one(cfg, RUNNER, "live", ["codex.exe"], gate=usage.gates(cfg)["live"],
-                        read_usage=lambda name: None, launch=lambda *a: process,
-                        clock=clock, sleep=clock.sleep)
-    assert result.stopped == "usage: unknown"
-    assert T0 + hr.UNKNOWN_GRACE_SECONDS <= clock.now < T0 + hr.UNKNOWN_GRACE_SECONDS + 10
+    process = _Process(cfg, clock=clock, ends_at=T0 + 140)
+    result = hr.run_one(cfg, RUNNER, "live", ["codex.exe"], gate=Gate(10, 5),
+        read_usage=lambda name: None, launch=lambda *a: process, clock=clock, sleep=clock.sleep)
+    assert result.stopped is None and not killed
+    assert clock.now >= T0 + 140
 
 
 def test_claudes_stream_reports_count_while_it_reads(cfg: Any, killed: list[Any]) -> None:
     clock = _Clock()
     event = {"type": "rate_limit_event", "rate_limit_info": {"unifiedWindows": {
         "five_hour": {"utilization": 0.5}, "seven_day": {"utilization": 0.97}}}}
-    process = _Process(cfg, lines=[json.dumps(event) + "\n"])
+    process = _Process(cfg, clock=clock, ends_at=T0 + 140,
+                       lines=[json.dumps(event) + "\n"])
     runner = hr.Runner("claude", "claude", "agent-token")
     result = hr.run_one(cfg, runner, "live", ["claude"], gate=usage.gates(cfg)["live"],
                         read_usage=lambda name: None, launch=lambda *a: process,
                         clock=clock, sleep=clock.sleep)
-    assert result.stopped == "usage: 5h 50% left, weekly 3% left"
+    assert result.stopped is None and result.usage.weekly.left == 3
 
 
 # -- the supervisor -----------------------------------------------------------------
@@ -318,25 +297,11 @@ def test_the_supervisor_reads_the_backlog_on_codex_and_clears_the_queue(
     assert '"started"' in log and '"ended"' in log and "agent-token" not in log
 
 
-def test_a_large_reading_waits_for_the_reset_and_resumes_then(
-    cfg: Any, config_file: Path, monkeypatch
-) -> None:
-    clock = _Clock()
-
-    def launch(*args: Any) -> Any:
-        raise AssertionError("nothing runs below the limits")
-
-    hr.update_status(cfg, lambda status: status.update({"pending": ["full"]}))
-    status = hr.supervise(cfg, config_file, runners={"codex": RUNNER},
-                          read_usage=lambda name: _usage(name, 25, 70, clock.now),
-                          launch=launch, clock=clock, sleep=clock.sleep)
-    assert status["state"] == "waiting_for_usage"
-    assert status["resume_after"] == FIVE_HOUR_RESET and status["pending"] == ["full"]
-
-    started: list[Any] = []
-    assert not hr.maybe_resume(cfg, config_file, T0 + 60, start=lambda *a: started.append(a))
-    assert hr.maybe_resume(cfg, config_file, status["next_check"],
-                           start=lambda *a: started.append(a))
+def test_a_legacy_quota_wait_resumes_without_waiting_for_reset(cfg, config_file):
+    hr.update_status(cfg, lambda status: status.update(
+        state="waiting_for_usage", pending=["full"], next_check=WEEK_RESET))
+    started = []
+    assert hr.maybe_resume(cfg, config_file, T0 + 60, start=lambda *a: started.append(a))
     assert len(started) == 1
 
 
@@ -472,22 +437,12 @@ class _Model:
         return "{}"
 
 
-def test_rules_mine_on_a_sign_in_stops_at_the_large_limits() -> None:
-    clock = _Clock()
-    readings = [_usage("claude", 50, 50), _usage("claude", 29, 50)]
-    model = _Model()
-    guard = UsageGuard(model, "Claude", Gate(30, 25), lambda: readings.pop(0),
-                       every=60, clock=clock)
-    guard.complete("s", "u")
-    guard.complete("s", "u")  # within the minute: no new reading
-    clock.sleep(60)
-    with pytest.raises(ReaderUnavailable, match="5h 29% left"):
+def test_rules_mine_on_a_sign_in_ignores_low_and_unknown_allowance() -> None:
+    for reading in (_usage("claude", 0, 0), None):
+        model = _Model()
+        guard = UsageGuard(model, "Claude", Gate(30, 25), lambda reading=reading: reading)
         guard.complete("s", "u")
-    assert model.calls == 2
-
-    unknown = UsageGuard(_Model(), "ChatGPT", Gate(30, 25), lambda: None, clock=clock)
-    with pytest.raises(ReaderUnavailable, match="cannot be read"):
-        unknown.complete("s", "u")
+        assert model.calls == 1
 
 
 def test_only_a_plan_sign_in_is_guarded(cfg: Any) -> None:
@@ -599,7 +554,7 @@ def test_connecting_replaces_the_old_reader_agent_but_not_the_owners_own(
 
 def test_reader_health_rejects_stale_quota_wait_but_respects_pause(cfg):
     hr.update_status(cfg, lambda s: s.update(
-        {"pending": ["full"], "state": "waiting_for_usage", "next_check": T0 + 60}))
+        {"pending": ["full"], "state": "rate_limited", "next_check": T0 + 60}))
     assert hr.health(cfg, now=T0)[0]
     assert not hr.health(cfg, now=T0 + 241)[0]
     from varyz.hooks import pause_path
@@ -633,7 +588,8 @@ def test_orphaned_queue_is_resumed_without_restarting_stopped_work(cfg, config_f
     assert len(started) == 1
 
 
-def test_supervisor_launch_failure_is_recorded_without_private_error(cfg, config_file):
+def test_supervisor_launch_failure_is_recorded_without_private_error(cfg, config_file, monkeypatch):
+    _work(monkeypatch, (3, 0, 0, 0))
     def fail(*args):
         raise OSError("private-token-and-path")
 
@@ -645,12 +601,12 @@ def test_supervisor_launch_failure_is_recorded_without_private_error(cfg, config
     assert not hr.health(cfg, now=T0)[0]
 
 
-def test_unknown_usage_cannot_bypass_a_recent_known_weekly_limit(cfg, config_file):
+def test_stale_low_usage_does_not_block_a_new_reading(cfg, config_file, monkeypatch):
     hr.update_status(cfg, lambda s: s.update({"usage": {
         "codex": _usage("codex", 80, 1).as_dict()}}))
+    clock = _Clock()
+    _work(monkeypatch, (3, 0, 0, 0), (0, 0, 3, 1))
     status = hr.supervise(cfg, config_file, kind="live", runners={"codex": RUNNER},
-                          read_usage=lambda _: None, clock=lambda: T0,
-                          launch=lambda *a: pytest.fail("bypassed a known weekly limit"))
-    assert status["state"] == "waiting_for_usage"
-    assert status["resume_after"] == WEEK_RESET
-    assert hr._blocked_history(status, "codex", Gate(10, 5), WEEK_RESET + 1) is None
+        read_usage=lambda _: None, clock=clock, sleep=clock.sleep,
+        launch=lambda *a: _Process(cfg, clock=clock, ends_at=T0 + 10))
+    assert status["state"] == "idle" and not status["pending"]

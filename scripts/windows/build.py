@@ -7,8 +7,11 @@ This script makes no network calls and never installs Varyz on the build machine
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
+import os
+import re
 import shutil
 import subprocess
 import tomllib
@@ -22,6 +25,49 @@ SOURCE = Path(__file__).resolve().parent
 def digest(path: Path) -> str:
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def signing_arguments(signtool: Path | None, thumbprint: str | None) -> list[str]:
+    """Use an existing Windows certificate; never export or log its private key."""
+    if signtool is None and thumbprint is None:
+        return []
+    if signtool is None or thumbprint is None:
+        raise ValueError("Signing requires both --signtool and --certificate-thumbprint")
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", thumbprint):
+        raise ValueError("Certificate thumbprint must contain exactly 40 hexadecimal characters")
+    executable = signtool.resolve()
+    if not executable.is_file() or '$' in str(executable) or '"' in str(executable):
+        raise ValueError("Use an existing Windows SDK signtool.exe path without Inno macros")
+    command = (
+        f"$q{executable}$q sign /sha1 {thumbprint} /fd SHA256 "
+        "/tr http://timestamp.digicert.com /td SHA256 $f"
+    )
+    return ["/DSignInstaller=1", f"/SVaryzSign={command}"]
+
+
+def verify_signature(artifact: Path, signtool: Path, thumbprint: str) -> dict:
+    subprocess.run([str(signtool.resolve()), "verify", "/pa", "/all", "/tw", str(artifact)],
+                   check=True)
+    script = (
+        "$s=Get-AuthenticodeSignature -LiteralPath $env:VARYZ_SIGNED_INSTALLER;"
+        "[pscustomobject]@{status=[string]$s.Status;"
+        "thumbprint=$s.SignerCertificate.Thumbprint;"
+        "subject=$s.SignerCertificate.Subject;"
+        "timestamped=($null -ne $s.TimeStamperCertificate)}|ConvertTo-Json -Compress"
+    )
+    response = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+         base64.b64encode(script.encode("utf-16-le")).decode("ascii")],
+        env={**os.environ, "VARYZ_SIGNED_INSTALLER": str(artifact.resolve())},
+        capture_output=True, text=True, check=True,
+    )
+    receipt = json.loads(response.stdout)
+    if (receipt.get("status") != "Valid" or not receipt.get("timestamped")
+            or str(receipt.get("thumbprint", "")).casefold() != thumbprint.casefold()):
+        raise ValueError(
+            "Installer must have a valid timestamped signature from the selected signer"
+        )
+    return receipt
 
 
 def stage(
@@ -113,7 +159,12 @@ def main() -> int:
     parser.add_argument("--compiler", type=Path, required=True)
     parser.add_argument("--package-dir", type=Path, default=ROOT / "dist")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist")
+    parser.add_argument("--signtool", type=Path,
+                        help="Windows SDK signtool.exe; signs installer and uninstaller")
+    parser.add_argument("--certificate-thumbprint",
+                        help="Existing trusted code-signing certificate in the current user store")
     args = parser.parse_args()
+    signing = signing_arguments(args.signtool, args.certificate_thumbprint)
     manifest = stage(
         args.stage.resolve(), args.runtime.resolve(), args.uv.resolve(), args.wheelhouse.resolve(),
         args.package_dir.resolve(),
@@ -131,10 +182,17 @@ def main() -> int:
             f"/DAppVersion={manifest['version']}",
             f"/DBuildId={manifest['build_id']}",
             f"/DOutput={output}",
+            *signing,
             str(SOURCE / "varyz.iss"),
         ],
         check=True,
     )
+    if signing:
+        receipt = verify_signature(artifact, args.signtool, args.certificate_thumbprint)
+        (output / "native-signature.json").write_text(
+            json.dumps({**receipt, "installer": artifact.name, "sha256": digest(artifact)},
+                       indent=2) + "\n", encoding="utf-8",
+        )
     checksum = {artifact.name: digest(artifact)}
     (output / "native-release-checksums.json").write_text(
         json.dumps(checksum, indent=2) + "\n",

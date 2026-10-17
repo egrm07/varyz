@@ -51,6 +51,8 @@ def test_packaged_routes_cover_preferences_and_history_without_widening_grants(h
         "timeline",
         "compare",
         "session_history",
+        "record_progress",
+        "claim_work",
     }
     assert rpc(client, preferences, paths["varyz"], "initialize").status_code == 200
     listed = rpc(client, preferences, paths["varyz"], "tools/list").json()["result"]["tools"]
@@ -143,7 +145,7 @@ def test_plugin_discovery_precedes_oauth_without_exposing_account_context(hosted
     listed = rpc(client, {}, "/mcp/plugin", "tools/list")
     assert listed.status_code == 200 and private not in listed.text
     tools = listed.json()["result"]["tools"]
-    assert len(tools) == 15
+    assert len(tools) == 17
     for tool in tools:
         expected = [{"type": "oauth2", "scopes": [PLUGIN_SCOPE]}]
         assert tool["securitySchemes"] == expected

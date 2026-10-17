@@ -281,7 +281,7 @@ def _codex_server(path: Path, key: str = SERVER_KEY) -> dict[str, Any] | None:
 
 
 class CodexNotFoundError(RuntimeError):
-    """Codex's config exists but its CLI, which alone may edit it, does not."""
+    """No existing Codex CLI runtime could be located."""
 
 
 # A config left behind by an uninstalled Codex, or a Codex app whose CLI was
@@ -294,14 +294,17 @@ CODEX_NOT_FOUND = (
 
 
 def _run_codex(command: list[str]) -> None:
-    executable = shutil.which("codex")
+    from varyz.codex_runtime import find_codex
+
+    executable = find_codex()
     if executable is None:
-        raise CodexNotFoundError("Codex CLI is not on PATH")
+        raise CodexNotFoundError("No Codex CLI runtime was found in the installed app or tools")
     completed = subprocess.run(
         [executable, *command],
         check=False,
         capture_output=True,
         text=True,
+        timeout=20,
         creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
     )
     if completed.returncode != 0:
@@ -381,7 +384,8 @@ def reader_agent_text() -> str:
     from varyz.resolution.profile_reader import AGENT_PROMPT, READER_AGENT
 
     tools = ", ".join(
-        f"mcp__{SERVER_KEY}__{tool}" for tool in ("profile_reading_task", "submit_profile_reading")
+        f"mcp__{SERVER_KEY}__{tool}" for tool in ("profile_reading_task", "submit_profile_reading",
+                                                    "profile_reading_status")
     )
     return (
         f"---\nname: {READER_AGENT}\n"
@@ -455,7 +459,8 @@ def instructions_block(client: str) -> str:
         "and the job's `subagent_prompt`"
         if client == "claude-code" else
         "spawn a subagent on your cheapest capable model (your newest luna model) with "
-        "only the varyz tools `profile_reading_task` and `submit_profile_reading`, give "
+        "only the varyz tools `profile_reading_task`, `submit_profile_reading` and "
+        "`profile_reading_status`, give "
         "it the job's `subagent_prompt` and let it run in the background"
     )
     return (
@@ -644,6 +649,31 @@ def _same_codex_server(existing: dict[str, Any], wanted: dict[str, Any]) -> bool
     )
 
 
+def _register_codex_settings(path: Path, entry: dict[str, Any], *, remove_legacy: bool) -> None:
+    """Register stdio MCP without a CLI; preserve comments and unrelated settings."""
+    import tomlkit
+
+    document = tomlkit.parse(path.read_text(encoding="utf-8-sig"))
+    if "mcp_servers" not in document:
+        document["mcp_servers"] = tomlkit.table()
+    servers = document["mcp_servers"]
+    if not isinstance(servers, dict):
+        raise ValueError("Codex's mcp_servers setting is not a table")
+    existing = servers.get(SERVER_KEY, {})
+    wanted = dict(existing) if isinstance(existing, dict) else {}
+    for key in ("url", "bearer_token_env_var", "http_headers", "env_http_headers"):
+        wanted.pop(key, None)
+    wanted.update(entry)
+    servers[SERVER_KEY] = wanted
+    if remove_legacy:
+        servers.pop(LEGACY_SERVER_KEY, None)
+    updated = tomlkit.dumps(document)
+    # Refuse the write if the result cannot be read by Codex's TOML parser.
+    if not _same_codex_server(tomllib.loads(updated)["mcp_servers"][SERVER_KEY], entry):
+        raise ValueError("Could not verify Codex's Varyz connection settings")
+    _write_text_atomic(path, updated)
+
+
 def _install_codex(
     path: Path,
     entry: dict[str, Any],
@@ -690,28 +720,24 @@ def _install_codex(
     backup = path.with_suffix(path.suffix + ".varyz-backup")
     if server_changed or legacy_server:
         shutil.copyfile(path, backup)
-    if legacy_server:
-        try:
+    try:
+        if legacy_server:
             runner(["mcp", "remove", LEGACY_SERVER_KEY])
-        except Exception:
-            _write_text_atomic(path, original)
-            raise
-    if server_changed:
-        command = str(entry["command"])
-        args = [str(value) for value in entry.get("args", [])]
-        environment = entry.get("env", {})
-        env_args = [
-            value
-            for name, value in sorted(environment.items())
-            for value in ("--env", f"{name}={value}")
-        ]
-        try:
+        if server_changed:
+            command = str(entry["command"])
+            args = [str(value) for value in entry.get("args", [])]
+            environment = entry.get("env", {})
+            env_args = [value for name, value in sorted(environment.items())
+                        for value in ("--env", f"{name}={value}")]
             if existing:
                 runner(["mcp", "remove", SERVER_KEY])
             runner(["mcp", "add", SERVER_KEY, *env_args, "--", command, *args])
-        except Exception:
-            _write_text_atomic(path, original)
-            raise
+    except (CodexNotFoundError, subprocess.TimeoutExpired):
+        _write_text_atomic(path, original)
+        _register_codex_settings(path, entry, remove_legacy=legacy_server)
+    except Exception:
+        _write_text_atomic(path, original)
+        raise
 
     if skill_changed:
         skill_destination.parent.mkdir(parents=True, exist_ok=True)

@@ -588,6 +588,8 @@ class WorkflowsConfig(Settings):
     # the embedding when Ollama is down, the model is not pulled, it would crowd
     # the GPU, or it does not answer in time. embedding: no GPU (89.9%).
     # lexicon: verbs only (60.9%).
+    # Setup records an explicit mode. Legacy preserves existing installations.
+    inference_mode: Literal["legacy", "local", "conversations"] = "legacy"
     task_classifier: Literal["model", "embedding", "lexicon"] = "model"
     # The same local model answers four more closed questions, each falling back
     # the same way and ending at the rule that was there before. See
@@ -637,13 +639,12 @@ class WorkflowsConfig(Settings):
     # Codex's newest luna (cheapest) model the account may use.
     reader_claude_model: str = "haiku"
     reader_codex_model: str = "auto"
-    # The least of the plan's limits, in percent left, a reading starts or goes
-    # on with: it stops, keeps what it read, and starts again once the window
-    # resets. Large is the full reading of the backlog; small the live one.
-    large_reading_min_left_5h: float = Field(default=30, ge=0, le=100)
-    large_reading_min_left_weekly: float = Field(default=25, ge=0, le=100)
-    small_reading_min_left_5h: float = Field(default=10, ge=0, le=100)
-    small_reading_min_left_weekly: float = Field(default=5, ge=0, le=100)
+    # Legacy options remain readable for existing installs; allowance thresholds
+    # no longer control learning. Only an actual provider refusal pauses it.
+    large_reading_min_left_5h: float = Field(default=0, ge=0, le=100)
+    large_reading_min_left_weekly: float = Field(default=0, ge=0, le=100)
+    small_reading_min_left_5h: float = Field(default=0, ge=0, le=100)
+    small_reading_min_left_weekly: float = Field(default=0, ge=0, le=100)
     # How often the limits are read while a reader runs (Claude's also arrive
     # with each of its model calls), how long one may run, and how many tasks
     # one reader does before a fresh one takes over (its context stays small).

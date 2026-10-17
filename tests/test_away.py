@@ -539,7 +539,13 @@ def test_claude_install_adds_a_reader_that_can_only_read_through_varyz(
     reader = tmp_path / ".claude" / "agents" / "varyz-rule-miner.md"
     text = reader.read_text(encoding="utf-8")
     assert "model: sonnet" in text
-    assert "tools: mcp__varyz__profile_reading_task, mcp__varyz__submit_profile_reading\n" in text
+    tools = next(line.removeprefix("tools: ") for line in text.splitlines()
+                 if line.startswith("tools: "))
+    assert set(tools.split(", ")) == {
+        "mcp__varyz__profile_reading_task",
+        "mcp__varyz__submit_profile_reading",
+        "mcp__varyz__profile_reading_status",
+    }
     assert not install._install_reader_agent("claude-code", client_config, dry_run=False)[0]
     assert not install.uninstall_reader_agent("codex", client_config)
     assert install.uninstall_reader_agent("claude-code", client_config)

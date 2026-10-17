@@ -60,6 +60,10 @@ class _DownDaemon:
 def machine(tmp_path, monkeypatch):
     """A home with one documents folder, and no daemon, agents or model."""
     home = tmp_path / "home"
+    from varyz.setup_machine import GIB, Machine
+
+    monkeypatch.setattr("varyz.setup_machine.inspect_machine", lambda _path:
+                        Machine("Darwin", "arm64", 8, 16 * GIB, 8 * GIB, 40 * GIB))
     docs = home / "Documents"
     docs.mkdir(parents=True)
     (docs / "decision.md").write_text(
@@ -121,7 +125,8 @@ def test_dry_run_without_an_archive_does_not_create_one(machine, monkeypatch):
 def test_a_declined_source_is_neither_connected_nor_indexed(tmp_path, machine):
     config = _config(tmp_path / "config.toml")
 
-    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--terminal"], input="n\n")
+    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--terminal",
+                                    "--ai-mode", "local"], input="n\n")
 
     assert result.exit_code == 0, result.output
     assert load_config(config).connector_options("documents") == {}
@@ -195,7 +200,7 @@ def test_an_unanswered_question_names_the_flag_that_answers_it(tmp_path, machine
 
     assert result.exit_code == 1, result.output
     assert "went unanswered" in result.output
-    assert "--yes" in result.output
+    assert "--ai-mode" in result.output
     assert "Aborted" not in result.output
     assert load_config(config).connector_options("documents") == {}
 
@@ -203,7 +208,8 @@ def test_an_unanswered_question_names_the_flag_that_answers_it(tmp_path, machine
 def test_no_sources_skips_the_data_step(tmp_path, machine):
     config = _config(tmp_path / "config.toml")
 
-    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources"])
+    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources",
+                                    "--ai-mode", "local"])
 
     assert result.exit_code == 0, result.output
     assert "Data sources skipped: --no-sources" in _flat(result.output)
@@ -229,7 +235,7 @@ def test_an_agent_left_without_the_mcp_server_is_a_failure_not_connected(
     flat = _flat(result.output)
     assert "Claude Code failed (skipped" in flat
     assert "Claude Code connected" not in flat
-    assert "NO-GO: Not ready: agents." in flat
+    assert "NO-GO: Claude Code:" in flat
 
 
 def test_an_agent_whose_connect_raises_is_a_no_go_in_the_terminal_too(
@@ -251,8 +257,8 @@ def test_an_agent_whose_connect_raises_is_a_no_go_in_the_terminal_too(
     assert result.exit_code == 1, result.output
     flat = _flat(result.output)
     assert "3/7 Agents failed: Claude Code failed (no such agent here)" in flat
-    assert "not every agent was connected (step 3)" in flat
-    assert "NO-GO: Not ready: agents." in flat
+    assert "Claude Code: no such agent here" in flat
+    assert "NO-GO: Claude Code:" in flat
 
 
 def test_a_source_that_fails_to_index_is_never_printed_as_go(tmp_path, machine, monkeypatch):

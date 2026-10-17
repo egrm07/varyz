@@ -74,6 +74,11 @@ class SetupRun:
         from varyz.install import client_paths
 
         self.config_path = config_path
+        from varyz.setup_machine import plan
+
+        self.ai_plan = plan(config_path)
+        self.inference_mode = self.ai_plan["selected"]
+        self.cloud_conversations = self.ai_plan["cloud_conversations"]
         self.analytics_choice: bool | None = None
         self._analytics_cfg: Any = None
         self._lock = threading.Lock()
@@ -151,6 +156,13 @@ class SetupRun:
         # 1. The archive.
         self._set(0, "running")
         cfg, created, entries = cli._create_archive(cfg_path)
+        previous_workflows = cfg.workflows
+        from varyz.configfile import set_inference_mode
+
+        set_inference_mode(cfg_path, self.inference_mode,
+                           cloud_conversations=self.cloud_conversations)
+        cfg = cli._cfg(cfg_path)
+        mode_changed = previous_workflows != cfg.workflows
         from varyz.analytics import consent, record
 
         if self.analytics_choice is not None:
@@ -161,6 +173,11 @@ class SetupRun:
 
         # 2. The daemon, which serves this archive's rules and owner questions.
         self._set(1, "running")
+        # An already running daemon must stop using the previous reader settings.
+        if not created and mode_changed and not cli._restart_daemon(cfg_path):
+            self._set(1, "failed", "could not restart with the selected AI mode")
+            return self._finish(cfg, problems=[("daemon", "AI mode restart failed")],
+                                failed=[], agents_connected=False, agents_changed=False)
         status = ensure_daemon(cli._resolution_client(cfg), cfg_path)
         if status is None:
             self._set(1, "failed", "did not start; run `varyz daemon start --foreground`")
@@ -176,6 +193,7 @@ class SetupRun:
         absent = [name for _, name, installed in self.agents if not installed]
         chosen = [(cid, name) for cid, name in present if cid in agents]
         agents_changed = agents_connected = failed_agents = False
+        agent_failures: list[tuple[str, str]] = []
         agent_names: list[str] = []
         if not present:
             self._set(2, "skipped", f"none found ({', '.join(absent)} not installed)")
@@ -186,15 +204,21 @@ class SetupRun:
             for cid, name in chosen:
                 try:
                     _, results = connect_agent(cid, config_path=cfg_path)
-                except ValueError as exc:
+                except (ValueError, OSError, RuntimeError) as exc:
                     outcome.append(f"{name} failed ({exc})")
+                    agent_failures.append((name, str(exc)))
                     failed_agents = True
                     continue
-                skipped = [r.detail for r in results if r.detail.startswith("skipped")]
+                skipped = [r.detail for r in results
+                           if r.detail.startswith(("skipped", "not installed"))]
+                if not results:
+                    skipped = ["No connection settings were written"]
                 if skipped:
                     # The skill and hooks may be in place, but without the
                     # MCP server the agent has nothing to call: not connected.
                     outcome.append(f"{name} failed ({skipped[0]})")
+                    reason = skipped[0].removeprefix("skipped - ").removeprefix("skipped: ")
+                    agent_failures.append((name, reason))
                     failed_agents = True
                     continue
                 changed = any(result.changed for result in results)
@@ -207,10 +231,10 @@ class SetupRun:
             self._set(2, "failed" if failed_agents else "done", " · ".join(outcome))
 
         # 4. Data sources: only those offered that the owner chose.
-        run = _Run(cfg, agents_connected=agents_connected, agents_changed=agents_changed,
+        run = _Run(cfg, agents_connected=agents_connected,
+                   agents_changed=agents_changed or mode_changed,
                    agent_names=agent_names)
-        if failed_agents:
-            run.problems.append(("agents", "not every agent was connected (step 3)"))
+        run.problems.extend(agent_failures)
         if self.skip_sources is not None:
             self._set(3, "skipped", self.skip_sources)
             return self._run_from(4, run)
@@ -292,15 +316,25 @@ class SetupRun:
             if state == "failed":
                 run.problems.append(("autosync", f"{detail} (step 6)"))
 
-        # 7. The local classifier the owner's questions are sorted by.
+        # 7. The chosen reader, without downloading Ollama in conversation mode.
         self._set(6, "running")
-        with self._bar(6, "Readying the classifier") as progress:
-            state, detail, run.moved = cli._ready_classifier(cfg_path, on_progress=progress)
-            if run.moved:
-                # The daemon read the old address when it started.
-                progress("Restarting the daemon on the new classifier address", None)
-                if not cli._restart_daemon(cfg_path):
-                    state, detail = "failed", f"{detail}; the daemon did not start again"
+        if self.inference_mode == "conversations":
+            state = "done"
+            detail = (
+                "AI conversation mode; no Ollama or Qwen download. "
+                + ("Eligible AI conversation excerpts only may be read by your connected AI; "
+                   "local documents and repositories stay outside this reader."
+                   if self.cloud_conversations else
+                   "Cloud reading is off until you allow it; local fallbacks remain available.")
+            )
+        else:
+            with self._bar(6, "Readying the classifier") as progress:
+                state, detail, run.moved = cli._ready_classifier(cfg_path, on_progress=progress)
+                if run.moved:
+                    # The daemon read the old address when it started.
+                    progress("Restarting the daemon on the new classifier address", None)
+                    if not cli._restart_daemon(cfg_path):
+                        state, detail = "failed", f"{detail}; the daemon did not start again"
         self._set(6, state, detail)
         if state == "failed":
             run.problems.append(("classifier", f"{detail} (step 7)"))
@@ -332,6 +366,8 @@ class SetupRun:
         from varyz.sources import source_statuses
 
         conn = open_db(cfg.db_path) if cfg.db_path.exists() else None
+        from varyz.setup_recovery import repair_prompt
+
         reading = None
         try:
             statuses = source_statuses(cfg, conn)
@@ -348,7 +384,12 @@ class SetupRun:
             problems.append(("data sources", f"could not index {', '.join(failed)} (step 4)"))
         if problems:
             verdict = "NO-GO"
-            summary = f"Not ready: {', '.join(name for name, _ in problems)}."
+            agent_labels = {name for _, name in cli.SETUP_AGENTS}
+            connection_failures = [(name, detail) for name, detail in problems
+                                   if name in agent_labels]
+            summary = (f"{connection_failures[0][0]}: {connection_failures[0][1]}"
+                       if connection_failures else
+                       f"Not ready: {', '.join(name for name, _ in problems)}.")
         elif agents_connected:
             verdict = "GO"
             summary = "Agents are briefed from this archive."
@@ -361,16 +402,23 @@ class SetupRun:
             )
         flag = self._config_flag()
         steps = []
-        if agents_changed:
-            steps.append("Restart your agents so they load Varyz.")
-        steps.append(f'varyz task "build a landing page"{flag}')
+        if agents_changed and agent_names:
+            steps.append(f"Restart {' and '.join(agent_names)} so it loads Varyz.")
+        if problems:
+            steps.append("Copy the repair prompt below and paste it into an AI tool "
+                         "on this computer.")
+        else:
+            steps.append(f'varyz task "build a landing page"{flag}')
         github = next((s for s in statuses if s.info.connector_id == "github"), None)
         if github is not None and not github.connected:
             steps.append(f"varyz connect github{flag}")
         result = {
+            "inference_mode": self.inference_mode,
+            "cloud_conversations": self.cloud_conversations,
             "verdict": verdict,
             "summary": summary,
             "problems": [[name, detail] for name, detail in problems],
+                "repair_prompt": repair_prompt(self.config_path, problems),
             "sources": [
                 {
                     "name": status.info.label,
@@ -382,7 +430,8 @@ class SetupRun:
                 }
                 for status in statuses
             ],
-            "restart": agents_changed,
+            "restart": agents_changed and bool(agent_names),
+            "connected_agents": list(agent_names or []),
             "privacy": privacy,
             "next": steps,
             # The last step: the agent's first use of varyz reads the owner's past turns.

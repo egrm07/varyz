@@ -277,6 +277,10 @@ def test_codex_install_uses_cli_and_installs_measured_routing_skill(tmp_path, co
     assert "`start_task`: first, on every task" in installed_skill
     assert "`ask`: every owner-dependent choice, all at once before you build" in installed_skill
     assert "`recall`: evidence expansion" in installed_skill
+    assert "any message mentioning Varyz starts this sequence" in installed_skill
+    assert "profile_reading_status" in installed_skill
+    assert "suggested_task" in installed_skill
+    assert "The user never needs to copy a technical prompt." in installed_skill
     assert "mcp_servers.other" in codex_config.read_text(encoding="utf-8")
 
     second = install_mcp(
@@ -490,34 +494,32 @@ def test_an_entry_that_starts_another_varyz_is_left_to_it(clients, config_file):
     assert install.refresh_connections(config_file, paths=clients) == []
 
 
-def test_codex_without_its_cli_is_skipped_not_a_traceback(
+def test_codex_without_its_cli_registers_settings_without_a_traceback(
     tmp_path, clients, config_file, monkeypatch
 ):
+    import tomllib
+
     from typer.testing import CliRunner
 
+    from varyz import codex_runtime
     from varyz.cli import app
 
     codex_config = tmp_path / ".codex" / "config.toml"
     codex_config.parent.mkdir()
-    codex_config.write_text('[mcp_servers.other]\ncommand = "other"\n', encoding="utf-8")
-    original = codex_config.read_text(encoding="utf-8")
+    original = '[mcp_servers.other]\ncommand = "other"\n'
+    codex_config.write_text(original, encoding="utf-8")
     paths = {**clients, "codex": codex_config}
     monkeypatch.setattr(install, "client_paths", lambda: paths)
-    monkeypatch.setattr(install.shutil, "which", lambda _name: None)
-
-    # Across all clients, Codex is one skipped line and the others still install.
+    monkeypatch.setattr(codex_runtime, "find_codex", lambda: None)
     everything = CliRunner().invoke(app, ["install", "--config", str(config_file)])
     assert everything.exit_code == 0, everything.output
-    assert "Traceback" not in everything.output
-    assert "codex: skipped - Codex was not found on PATH" in everything.output
+    assert "Traceback" not in everything.output and "skipped" not in everything.output
     assert SERVER_KEY in _servers(clients["claude-code"])
-    assert codex_config.read_text(encoding="utf-8") == original
-
-    # Asked for Codex alone, nothing was installed: a failure, still one line.
+    parsed = tomllib.loads(codex_config.read_text("utf-8"))
+    assert SERVER_KEY in parsed["mcp_servers"] and "other" in parsed["mcp_servers"]
+    assert codex_config.with_suffix(".toml.varyz-backup").read_text("utf-8") == original
     only = CliRunner().invoke(
         app, ["install", "--client", "codex", "--config", str(config_file)]
     )
-    assert only.exit_code == 1
-    assert only.exception is None or isinstance(only.exception, SystemExit)
-    # Rich wraps at the test terminal's width; the message itself is one line.
-    assert " ".join(only.output.split()) == f"codex: {install.CODEX_NOT_FOUND}"
+    assert only.exit_code == 0, only.output
+    assert "already installed" in only.output

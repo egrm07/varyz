@@ -136,6 +136,7 @@ def test_applied_owner_knowledge_schema_gets_caller_device_forward_only(tmp_path
         "0045_task_routes.sql",
         "0046_session_progress.sql",
         "0047_session_mining.sql",
+        "0048_report_privacy_index.sql",
         ]
         columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(owner_knowledge)")

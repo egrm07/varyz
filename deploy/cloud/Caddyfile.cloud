@@ -25,6 +25,20 @@ cloud.varyzai.com {
         root * /var/lib/caddy/varyz-public
         file_server
     }
+    # Varyz counter-only website metrics.
+    handle_path /_website-aggregate/* {
+        request_body {
+            max_size 2KB
+        }
+        reverse_proxy 127.0.0.1:3101
+    }
+    # Varyz public website analytics (isolated Umami).
+    handle_path /_website-analytics/* {
+        request_body {
+            max_size 600KB
+        }
+        reverse_proxy 127.0.0.1:3100
+    }
     handle {
         reverse_proxy 127.0.0.1:8080
     }

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from pathlib import Path
 
 import keyring
 
 from varyz.cloud.archive_sync import ArchiveSync, read_archive_journal
-from varyz.cloud.client import CloudClient, credential_name, load_tokens
+from varyz.cloud.client import CloudAccessInactive, CloudClient, credential_name, load_tokens
 from varyz.cloud.local_sync import LocalSync, read_journal
 from varyz.cloud.session_report_sync import ReportSync
 from varyz.cloud.session_report_sync import journal_path as report_path
@@ -58,6 +59,12 @@ def sync_if_selected(config: Path, conn: sqlite3.Connection) -> str | None:
         return f"Cloud synced: {result['uploaded']} sent, {result['downloaded']} received"
     except LockHeldError:
         return None  # another authorized sync owns the journal
+    except CloudAccessInactive as error:
+        from varyz.cloud.local_access import observe
+
+        with contextlib.suppress(Exception):
+            observe(config, error.access)
+        return str(error)
     except (ValueError, OSError, sqlite3.Error, keyring.errors.KeyringError):
         # Do not write private payloads/provider exceptions into background logs.
         return "Cloud sync needs attention; local preferences remain available. Check cloud status."

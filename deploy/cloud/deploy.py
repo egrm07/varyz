@@ -61,6 +61,7 @@ def environment(live: bool) -> str:
     suffix = "" if live else "_SANDBOX"
     secret = lambda name: keyring.get_password(SERVICE, name + suffix) or ""  # noqa: E731
     values = {
+        "VARYZ_CLOUD_CREATOR_NOTIFICATION_EMAIL": "egor@varyzai.com",
         "VARYZ_CLOUD_PUBLIC_URL": "https://cloud.varyzai.com",
         "VARYZ_PADDLE_SANDBOX": "false" if live else "true",
         "VARYZ_PADDLE_PRICE_IDS": f"{prices['monthly']['price_id']},{prices['annual']['price_id']}",
@@ -78,6 +79,11 @@ def environment(live: bool) -> str:
             value = keyring.get_password(SERVICE, name)
             if value:
                 values[name] = value
+    # Who can open /admin, and whether creator applications start open.
+    for name in ("VARYZ_CLOUD_ADMIN_EMAILS", "VARYZ_CLOUD_CREATORS_OPEN"):
+        value = keyring.get_password(SERVICE, name)
+        if value:
+            values[name] = value
     analytics_token = keyring.get_password(SERVICE, "VARYZ_ANALYTICS_ADMIN_TOKEN")
     if analytics_token:
         values["VARYZ_ANALYTICS_ENABLED"] = "true"

@@ -49,15 +49,19 @@ import threading
 import time
 import webbrowser
 from dataclasses import asdict
+from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qs, quote, urlsplit
 
 from varyz.bootstrap import DetectedSources
 from varyz.setup_extract import DownloadClock
 from varyz.setup_run import STEPS, SetupRun, _Run
+
+if TYPE_CHECKING:
+    from varyz.review_web import ReviewServer
 
 PAGE = Path(__file__).resolve().parent / "setup_web.html"
 # Ticked when the page opens: the owner's own words, which the briefing is
@@ -143,6 +147,7 @@ class SetupSession(SetupRun):
         self._extract_asked = False
         self._extract_cfg: Any = None
         self._extract_started: dict[str, Any] | None = None
+        self._extract_retrying = False
         self._extract_seen: tuple[float, dict[str, Any]] | None = None
         self._extract_lock = threading.Lock()
         self._downloads = DownloadClock()
@@ -169,6 +174,7 @@ class SetupSession(SetupRun):
             },
             "config": str(self.config_path),
             "exists": self.config_path.exists(),
+            "ai": self.ai_plan,
             "classifier": self._classifier_model(),
             "agents": [
                 {"id": cid, "name": name, "installed": installed}
@@ -255,25 +261,39 @@ class SetupSession(SetupRun):
             }
 
     def _extract_view(self) -> dict[str, Any] | None:
-        """The offer, or the reading's progress, measured again every few seconds.
-
-        Called with ``self._lock`` held; the measuring has its own lock.
-        """
+        # Polling must never wait for archive reads or usage lookups.
         if self._extract_started is None:
             return self._extract
+        if self._extract_retrying:
+            return {**self._extract, "state": "accepted", "phase": "checking"}
+        now = time.time()
+        if ((self._extract_seen is None or now - self._extract_seen[0] >= EXTRACT_REFRESH)
+                and self._extract_lock.acquire(blocking=False)):
+            threading.Thread(target=self._refresh_extract, daemon=True,
+                             name="varyz-setup-progress").start()
+        return self._extract_seen[1] if self._extract_seen else self._extract
+
+    def _refresh_extract(self) -> None:
         from varyz import setup_extract
 
-        with self._extract_lock:
-            now = time.time()
-            if self._extract_seen is None or now - self._extract_seen[0] >= EXTRACT_REFRESH:
-                try:
-                    view = setup_extract.progress(self._extract_cfg, self._extract_started, now)
-                except Exception:  # noqa: BLE001 - the page keeps its last answer
-                    view = self._extract_seen[1] if self._extract_seen else {
-                        "state": "accepted", "phase": "reading", "fraction": None}
-                plan = self._extract["plan"] if self._extract else ""
-                self._extract_seen = (now, {**view, "plan": plan})
-            return self._extract_seen[1]
+        try:
+            started = self._extract_started
+            if started is None:
+                return
+            view = setup_extract.progress(self._extract_cfg, started, time.time())
+            from varyz.setup_recovery import repair_prompt
+
+            if view.get("phase") in {"waiting", "failed", "stopped"}:
+                view["repair_prompt"] = repair_prompt(self.config_path, [
+                    (self._extract["plan"] + " learning", str(view.get("reason") or view["phase"]))
+                ])
+            with self._lock:
+                if self._extract_started is started:
+                    self._extract_seen = (time.time(), {**view, "plan": self._extract["plan"]})
+        except Exception:  # noqa: BLE001 - keep the last measured progress
+            pass
+        finally:
+            self._extract_lock.release()
 
     def _downloads_view(self) -> dict[str, Any] | None:
         """What is downloading and how long all of it still takes; None once none is left.
@@ -286,7 +306,7 @@ class SetupSession(SetupRun):
             return None
         later = None
         model = None
-        if self.steps[6].state == "waiting":
+        if self.steps[6].state == "waiting" and self.inference_mode == "local":
             model = self._classifier_model()
             later = classifier_download(model)
         view = self._downloads.view(later, model)
@@ -299,9 +319,11 @@ class SetupSession(SetupRun):
     def _sources_read(self, run: _Run) -> None:
         """Ask once, if an agent was connected, whether to read the chats now."""
         with self._lock:
-            if self._extract_asked or not run.agent_names:
+            if (self._extract_asked
+                    or (not run.agent_names and self.inference_mode != "local")):
                 return
             self._extract_asked = True
+            self._extract = {"state": "preparing"}
             self._extract_cfg = run.cfg
         # Off the run's thread: the usage is read over the network, and the
         # download must not wait for it.
@@ -316,12 +338,11 @@ class SetupSession(SetupRun):
         except Exception:  # noqa: BLE001 - no offer; the agent asks on its first use
             offered = None
         with self._lock:
-            if self._extract is None:
+            if self._extract is None or self._extract.get("state") == "preparing":
                 self._extract = offered
 
     def choose_extract(self, yes: bool) -> str | None:
         """The owner's answer to the offer; an error sentence when there is none to answer."""
-        from varyz import setup_extract
 
         with self._lock:
             offered = self._extract
@@ -331,6 +352,13 @@ class SetupSession(SetupRun):
                 self._extract = {**offered, "state": "declined"}
                 return None
             self._extract = {**offered, "state": "starting"}
+        threading.Thread(target=self._begin_extract, args=(offered,), daemon=True,
+                         name="varyz-setup-learning").start()
+        return None
+
+    def _begin_extract(self, offered: dict[str, Any]) -> None:
+        from varyz import setup_extract
+
         try:
             started = setup_extract.start(self._extract_cfg, self.config_path, offered)
         except Exception:  # noqa: BLE001 - said on the page; the agent asks later
@@ -339,14 +367,48 @@ class SetupSession(SetupRun):
             if started is None:
                 self._extract = {**offered, "state": "unavailable"}
                 return None
-            self._extract = {**offered, "state": "accepted"}
+            self._extract = {**offered, "state": "accepted", "phase": "waiting_model"
+                             if offered.get("runner") == "local" else "reading"}
             self._extract_started = started
         return None
+
+    def control_extract(self, action: str) -> str | None:
+        """Retry or skip a quota wait; HTTP polling never performs the lookup."""
+        with self._lock:
+            view = self._extract_seen[1] if self._extract_seen else self._extract or {}
+            if (self._extract_started is None or self._extract_started.get("runner") == "local"
+                    or view.get("phase") not in {"waiting", "agent", "failed", "stopped"}
+                    or self._extract_retrying):
+                return "learning is not waiting for a retry"
+            self._extract_retrying = True
+        threading.Thread(target=self._control_extract, args=(action,), daemon=True,
+                         name="varyz-setup-learning-control").start()
+        return None
+
+    def _control_extract(self, action: str) -> None:
+        from varyz import setup_extract
+
+        try:
+            if action == "skip":
+                setup_extract.stop(self._extract_cfg)
+                with self._lock:
+                    self._extract = {**self._extract, "state": "declined"}
+                    self._extract_started = None
+            else:
+                # Keep the saved reading and its diagnostic if retry still cannot start.
+                setup_extract.retry(self._extract_cfg, self.config_path)
+        except Exception:  # noqa: BLE001 - keep the waiting state and its repair prompt
+            pass
+        finally:
+            with self._lock:
+                self._extract_retrying = False
+                self._extract_seen = None
 
     @property
     def extract_accepted(self) -> bool:
         with self._lock:
-            return self._extract_started is not None
+            return (self._extract_started is not None or (self._extract is not None
+                    and self._extract.get("state") in {"starting", "accepted"}))
 
     @property
     def running(self) -> bool:
@@ -358,6 +420,7 @@ class SetupSession(SetupRun):
 
     def start(
         self, agents: list[str], sources: list[str], analytics: bool | None = None,
+        *, inference_mode: str | None = None, cloud_conversations: bool | None = None,
     ) -> str | None:
         """Start the run in the background; an error sentence if it cannot."""
         offered_agents = {cid for cid, _, installed in self.agents if installed}
@@ -367,10 +430,20 @@ class SetupSession(SetupRun):
         unknown = sorted((set(agents) - offered_agents) | (set(sources) - offered_sources))
         if unknown:
             return f"not offered on this page: {', '.join(unknown)}"
+        mode = inference_mode or self.ai_plan["selected"]
+        if not isinstance(mode, str) or mode not in self.ai_plan["choices"]:
+            return "this machine cannot comfortably run the local model; use AI conversation mode"
+        if cloud_conversations is not None and type(cloud_conversations) is not bool:
+            return "cloud_conversations must be true or false"
         with self._lock:
             if self.started:
                 return "setup is already running"
             self.analytics_choice = analytics
+            self.inference_mode = mode
+            if cloud_conversations is not None:
+                self.cloud_conversations = cloud_conversations and mode == "conversations"
+            elif mode == "local":
+                self.cloud_conversations = False
             self.started = True
             self.picked = {"agents": list(agents), "sources": list(sources)}
         threading.Thread(
@@ -429,6 +502,8 @@ class SetupSession(SetupRun):
                         f"{self.activity}; what has downloaded is kept"
                     )
         except Exception as exc:  # noqa: BLE001 - the page must say what stopped it
+            from varyz.setup_recovery import repair_prompt
+
             if self._analytics_cfg is not None:
                 from varyz.analytics import record
 
@@ -444,6 +519,8 @@ class SetupSession(SetupRun):
                 self.result = {
                     "verdict": "NO-GO",
                     "summary": f"Setup stopped: {reason}",
+                    "repair_prompt": repair_prompt(
+                        self.config_path, [(current.name if current else "setup", reason)]),
                     "problems": [[current.name if current else "setup", reason]],
                     "sources": [],
                     "restart": False,
@@ -512,9 +589,12 @@ def render_page(token: str) -> bytes:
     from varyz.card import layout
     from varyz.card.fonts import SANS_STACK, SERIF_STACK
     from varyz.card.render import MARK_PATH
+    from varyz.onboarding import LEARNING_MESSAGE
 
     values = {
+        "LEARNING_MESSAGE": escape(LEARNING_MESSAGE),
         "TOKEN": json.dumps(token),
+        "TOKEN_URL": quote(token, safe=""),
         "MARK_PATH_URL": quote(MARK_PATH),
         "MARK_PATH": MARK_PATH,
         "NIGHT": layout.NIGHT,
@@ -533,14 +613,90 @@ def render_page(token: str) -> bytes:
     return html.encode("utf-8")
 
 
+def render_review_error(token: str, message: str) -> bytes:
+    """Keep a failed review navigation visible, with an authenticated retry link."""
+    prefix = render_page(token).decode("utf-8").split('  <section class="hero">', 1)[0]
+    prefix = prefix.replace("<title>Set up Varyz</title>", "<title>Review preferences</title>")
+    url_token = quote(token, safe="")
+    return (prefix + '<section class="hero"><h1>Review could not open</h1>'
+            + f'<p class="line" role="alert">{escape(message)}</p>'
+            + f'<div class="actions"><a class="button" href="/review?t={url_token}">'
+            + 'Try again</a>'
+            + f'<a class="button quiet" href="/?t={url_token}">Back to setup</a></div>'
+            + '</section></main></body></html>').encode("utf-8")
+
+
+def render_cloud_error(token: str, message: str) -> bytes:
+    return (render_review_error(token, message).decode("utf-8")
+            .replace("<title>Review preferences</title>", "<title>Connect Varyz Cloud</title>")
+            .replace("Review could not open", "Cloud could not open")
+            .replace('href="/review?', 'href="/cloud?').encode("utf-8"))
+
+
 class SetupServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, session: SetupSession, host: str = "127.0.0.1", port: int = 0) -> None:
+        self._review: ReviewServer | None = None
+        self._review_lock = threading.Lock()
         super().__init__((host, port), _Handler)
         self.session = session
         self.last_request = time.monotonic()
         self.closed = threading.Event()
+
+    @property
+    def review_active(self) -> bool:
+        from varyz.review_web import IDLE_LIMIT as REVIEW_IDLE_LIMIT
+
+        review = self._review
+        return (review is not None and not review.closed.is_set()
+                and time.monotonic() - review.last_request < REVIEW_IDLE_LIMIT)
+
+    def open_review(self) -> str:
+        """Reuse the normal rules review on this setup's exact config and identity."""
+        from varyz.cli import _cfg, _local_owner_caller, _resolution_client
+        from varyz.review_web import ReviewServer, ReviewSession
+
+        snapshot = self.session.snapshot()
+        extract = snapshot.get("extract") or {}
+        if (not snapshot["finished"] or extract.get("state") != "accepted"
+                or extract.get("phase") != "done"):
+            raise ValueError("Learning is not ready to review yet.")
+        with self._review_lock:
+            if self.review_active:
+                assert self._review is not None
+                return self._review.url
+            self._close_review()
+            cfg = _cfg(self.session.config_path)
+            review = ReviewServer(ReviewSession(
+                _resolution_client(cfg), _local_owner_caller(cfg, "owner_knowledge"),
+                cfg.resolution.device_id,
+            ))
+            thread = threading.Thread(target=review.serve_forever,
+                                      kwargs={"poll_interval": 0.25}, daemon=True,
+                                      name="varyz-setup-review-server")
+            thread.start()
+            self._review = review
+            return review.url
+
+    def open_cloud(self) -> str:
+        from varyz.cloud.bridge import ensure_ready
+
+        if not self.session.snapshot()["finished"]:
+            raise ValueError("Finish local setup before connecting Cloud.")
+        return ensure_ready(self.session.config_path)
+
+    def _close_review(self) -> None:
+        if self._review is not None:
+            self._review.closed.set()
+            self._review.shutdown()
+            self._review.server_close()
+            self._review = None
+
+    def server_close(self) -> None:
+        with self._review_lock:
+            self._close_review()
+        super().server_close()
 
     @property
     def url(self) -> str:
@@ -570,11 +726,14 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
     def _send(
-        self, status: HTTPStatus, body: bytes, content_type: str, *, cache: bool = False
+        self, status: HTTPStatus, body: bytes, content_type: str, *, cache: bool = False,
+        location: str | None = None,
     ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if location is not None:
+            self.send_header("Location", location)
         self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         # The token is in the page's own address; no link may carry it away.
@@ -612,6 +771,28 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.OK, render_page(self.server.session.token),
                        "text/html; charset=utf-8")
             return
+        if parts.path in {"/review", "/cloud"}:
+            cloud = parts.path == "/cloud"
+            render_error = render_cloud_error if cloud else render_review_error
+            token = parse_qs(parts.query).get("t", [None])[0]
+            if not self._token_ok(token):
+                self._text(HTTPStatus.FORBIDDEN, "missing key")
+                return
+            try:
+                url = self.server.open_cloud() if cloud else self.server.open_review()
+            except ValueError as error:
+                self._send(HTTPStatus.CONFLICT,
+                           render_error(self.server.session.token, str(error)),
+                           "text/html; charset=utf-8")
+            except Exception:
+                message = ("Local Varyz could not connect. Please try again." if cloud
+                           else "Review is unavailable. Please try again.")
+                self._send(HTTPStatus.SERVICE_UNAVAILABLE, render_error(
+                    self.server.session.token, message),
+                    "text/html; charset=utf-8")
+            else:
+                self._send(HTTPStatus.SEE_OTHER, b"", "text/plain", location=url)
+            return
         if parts.path.startswith("/fonts/"):
             font = _fonts().get(parts.path.removeprefix("/fonts/"))
             if font is None:
@@ -622,7 +803,9 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._token_ok(self.headers.get(_TOKEN_HEADER)):
             self._text(HTTPStatus.FORBIDDEN, "missing key")
             return
-        if parts.path == "/api/plan":
+        if parts.path == "/api/ping":
+            self._json({"ok": True})
+        elif parts.path == "/api/plan":
             self._json(self.server.session.plan())
         elif parts.path == "/api/state":
             self._json(self.server.session.snapshot())
@@ -642,11 +825,32 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"closed": True})
             self.server.closed.set()
             return
+        if path == "/api/review":
+            try:
+                url = self.server.open_review()
+            except ValueError as error:
+                self._json({"error": str(error)}, HTTPStatus.CONFLICT)
+            except Exception:  # a missing/unavailable daemon must not stop setup
+                self._json({"error": "Review is unavailable. Please try again."},
+                           HTTPStatus.SERVICE_UNAVAILABLE)
+            else:
+                self._json({"url": url})
+            return
         if path == "/api/github":
             self._post_github()
             return
         if path == "/api/folder-access":
             self._post_folder_access()
+            return
+        if path == "/api/extract/control":
+            body = self._body()
+            action = body.get("action") if isinstance(body, dict) else None
+            if not isinstance(action, str) or action not in {"retry", "skip"}:
+                self._text(HTTPStatus.BAD_REQUEST, "expected action: retry or skip")
+                return
+            error = self.server.session.control_extract(action)
+            self._json({"error": error} if error else {"ok": True},
+                       HTTPStatus.CONFLICT if error else HTTPStatus.OK)
             return
         if path == "/api/extract":
             body = self._body()
@@ -684,7 +888,18 @@ class _Handler(BaseHTTPRequestHandler):
         if sharing is not None and type(sharing) is not bool:
             self._text(HTTPStatus.BAD_REQUEST, "analytics must be true or false")
             return
-        error = self.server.session.start(agents, sources, sharing)
+        mode = body.get("inference_mode")
+        cloud = body.get("cloud_conversations")
+        if mode is not None and (
+            not isinstance(mode, str) or mode not in {"local", "conversations"}
+        ):
+            self._text(HTTPStatus.BAD_REQUEST, "inference_mode must be local or conversations")
+            return
+        if cloud is not None and type(cloud) is not bool:
+            self._text(HTTPStatus.BAD_REQUEST, "cloud_conversations must be true or false")
+            return
+        error = self.server.session.start(agents, sources, sharing,
+                                         inference_mode=mode, cloud_conversations=cloud)
         if error is not None:
             self._json({"error": error}, HTTPStatus.CONFLICT)
             return
@@ -764,9 +979,11 @@ def serve(
         except webbrowser.Error:
             console.print("Could not open a browser; open the link above yourself.")
     try:
-        while not server.closed.wait(1.0):
+        # Closing setup must not cut off a review already opened from this page.
+        while not server.closed.is_set() or server.review_active:
+            time.sleep(1.0)
             idle = time.monotonic() - server.last_request
-            if idle > idle_limit and not session.running:
+            if idle > idle_limit and not session.running and not server.review_active:
                 console.print("Nothing heard from the page for a while; stopping.")
                 break
     except KeyboardInterrupt:

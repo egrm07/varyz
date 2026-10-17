@@ -103,3 +103,55 @@ def test_cloud_rule_import_alias_is_verified(activation):
     )
     journal["records"]["rule:remote-rule"] = {"local_id": rule}
     assert verify_rule(local, journal, client, rule, "demo")["hosted_rule_verified"]
+
+
+@pytest.mark.parametrize("scope,domain", [("*", ""), ("demo", "website")])
+def test_activation_verifies_general_and_domain_advice(activation, scope, domain):
+    local, journal, client, _rule, store = activation
+    rule = SQLitePrincipleStore(local).add(
+        statement="Keep the visual design simple",
+        scope=scope,
+        domain=domain,
+        rationale="Readers should find the next step quickly",
+        source="owner",
+        device_id="test",
+        caller=Caller(agent_id="owner:test", display_name="Owner", purpose="owner_knowledge",
+                      device_id="test", transport="local"),
+    )
+    payload = selected_payloads(local)["rule:" + rule]
+    store.push("account", [{"kind": "rule", "id": rule, "base_version": 0, "payload": payload}])
+    assert verify_rule(local, journal, client, rule, "demo")["hosted_rule_verified"]
+
+
+def test_activation_pages_without_sending_local_rule_text(activation, monkeypatch):
+    from varyz.cloud import rule_briefing
+
+    local, journal, client, rule, store = activation
+    monkeypatch.setattr(rule_briefing, "RULES_FLOOR", 1)
+    rule_briefing.briefing.__kwdefaults__["budget"] = 1
+    try:
+        store.push("account", [{"kind": "rule", "id": "newer", "base_version": 0,
+                                "payload": {"statement": "Use clear headings", "scope": "demo"}}])
+        calls = []
+        request = client.request
+
+        def record_request(method, path, **kwargs):
+            if path == "/mcp":
+                arguments = kwargs["json"]["params"]["arguments"]
+                assert set(arguments) == {"project", "rules_page"}
+                calls.append(arguments["rules_page"])
+            return request(method, path, **kwargs)
+
+        monkeypatch.setattr(client, "request", record_request)
+        assert verify_rule(local, journal, client, rule, "demo")["hosted_rule_verified"]
+        assert calls == [1, 2]
+    finally:
+        rule_briefing.briefing.__kwdefaults__["budget"] = rule_briefing.RULES_BUDGET
+
+
+def test_activation_accepts_a_deduplicated_rule_receipt(activation):
+    local, journal, client, rule, store = activation
+    payload = selected_payloads(local)["rule:" + rule]
+    store.push("account", [{"kind": "rule", "id": "copy", "base_version": 0,
+                            "payload": payload}])
+    assert verify_rule(local, journal, client, rule, "demo")["hosted_rule_verified"]

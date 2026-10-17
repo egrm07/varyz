@@ -119,6 +119,7 @@ class LiveCloudSync:
     def _sync(self, conn: sqlite3.Connection, *, only_if_planned: bool) -> bool | None:
         """True synced, None nothing to do, False failed (retried with backoff)."""
         from varyz.cloud.archive_sync import ArchiveSync, read_archive_journal
+        from varyz.cloud.client import CloudAccessInactive
         from varyz.cloud.local_sync import LocalSync
         from varyz.cloud.session_report_sync import ReportSync
         from varyz.cloud.session_report_sync import journal_path as report_path
@@ -178,6 +179,12 @@ class LiveCloudSync:
                     client.close()
         except LockHeldError:
             return None  # another sync owns the journal and does the same work
+        except CloudAccessInactive as error:
+            from varyz.cloud.local_access import observe
+
+            with contextlib.suppress(Exception):
+                observe(self.config, error.access)
+            return False
         except Exception:
             # A conflict, an outage or a revoked sign-in: `varyz cloud status` says
             # which; nothing private is logged from a background thread.
@@ -188,6 +195,8 @@ class LiveCloudSync:
     # -- the listener: waits on the cloud for another device's change ------------
 
     def _listen(self) -> None:
+        from varyz.cloud.client import CloudAccessInactive
+        from varyz.cloud.local_access import observe
         from varyz.cloud.local_sync import read_journal
 
         backoff = 0.0
@@ -217,6 +226,11 @@ class LiveCloudSync:
                         )
                     elif not page.get("waited"):
                         self._stop.wait(POLL_SECONDS)
+            except CloudAccessInactive as error:
+                with contextlib.suppress(Exception):
+                    observe(self.config, error.access)
+                backoff = MAX_BACKOFF_SECONDS
+                self._stop.wait(backoff)
             except Exception:
                 backoff = min(MAX_BACKOFF_SECONDS, max(POLL_SECONDS, backoff * 2))
                 self._stop.wait(backoff)

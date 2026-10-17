@@ -20,7 +20,7 @@ import httpx
 
 from varyz.config import find_config_file
 
-from .client import CloudClient, CloudError, credential_name, load_tokens
+from .client import CloudAccessInactive, CloudClient, CloudError, credential_name, load_tokens
 
 PATH = "/api/sharing/v1/owner/collaboration"
 FOLLOWING = "/api/sharing/v1/following"
@@ -213,11 +213,15 @@ def call(
         raise CloudError("Cloud could not be reached; try again shortly.") from exc
     finally:
         client.close()
-    if response.status_code == 402 and path == PATH and arguments.get("action") not in (
-        "publish",
-        "public",
-    ):
-        raise CloudError("Sharing projects needs an active Varyz Cloud subscription.")
+    if response.status_code == 402:
+        from varyz.cloud.local_access import observe
+
+        try:
+            error = CloudAccessInactive(response.json())
+        except ValueError:
+            error = CloudAccessInactive()
+        observe(config, error.access)
+        raise error
     if response.is_error:
         try:
             body = response.json()

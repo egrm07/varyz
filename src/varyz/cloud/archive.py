@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from varyz.cloud.archive_views import ArchiveViews
 from varyz.cloud.hosted_data import require_hosted_safe
 from varyz.cloud.payloads import normalize_scope
+from varyz.cloud.project_identity import project_names
 from varyz.cloud.store import QuotaExceeded
 from varyz.privacy.secrets_scan import redact_tree
 
@@ -155,6 +156,10 @@ class Document(BaseModel):
     def safe(self) -> Document:
         if self.source not in SOURCES or self.sensitivity not in {"public", "personal"}:
             raise ValueError("Archive source or sensitivity is not permitted")
+        from varyz.ai_text import is_machine_entry
+
+        if is_machine_entry(self.source, self.text):
+            self.authored = False
         self.project = normalize_scope(self.project)
         datetime.fromisoformat(self.occurred_at.replace("Z", "+00:00"))
         if not re.search(r"(?:Z|[+-]\d\d:\d\d)$", self.occurred_at):
@@ -277,9 +282,14 @@ class Archive(ArchiveViews):
                     if sync := getattr(self.store, "project_sync", None):
                         sync.check(db, account, change.payload.project)
                     project_key = self.index_term(account, change.payload.project)
+                    # A legacy revoked checkout must keep blocking uploads under
+                    # its canonical name. This only tightens existing vetoes.
+                    keys = self.project_permission_keys(db, account, change.payload.project)
+                    marks = ",".join("?" for _ in keys)
                     permission = db.execute(
-                        "SELECT revoked FROM archive_permissions WHERE account=? AND project=?",
-                        (account, project_key),
+                        "SELECT revoked FROM archive_permissions WHERE account=? "
+                        f"AND project IN ({marks}) AND revoked=1",
+                        (account, *keys),
                     ).fetchone()
                     if permission and permission["revoked"]:
                         raise ValueError("Project sharing was revoked; explicitly approve it again")
@@ -489,7 +499,12 @@ class Archive(ArchiveViews):
             raise KeyError("Archive record unavailable")
         doc = json.loads(self.open(row["payload"]))
         require_hosted_safe(doc)
-        if project is not None and doc["project"] != normalize_scope(project):
+        from varyz.ai_text import is_machine_entry
+
+        if is_machine_entry(doc["source"], doc["text"]):
+            doc["authored"] = False
+        names = project_names(self.store, account)
+        if project is not None and names(doc["project"]) != names(project):
             raise KeyError("Archive record unavailable")
         return {
             "id": doc["id"],
@@ -546,7 +561,8 @@ class Archive(ArchiveViews):
                 dates[name] = datetime.fromisoformat(value.replace("Z", "+00:00"))
                 if dates[name].tzinfo is None:
                     raise ValueError("Search dates need a timezone")
-        scope = normalize_scope(project) if project is not None else None
+        names = project_names(self.store, account)
+        scope = names(project) if project is not None else None
         with self.store.connection() as db:
             rows = db.execute(
                 "SELECT id,payload,synced_at FROM archive_documents "
@@ -557,7 +573,7 @@ class Archive(ArchiveViews):
             for row in rows:
                 doc = json.loads(self.open(row["payload"]))
                 time = datetime.fromisoformat(doc["occurred_at"].replace("Z", "+00:00"))
-                if scope is not None and doc["project"] != scope:
+                if scope is not None and names(doc["project"]) != scope:
                     continue
                 if ("before" in dates and time >= dates["before"]) or (
                     "after" in dates and time < dates["after"]

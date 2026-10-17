@@ -355,6 +355,13 @@ def status(config: ConfigOpt = None) -> None:
         typer.echo(
             "Paid entitlement: " + str(account.get("entitlement", account.get("paid", "unknown")))
         )
+        from varyz.cloud.access import account_access
+        from varyz.cloud.local_access import observe
+
+        access = account.get("cloud_access") or account_access(account)
+        observe(_resolved, access)
+        if access.get("active") is False:
+            typer.echo(access["message"])
     except (ValueError, OSError, keyring.errors.KeyringError) as exc:
         _fail(exc)
 

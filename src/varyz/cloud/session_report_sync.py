@@ -220,12 +220,35 @@ class ReportSync:
             sends_text=False,
         )
 
+    def _source_signature(self, journal):
+        """Cache expensive planning only while every privacy input is unchanged."""
+        from varyz.cloud.project_policy import policy_path
+
+        rows = self.conn.execute(
+            "SELECT seq,id,project,conversation_id,agent_id,payload_hash,sensitivity,"
+            "origin,occurred_at,evidence_json FROM session_progress ORDER BY seq"
+        ).fetchall()
+        private = self.conn.execute(
+            "SELECT external_id,sensitivity FROM entries WHERE source='ai_conversations' "
+            "AND sensitivity IN ('sensitive','unclassified') ORDER BY external_id,sensitivity"
+        ).fetchall()
+        policy = policy_path(self.config)
+        return fingerprint({
+            "reports": [tuple(row) for row in rows],
+            "private_sources": [tuple(row) for row in private],
+            "config": self.config.read_text(encoding="utf-8"),
+            "policy": policy.read_text(encoding="utf-8") if policy.exists() else None,
+            "projects": sorted(journal["projects"]), "since": journal.get("since"),
+        })
+
     def sync(self, client, account_id, batch_size=25):
         from varyz.cloud.client import CloudProjectPaused, CloudStorageLimit
 
         if type(batch_size) is not int or not 1 <= batch_size <= 25:
             raise ValueError("Use report batches of 1-25")
         uploaded = deleted = 0
+        cached_signature = None
+        cached_plan = None
         if not read_journal(self.path)["enabled"]:
             return dict(uploaded=0, deleted=0, paused=True)
         owner = client.request("GET", "/api/account")
@@ -285,7 +308,20 @@ class ReportSync:
                                 deleted=row["fingerprint"] == fingerprint(None),
                             )
                 save_journal(self.path, journal)
-                plan = self.plan(journal)
+                signature = self._source_signature(journal)
+                if cached_plan is None or cached_signature != signature:
+                    candidate = self.plan(journal)
+                    if self._source_signature(journal) != signature:
+                        continue  # Privacy/approval changed while the plan was being built.
+                    cached_plan, cached_signature = candidate, signature
+                # Receipts change after every batch; privacy inputs usually do not.
+                # Keep the cached plan intact when remote projects are temporarily paused.
+                changes = []
+                for change in cached_plan["changes"]:
+                    saved = journal["records"].get(change["id"], {})
+                    if saved.get("fingerprint") != fingerprint(change["payload"]):
+                        changes.append({**change, "base_version": saved.get("version", 0)})
+                plan = {"changes": changes, "blocked": cached_plan["blocked"]}
                 paused = {normalize_scope(p) for p in remote.get("paused_projects", [])}
                 plan["changes"] = [
                     c for c in plan["changes"]

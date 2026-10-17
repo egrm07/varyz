@@ -836,8 +836,15 @@ _SUBMIT_PROFILE_READING_SCHEMA: dict[str, Any] = {
                     },
                     "notes": {"type": "array", "maxItems": 200,
                               "items": {"type": "integer", "minimum": 1}},
+                    "durability": {"type": "string",
+                                   "enum": ["provisional", "project_requirement"],
+                                   "description": "Explicit lasting project requirement only; "
+                                   "does not establish a general rule."},
+                    "exclude": {"type": "string", "minLength": 1, "maxLength": 600,
+                                "description": "Why these merge notes are excluded."},
                 },
-                "required": ["slot", "statement"],
+                "anyOf": [{"required": ["slot", "statement"]},
+                          {"required": ["notes", "exclude"]}],
             },
             "description": "What the task's instructions asked for; [] for nothing.",
         },
@@ -1117,6 +1124,19 @@ TOOLS: list[dict[str, Any]] = [
             "idempotentHint": True,
             "openWorldHint": False,
         },
+    },
+    {
+        "name": "profile_reading_status",
+        "title": "Check preference learning progress and completion",
+        "description": (
+            "Verify actual reading and merging progress after a reader starts or returns. "
+            "Queued suggestions are not proof of completion. Shows messages and merges "
+            "remaining, provider failures and retry time; guides the next action. "
+            + _UNTRUSTED_NOTE
+        ),
+        "inputSchema": _PROFILE_READING_TASK_SCHEMA,
+        "annotations": {"readOnlyHint": True, "destructiveHint": False,
+                        "idempotentHint": True, "openWorldHint": False},
     },
     {
         "name": "profile_reading_task",
@@ -2018,6 +2038,11 @@ class VaryzServer:
         )
         if result.get("status") == "delegated":
             return result
+        from varyz.cloud.local_access import briefing_notice
+
+        cloud_access = briefing_notice(self._config_path)
+        if cloud_access:
+            result["cloud_access"] = cloud_access
         from varyz.resolution.task_history import local_history
         from varyz.trust import capability_limits
 
@@ -2071,6 +2096,16 @@ class VaryzServer:
                     find_config_file(self._config_path), now)
                 if offer is not None:
                     result["background_job"] = offer
+            # Approved report projects share Cloud work state across local and hosted agents.
+            with contextlib.suppress(Exception):
+                from varyz.cloud.report_bridge import call as report_call
+
+                threads = report_call(self._config_path, "open", {
+                    "project": project, "task": task[:240],
+                    "conversation_id": self._conversation_id(arguments),
+                })
+                if not threads.get("error"):
+                    result["open_threads"] = threads
             # Shared projects: what collaborators sent, from Cloud, or nothing.
             with contextlib.suppress(Exception):
                 from varyz.cloud import collaboration
@@ -2104,6 +2139,32 @@ class VaryzServer:
                 observe_briefing(self.conn, self.cfg, task, project,
                                  self._conversation_id(arguments), result,
                                  origin="mcp", limit=limit)
+        if caller.capability_id is not None:
+            from varyz.onboarding import (
+                for_agent,
+                is_request,
+                learning_notice,
+                note_conversation,
+                recover_pending,
+            )
+
+            if recover_pending(self.cfg):
+                from varyz.resolution.profile_reader import agent_reading_offer
+
+                resumed = agent_reading_offer(self.cfg, self.conn, time.time())
+                if resumed is not None:
+                    result["background_job"] = resumed
+            with contextlib.suppress(Exception):
+                if notice := learning_notice(self.cfg):
+                    result["learning_notice"] = notice
+            onboarding = is_request(task, self.cfg)
+            note_conversation(self.cfg, self._conversation_id(arguments), onboarding=onboarding)
+            if onboarding:
+                result["onboarding"] = for_agent(self.cfg, self.conn, result.get("background_job"))
+                if result["onboarding"]["state"] in {
+                    "paused", "local_learning", "provider_limited",
+                }:
+                    result.pop("background_job", None)
         return result
 
     def _call_finish_check(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2455,6 +2516,25 @@ class VaryzServer:
 
     def _reading_caller(self, arguments: dict[str, Any]) -> tuple[Any, str | None]:
         caller, denial = self._advice_caller(arguments)
+        # A long-lived reader must see a mode change/revocation before its next excerpt.
+        if self.cfg.source_file is not None:
+            from varyz.config import ConfigError, load_config
+
+            try:
+                current = load_config(self.cfg.source_file)
+            except ConfigError:
+                return caller, "Conversation reading stopped: setup permissions cannot be read."
+            if current.db_path != self.cfg.db_path:
+                return caller, "The archive changed; restart the reader."
+            self.cfg.workflows = current.workflows
+            self.cfg.connectors = current.connectors
+        if self.cfg.workflows.inference_mode == "local" or (
+            self.cfg.workflows.inference_mode == "conversations"
+            and (not self.cfg.workflows.rule_reader_agent or not self.cfg.connector_options(
+                "ai_conversations"
+            ).get("approved", False))
+        ):
+            return caller, "Cloud conversation reading is disabled in setup."
         if denial is None and caller.capability_id is None:
             denial = _UNREGISTERED_READER
         return caller, denial
@@ -2476,6 +2556,18 @@ class VaryzServer:
             return {"error": "Pick a time in the next 14 days."}
         return {"scheduled": True, "until": datetime.fromtimestamp(until).astimezone()
                 .isoformat(timespec="minutes"), "tell_owner": schedule(self.cfg, until, now)}
+
+    def _call_profile_reading_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        from varyz.onboarding import _mark_first_run_delivered, learning_status
+        from varyz.resolution.headless_reader import ENV
+
+        _, denial = self._reading_caller(arguments)
+        if denial is not None:
+            return {"complete": False, "error": denial}
+        status = learning_status(self.cfg, self.conn)
+        if status["complete"] and not os.environ.get(ENV):
+            _mark_first_run_delivered(self.cfg)
+        return status
 
     def _call_profile_reading_task(self, arguments: dict[str, Any]) -> dict[str, Any]:
         from varyz.resolution.profile_reader import live_since, reading_lock
@@ -2538,6 +2630,9 @@ class VaryzServer:
 
         def known(scope: str) -> list[str]:
             # Asked only for a merge, so reading goes on while the daemon is away.
+            if self.cfg.workflows.inference_mode == "conversations":
+                # Existing manual/file-derived rules are outside this reader's consent.
+                return []
             ledger, answers = self._with_daemon(profile)
             return known_from(ledger, answers)(scope)
 
@@ -2573,6 +2668,7 @@ class VaryzServer:
             return {"queued": 0, "error": str(busy) + " Submit the same items again."}
 
     def _submit_reading(self, caller: Any, task_id: str, items: list[Any]) -> dict[str, Any]:
+        from varyz.onboarding import learning_status
         from varyz.resolution.client import ResolutionClientError
         from varyz.resolution.profile_reader import (
             SOURCES,
@@ -2588,13 +2684,15 @@ class VaryzServer:
         except KeyError:
             return {"queued": 0, "error": "That task is not open any more. Call "
                     "profile_reading_task for the next one."}
+        except ValueError as error:
+            state.save()
+            return {"queued": 0, "error": str(error), "partial": True}
         if accepted.redo:
             state.save()
-            return {"queued": 0, "error": "This merge has several notes and came back with "
-                    "no items. Merge them as its instructions say: join the notes that say "
-                    "the same thing and keep every item that would change what an agent "
-                    "does or spare the owner a question. Call profile_reading_task for it "
-                    "again; [] a second time is taken as meant."}
+            reason = getattr(accepted, "retry_reason", "") or "Account for every merge note."
+            return {"queued": 0, "error": reason + " Call profile_reading_task for the "
+                    "same task again; follow its correction instructions and rewrite the "
+                    "complete answer. No items from this answer were queued.", "partial": True}
         device_id = self.cfg.resolution.device_id
 
         def queue(client: Any) -> tuple[int, int]:
@@ -2619,7 +2717,10 @@ class VaryzServer:
             # too few messages behind it, or one too short or too long:
             # dropped, not guessed at.
             "dropped": accepted.dropped,
-            "next": "Call profile_reading_task for the next task.",
+            "learning": learning_status(self.cfg, self.conn),
+            "next": "Call profile_reading_task again even when items were queued. "
+                    "Stop only when it says done, stopped or error. Verify completion "
+                    "with profile_reading_status before reporting.",
         }
 
     def _call_remember_owner_workflow(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2783,8 +2884,11 @@ class VaryzServer:
             return {"error": "current archive configuration cannot be read; reconnect Varyz"}
         if current_cfg.db_path.resolve() != self.cfg.db_path.resolve():
             return {"error": "archive configuration changed; reconnect Varyz"}
+        from varyz.cloud.progress import Pickup
+
         try:
-            model = {"record_progress": session_progress.Checkpoint,
+            model = {"claim_work": Pickup,
+                     "record_progress": session_progress.Checkpoint,
                      "session_history": session_progress.HistoryQuery,
                      "mine_sessions": session_progress.MiningRequest}[name]
             parsed = model.model_validate(arguments)
@@ -2827,10 +2931,21 @@ class VaryzServer:
                 return result
             finally:
                 lock.release()
+        if name == "claim_work":
+            from varyz.cloud.report_bridge import call
+
+            return call(self._config_path, "claim", parsed.model_dump())
         if name == "record_progress":
             assert isinstance(parsed, session_progress.Checkpoint)
             if session_progress.pause_path(current_cfg.data_dir).exists():
                 return {"recorded": False, "status": "paused"}
+            if parsed.thread_id:
+                from varyz.cloud.report_bridge import call
+
+                remote = call(self._config_path, "checkpoint",
+                              {**parsed.model_dump(), "agent": caller.agent_id})
+                if not remote.get("recorded"):
+                    return remote
             return session_progress.record(self.conn, parsed, agent_id=caller.agent_id)
         assert isinstance(parsed, session_progress.HistoryQuery)
         query = parsed
@@ -2841,7 +2956,7 @@ class VaryzServer:
     def _call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         from varyz.coordination import guard, route
 
-        if name in {"record_progress", "session_history", "mine_sessions"}:
+        if name in {"record_progress", "session_history", "mine_sessions", "claim_work"}:
             return self._call_progress(name, arguments)
         if name == "route_task":
             from varyz.resolution.client import DaemonUnavailableError, ResolutionClientError
@@ -2893,6 +3008,7 @@ class VaryzServer:
             "advise",
             "remember_owner_rule",
             "remember_owner_workflow",
+            "profile_reading_status",
             "profile_reading_task",
             "submit_profile_reading",
             "schedule_reading",
@@ -2931,6 +3047,8 @@ class VaryzServer:
             return self._call_advise(arguments)
         if name == "remember_owner_rule":
             return self._call_remember_owner_rule(arguments)
+        if name == "profile_reading_status":
+            return self._call_profile_reading_status(arguments)
         if name == "profile_reading_task":
             return self._call_profile_reading_task(arguments)
         if name == "submit_profile_reading":
@@ -3549,6 +3667,13 @@ def _instructions(server: VaryzServer) -> str:
     and loading the model here would put a config error in front of an agent
     that has not asked varyz anything yet.
     """
+    if os.environ.get("VARYZ_HEADLESS_READER"):
+        return ("Read only through profile_reading_task, submit_profile_reading and "
+                "profile_reading_status. "
+                "Follow each task's instructions, submit its result, and repeat until done. "
+                "Never ask the owner questions or call other tools.")
+    from varyz.onboarding import GUIDANCE
+
     style = read_style(find_config_file(server.config_path))
     notices = (
         "\n\nWhen local and hosted Varyz are both connected, prefer a working authorized "
@@ -3585,7 +3710,7 @@ def _instructions(server: VaryzServer) -> str:
         "automatic sales prompt. Verify the approved Cloud origin is live; a placeholder "
         "redirect is not a working Cloud service."
     )
-    return INSTRUCTIONS + notices + activation + "\n\n" + instruction(style)
+    return INSTRUCTIONS + "\n\n" + GUIDANCE + notices + activation + "\n\n" + instruction(style)
 
 
 def handle(server: VaryzServer, message: dict[str, Any]) -> dict[str, Any] | None:
@@ -3634,6 +3759,9 @@ def handle(server: VaryzServer, message: dict[str, Any]) -> dict[str, Any] | Non
                 {**tool, "description": tool["description"] + " " + _UNTRUSTED_NOTE}
                 for tool in (collaboration.TOOL, collaboration.FOLLOW_TOOL)
             )
+        if os.environ.get("VARYZ_HEADLESS_READER"):
+            tools = [tool for tool in tools if tool["name"] in {
+                "profile_reading_task", "submit_profile_reading", "profile_reading_status"}]
         return _result(request_id, {"tools": tools})
     if method == "tools/call":
         # Here they are required, so guessing is worse than saying so: a call
@@ -3642,6 +3770,9 @@ def handle(server: VaryzServer, message: dict[str, Any]) -> dict[str, Any] | Non
         if not isinstance(raw_params, dict):
             return _error(request_id, -32602, "Invalid params: params must be an object")
         name = params.get("name", "")
+        if os.environ.get("VARYZ_HEADLESS_READER") and name not in {
+            "profile_reading_task", "submit_profile_reading", "profile_reading_status"}:
+            return _error(request_id, -32601, "Tool unavailable to the background reader")
         arguments = params.get("arguments")
         if arguments is None:
             arguments = {}

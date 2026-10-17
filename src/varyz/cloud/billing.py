@@ -1,5 +1,6 @@
 """Verified payment/refund ledger, independent of subscription lifecycle order."""
 
+import time
 from datetime import datetime
 
 
@@ -8,6 +9,26 @@ def event_time(value):
     if stamp.tzinfo is None:
         raise ValueError("Billing timestamp needs a timezone")
     return stamp.timestamp()
+
+
+def subscription_deadline(data):
+    """Paddle's current period, shortened by an explicit scheduled stop."""
+    period = data.get("current_billing_period") or {}
+    change = data.get("scheduled_change") or {}
+    deadlines = []
+    end = period["ends_at"] if data.get("current_billing_period") is not None else (
+        data.get("next_billed_at")
+    )
+    if data.get("current_billing_period") is not None and not isinstance(end, str):
+        raise ValueError("Invalid billing period end")
+    if end:
+        deadlines.append(event_time(end))
+    if change.get("action") in {"cancel", "pause"}:
+        deadlines.append(event_time(change["effective_at"]))
+    if (data.get("status") == "active" and not deadlines
+            and any(key in data for key in ("current_billing_period", "next_billed_at"))):
+        raise ValueError("Active subscription needs a billing period end")
+    return min(deadlines) if deadlines else None
 
 
 def record_payment(db, data, occurred, allowed_prices):
@@ -78,6 +99,10 @@ def record_refund(db, data):
 
 def effective_account(db, owner):
     result = dict(owner)
+    now = time.time()
+    if (result["status"] == "active" and result.get("subscription_ends_at") is not None
+            and result["subscription_ends_at"] <= now):
+        result["status"] = "expired"
     if result["status"] == "active" and result["subscription"]:
         latest = db.execute(
             "SELECT id,grand_total,currency FROM billing_payments "
@@ -95,4 +120,20 @@ def effective_account(db, owner):
             ).fetchone()
         ):
             result["status"] = "refunded"
+    # A creator-program grant is free access with no card and no renewal. It never
+    # replaces the paid subscription; checkout reads paid_status, not status.
+    grant = db.execute(
+        "SELECT role,ends_at,revoked_at FROM cloud_grants WHERE account=?",
+        (result["id"],),
+    ).fetchone()
+    result["paid_status"] = result["status"]
+    if grant and grant["revoked_at"] is None and grant["ends_at"] > now:
+        result["free_access"] = grant["role"]
+        result["free_until"] = grant["ends_at"]
+        if result["status"] != "active":
+            result["status"] = "active"
+    elif grant and result["status"] == "inactive":
+        result["access_reason"] = (
+            "free_access_revoked" if grant["revoked_at"] is not None else "free_period_expired"
+        )
     return result

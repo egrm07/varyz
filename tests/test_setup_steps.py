@@ -695,10 +695,11 @@ def test_terminal_setup_ends_with_the_graph_autosync_and_the_classifier(
     config = _config(tmp_path / "config.toml")
     calls = _finishing(monkeypatch)
 
-    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources"])
+    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources",
+                                    "--ai-mode", "local"])
 
     assert result.exit_code == 0, result.output
-    assert calls == ["graph", "autosync", "classifier", "privacy"]
+    assert calls == ["restart", "graph", "autosync", "classifier", "privacy"]
     flat = _flat(result.output)
     assert "1/7 Archive" in flat
     assert "5/7 Graph 12 claims from 2 entries" in flat
@@ -712,7 +713,8 @@ def test_a_failed_last_step_is_a_no_go(tmp_path, machine, monkeypatch):  # noqa:
     calls = _finishing(monkeypatch, classifier=("failed", "Ollama did not start", False),
                        autosync_step=("skipped", "no data source to keep current"))
 
-    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources"])
+    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources",
+                                    "--ai-mode", "local"])
 
     assert result.exit_code == 1, result.output
     flat = _flat(result.output)
@@ -727,13 +729,21 @@ def test_a_moved_classifier_restarts_the_daemon_and_asks_for_an_agent_restart(
     tmp_path, machine, monkeypatch  # noqa: F811
 ):
     config = _config(tmp_path / "config.toml")
+    from varyz.install import InstallResult
+
+    agent = tmp_path / ".claude.json"
+    agent.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("varyz.install.client_paths", lambda: {"claude-code": agent})
+    monkeypatch.setattr("varyz.install.connect_agent", lambda *args, **kwargs:
+                        (None, [InstallResult("claude-code", agent, False, "already connected")]))
     calls = _finishing(monkeypatch, classifier=("done", "serves on port 11435", True))
 
-    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources"])
+    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources", "--yes",
+                                    "--ai-mode", "local"])
 
     assert result.exit_code == 0, result.output
     assert "restart" in calls
-    assert "Restart your agents so they load Varyz." in result.output
+    assert "Restart Claude Code so it loads Varyz." in _flat(result.output)
 
 
 def test_what_macos_keeps_from_autosync_is_printed_with_the_way_to_allow_it(
@@ -744,7 +754,8 @@ def test_what_macos_keeps_from_autosync_is_printed_with_the_way_to_allow_it(
     _finishing(monkeypatch, privacy={"folders": folders, "via": "app",
                                      "program": "/o/Varyz.app"})
 
-    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources"])
+    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources",
+                                    "--ai-mode", "local"])
 
     flat = _flat(result.output)
     assert "background syncing skips them: Documents /Users/o/Documents" in flat
@@ -761,7 +772,8 @@ def test_without_the_app_full_disk_access_is_explained_not_just_asked(
     _finishing(monkeypatch, privacy={"folders": folders, "via": "full_disk_access",
                                      "program": "/opt/python"})
 
-    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources"])
+    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources",
+                                    "--ai-mode", "local"])
 
     flat = _flat(result.output)
     assert "no folder-only switch" in flat and "opens more than these folders" in flat

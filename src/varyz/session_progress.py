@@ -48,6 +48,7 @@ class Checkpoint(BaseModel):
     project: Identity
     conversation_id: Identity
     checkpoint_id: Identity
+    thread_id: Identity | None = None
     task: Goal
     status: Literal["working", "blocked", "complete", "abandoned"] = "working"
     done: Facts = Field(default_factory=list)
@@ -117,7 +118,7 @@ def record(
     _evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Append atomically; a retry cannot overwrite a report or change chronology."""
-    raw = checkpoint.model_dump()
+    raw = checkpoint.model_dump(exclude_none=True)
     safe, removed = redact_tree(raw)
     # Identifiers must not change under redaction, or retries and citations diverge.
     if any(raw[key] != safe[key] for key in ("project", "conversation_id", "checkpoint_id")):
@@ -294,7 +295,7 @@ def history(
     has_more = len(rows) > query.limit
     rows = rows[: query.limit]
     withheld = 0
-    reports = []
+    reports: list[dict[str, Any]] = []
     used = 0
     truncated = has_more
     next_before = None
@@ -335,7 +336,9 @@ def history(
         # Internal retry keys and the sensitivity setting add no task context.
         payload.pop("checkpoint_id", None)
         payload.pop("sensitivity", None)
-        report = {
+        if payload.get("thread_id") is None:
+            payload.pop("thread_id", None)
+        report: dict[str, Any] = {
             **payload,
             "agent": row["agent_id"],
             "recorded_at": row["recorded_at"],
@@ -354,7 +357,7 @@ def history(
             # Reuse the gated timeline, deduplicate extraction revisions and fit
             # earlier outcomes as bounded metadata of this one report, within
             # its caller character budget. A limit:1 request still needs context.
-            timeline = history(
+            session_timeline = history(
                 conn, HistoryQuery(project=query.project,
                                    conversation_id=report["conversation_id"],
                                    agent=report["agent"], latest=False, limit=20),
@@ -362,7 +365,7 @@ def history(
             )
             seen = {evidence.get("response_reference")}
             earlier = []
-            for prior in timeline["reports"]:
+            for prior in session_timeline["reports"]:
                 reference = prior.get("evidence", {}).get("response_reference")
                 if not reference or reference in seen:
                     continue
@@ -370,7 +373,7 @@ def history(
                 if prior["done"] or prior["checks"]:
                     earlier.append(prior)
             earlier.sort(key=lambda item: (item["occurred_at"], item["seq"]))
-            context = []
+            context: list[dict[str, Any]] = []
             for prior in earlier[: min(4, query.limit)]:
                 snapshot = {key: prior[key] for key in
                             ("task", "done", "checks", "occurred_at", "reference")}
@@ -483,3 +486,18 @@ TOOLS = [
         },
     },
 ]
+
+
+TOOLS.append({
+    "name": "claim_work",
+    "description": "Claim, renew or release an unfinished Cloud work thread for 15 minutes. "
+                   "Use its thread_id in pickup checkpoints. Requires approved report syncing.",
+    "inputSchema": {"type": "object", "properties": {
+        "project": {"type": "string"}, "conversation_id": {"type": "string"},
+        "thread_id": {"type": "string"},
+        "action": {"type": "string", "enum": ["claim", "release", "status"]}},
+        "required": ["project", "conversation_id", "thread_id"],
+        "additionalProperties": False},
+    "annotations": {"readOnlyHint": False, "destructiveHint": False,
+                    "idempotentHint": True, "openWorldHint": False},
+})

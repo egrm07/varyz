@@ -55,6 +55,14 @@ def config_file(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def established_news_user(cfg):
+    from varyz.onboarding import note_conversation
+
+    for number in range(4):
+        note_conversation(cfg, f"established-{number}", now=NOW.timestamp() - 2 * 86400)
+
+
 # -- the hourly check -------------------------------------------------------------
 
 

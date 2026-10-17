@@ -611,7 +611,8 @@ def test_the_first_task_is_briefed_and_later_prompts_only_add_new_kinds_of_work(
 
     assert hooks.user_prompt(cfg, {**event, "prompt": "thanks"}) is None
     question = "do I need to mention varyz in the prompt for the website?"
-    assert hooks.user_prompt(cfg, {**event, "prompt": question}) is None
+    welcome = hooks.user_prompt(cfg, {**event, "prompt": question})
+    assert "Call start_task now" in welcome["hookSpecificOutput"]["additionalContext"]
     for notice in (
         "<task-notification>\n<task-id>b1</task-id> Background command finished with exit code 1",
         "[SYSTEM NOTIFICATION - NOT USER INPUT] This is an automated background-task event",

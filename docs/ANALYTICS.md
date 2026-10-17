@@ -4,7 +4,8 @@
 
 **Varyz sends bounded aggregate counts to its creator, Egor Menshikov, only with consent.**
 The receiver is `https://cloud.varyzai.com/api/analytics`; no Cloud account or subscription
-is required. The information website still has no tracking scripts.
+is required. The public website has separate default aggregate counters and consent-gated detailed measurement; see
+`WEBSITE_ANALYTICS.md`. Website consent never enables software analytics or vice versa.
 
 ## Counters and limitations
 

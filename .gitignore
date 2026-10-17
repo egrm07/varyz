@@ -11,6 +11,9 @@ __pycache__/
 .uv-cache/
 *.cloud-sync.json
 *.cloud-sync.lock
+*.cloud-access.json
+*.cloud-access.lock
+*.cloud-access.json.*.tmp
 *.cloud-archive.json
 *.cloud-computer.json
 *.cloud-computer.json.tmp

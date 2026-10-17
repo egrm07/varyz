@@ -517,3 +517,62 @@ def test_wrong_account_and_disabled_sync_send_no_report_content(setup):
     with pytest.raises(ValueError, match="another account"):
         sync.sync(client, "owner")
     assert client.calls == [("GET", "/api/account")]
+
+
+def test_backfill_reuses_plan_but_rechecks_new_private_state_each_batch(setup):
+    wizard, conn, store, _ = setup
+    for i in range(28):
+        checkpoint(conn, i)
+    sync = ReportSync(conn, wizard.config)
+    _, _, signature = sync.draft(["varyz"])
+    sync.select(["varyz"], signature, "owner", "https://cloud.varyzai.com")
+    planned = 0
+    original_plan = sync.plan
+
+    def count_plan(journal=None):
+        nonlocal planned
+        planned += 1
+        return original_plan(journal)
+
+    sync.plan = count_plan
+    with wizard_client(wizard) as client:
+        original_request = client.request
+        written = 0
+
+        def privacy_changes(method, path, **kwargs):
+            nonlocal written
+            result = original_request(method, path, **kwargs)
+            if path == "/api/reports/sync" and method == "POST":
+                written += 1
+                if written == 1:
+                    checkpoint(conn, 100, "sensitive")
+            return result
+
+        client.request = privacy_changes
+        outcome = sync.sync(client, "owner")
+    assert outcome["uploaded"] == 25 and outcome["deleted"] == 25
+    assert planned == 2
+    with store.connection() as db:
+        query = "SELECT 1 FROM cloud_session_reports WHERE payload!='null'"
+        assert not db.execute(query).fetchone()
+
+
+def test_unchanged_backfill_plans_once_for_multiple_batches(setup):
+    wizard, conn, _, _ = setup
+    for i in range(28):
+        checkpoint(conn, i)
+    sync = ReportSync(conn, wizard.config)
+    _, _, signature = sync.draft(["varyz"])
+    sync.select(["varyz"], signature, "owner", "https://cloud.varyzai.com")
+    planned = 0
+    original_plan = sync.plan
+
+    def count_plan(journal=None):
+        nonlocal planned
+        planned += 1
+        return original_plan(journal)
+
+    sync.plan = count_plan
+    with wizard_client(wizard) as client:
+        outcome = sync.sync(client, "owner")
+    assert outcome["uploaded"] == 28 and planned == 1

@@ -249,6 +249,12 @@ done_gate = true
 done_gate_small_changes = "skip"
 
 [workflows]
+# Setup assesses memory, free disk, CPU and GPU headroom before any Qwen download.
+# legacy preserves existing settings. Setup writes local (More privacy) or
+# conversations (Lighter on your device) and updates the switches below.
+# Conversation mode never loads Qwen; cloud reading needs its separate setup
+# consent and an approved AI conversation source. Documents/git are excluded.
+inference_mode = "legacy"       # legacy | local | conversations
 # When a task starts at a later step of your usual order while an earlier one is
 # open, agents raise it only for new work; a small change is just done. Which is
 # which is decided on this machine (your prompt never leaves it):

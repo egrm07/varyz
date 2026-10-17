@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
 <title>Set up Varyz</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -10 66 50'%3E%3Cpath fill='%23ffc23d' d='{{MARK_PATH_URL}}'/%3E%3C/svg%3E">
 <style>
@@ -38,39 +39,40 @@
 }
 * { box-sizing: border-box; }
 html { background: var(--night); }
+::selection { background: var(--signal); color: var(--night); }
 body {
   margin: 0; min-height: 100vh; background: var(--night); color: var(--ink);
   font-family: var(--sans); font-size: 18px; line-height: 1.3;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
-main { max-width: 880px; margin: 0 auto; padding: var(--margin); min-height: 100vh;
+main { max-width: 1040px; margin: 0 auto; padding: 32px 56px; min-height: 100vh;
   display: flex; flex-direction: column; }
 main > *, ol.rules > li > div, .choice > span, .link > div { min-width: 0; }
 
 /* Brand row: the bird mark and the wordmark; the bird's notch sits on the baseline. */
-.brand { display: flex; align-items: baseline; gap: 0.3em; font-family: var(--display);
-  font-size: clamp(26px, 3.5vw, 38px); line-height: 1; }
-.brand svg { width: 1.1em; height: auto; fill: var(--signal); align-self: center;
-  transform: translateY(-0.06em); overflow: visible; }
+.brand { display: flex; align-items: center; gap: 12px; font-family: var(--display);
+  font-size: 29px; line-height: 1; letter-spacing: -0.5px;
+  padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.brand svg { width: 42px; height: 28px; fill: var(--signal); overflow: visible; }
 
-.hero { margin-top: calc(var(--gap) * 1.6); }
+.hero { margin: 48px 0 36px; max-width: 640px; }
 h1 { font-family: var(--display); font-weight: 400; margin: 0;
-  font-size: clamp(48px, 7.8vw, 84px); line-height: 1.04; letter-spacing: -0.03em; }
+  font-size: clamp(38px, 5vw, 60px); line-height: 1.1; letter-spacing: -0.03em; }
 .archetype { font-family: var(--display); color: var(--signal); margin: calc(var(--gap) * 0.25) 0 0;
   font-size: clamp(28px, 4.1vw, 44px); line-height: 1.08; }
-.line { font-family: var(--serif); font-style: italic; color: var(--muted); margin: 0.2em 0 0;
-  font-size: clamp(19px, 2.6vw, 28px); line-height: 1.28; }
+.line { color: var(--muted); margin: 16px 0 0; font-size: 17px; line-height: 1.5; }
 .quote { font-family: var(--serif); font-style: italic; margin: calc(var(--gap) * 1.25) 0 0;
   font-size: clamp(24px, 3.5vw, 38px); line-height: 1.22; max-width: 22em; text-wrap: balance; }
 
 /* "HOUSE RULES": the one small label, above a numbered list. */
-.label { font-family: var(--sans); font-weight: 600; font-size: clamp(14px, 1.76vw, 19px);
-  color: var(--dim); text-transform: uppercase; margin: calc(var(--gap) * 1.3) 0 0.6em;
+.label { font-family: var(--sans); font-weight: 400; font-size: 11px; letter-spacing: .14em;
+  color: var(--muted); text-transform: uppercase; margin: 28px 0 16px;
   line-height: 1.2; }
 ol.rules { list-style: none; padding: 0; margin: 0; }
 ol.rules > li { display: grid; grid-template-columns: 2em minmax(0, 1fr); column-gap: 0;
-  font-size: clamp(18px, 2.5vw, 27px); line-height: 1.3; }
+  font-size: 22px; line-height: 1.4; }
 ol.rules > li + li { margin-top: 0.8em; }
+ol.rules > li:has(> .num[hidden]) { grid-template-columns: minmax(0, 1fr); }
 .num { font-weight: 600; color: var(--signal); font-variant-numeric: tabular-nums; }
 .name { color: var(--ink); }
 .desc { color: var(--muted); font-size: 0.72em; line-height: 1.35; margin-top: 0.15em; text-wrap: pretty; }
@@ -81,7 +83,7 @@ ol.rules > li + li { margin-top: 0.8em; }
 .status .word { font-weight: 600; text-transform: uppercase; font-size: 0.86em; margin-right: 0.5em; }
 
 li[data-state="waiting"] .num { color: var(--dim); }
-li[data-state="running"] .num { animation: pulse 1.1s ease-in-out infinite; }
+li[data-state="running"] .num { color: var(--signal); }
 li[data-state="done"] .status .word { color: var(--signal); }
 li[data-state="skipped"] .num, li[data-state="skipped"] .status .word { color: var(--dim); }
 li[data-state="paused"] .num, li[data-state="paused"] .status .word { color: var(--muted); }
@@ -118,6 +120,16 @@ li[data-state="failed"] .num, li[data-state="failed"] .status { color: var(--fai
 .choice input:focus-visible, button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
 .choice .what, .link .what { color: var(--dim); font-size: 0.88em; line-height: 1.35; display: block; margin-top: 0.1em; }
 .choice.absent { cursor: default; color: var(--dim); }
+#ai-modes { font-size: 17px; max-width: 640px; }
+#ai-modes li + li { margin-top: 12px; }
+#ai-modes .choice { padding: 20px; border: 1px solid var(--line); border-radius: 6px; }
+#ai-modes .choice:has(input:checked) { border-color: #807044; background: #ffc23d06; }
+#cloud-details { margin-top: 12px; font-size: 14px; color: var(--muted); }
+summary { cursor: pointer; padding: 8px 0; }
+#ai-setup, #setup-details, #result, .extract { max-width: 680px; }
+#completed-step { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+#setup-nav { margin-top: 28px; }
+#setup-details > .actions:first-child { margin: 0 0 20px; }
 /* GitHub, before it is linked: a token box instead of a tick. */
 .link { display: grid; grid-template-columns: 1.25em 1fr; column-gap: 0.6em; }
 .link .form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 0.6em; margin-top: 0.5em; }
@@ -132,12 +144,13 @@ li[data-state="failed"] .num, li[data-state="failed"] .status { color: var(--fai
 
 .actions { margin-top: calc(var(--gap) * 1.3); display: flex; flex-wrap: wrap; align-items: center;
   gap: 0.9em 1.2em; }
-button { font-family: var(--sans); font-weight: 500; font-size: clamp(17px, 2vw, 21px);
+button, .button { display: inline-block; text-decoration: none; line-height: normal;
+  font-family: var(--sans); font-weight: 500; font-size: 14px; min-height: 44px;
   color: var(--night); background: var(--signal); border: 0; border-radius: 8px;
   padding: 0.7em 1.25em; cursor: pointer; }
-button:hover { filter: brightness(1.06); }
+button:hover, .button:hover { filter: brightness(1.06); }
 button:disabled { opacity: 0.5; cursor: default; filter: none; }
-button.quiet { background: transparent; color: var(--signal); border: 2px solid var(--signal);
+button.quiet, .button.quiet { background: transparent; color: var(--ink); border: 2px solid var(--line);
   padding: calc(0.7em - 2px) calc(1.25em - 2px); }
 .hint { color: var(--dim); font-size: 15px; line-height: 1.4; }
 .hint code { font-family: var(--sans); color: var(--muted); }
@@ -146,6 +159,8 @@ button.quiet { background: transparent; color: var(--signal); border: 2px solid 
 .verdict-word { font-family: var(--display); font-size: clamp(28px, 4.1vw, 44px); line-height: 1.08;
   margin: calc(var(--gap) * 1.3) 0 0; }
 .go { color: var(--signal); } .nogo { color: var(--failed); }
+#verdict-word { font: 400 14px/1.5 var(--sans); margin: 0 0 12px; }
+#summary { font: 400 18px/1.5 var(--sans); max-width: 38em; }
 table { border-collapse: collapse; width: 100%; font-size: clamp(15px, 1.8vw, 19px); }
 td { padding: 0.35em 0; vertical-align: baseline; border-bottom: 1px solid var(--line); }
 td + td { padding-left: 1em; }
@@ -199,8 +214,28 @@ td.state.connected { color: var(--signal); }
 .extract .actions { margin-top: 1.3em; }
 .extract .bar { max-width: none; margin-top: 1em; }
 .extract .hint { display: block; margin-top: 0.7em; }
+/* Activity stays visible between completed batches; the bar keeps real progress. */
+.learning-activity { display: flex; align-items: center; gap: 10px;
+  color: var(--muted); font: 14px/1.5 var(--sans); margin: 14px 0; }
+.learning-activity[hidden] { display: none; }
+.learning-spinner { flex: 0 0 auto; width: 16px; height: 16px; border: 2px solid var(--line);
+  border-top-color: var(--signal); border-radius: 50%; animation: learning-spin 1s linear infinite; }
+.learning-elapsed { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@keyframes learning-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .learning-spinner { animation: none; } }
+.repair-prompt { width: 100%; min-height: 180px; box-sizing: border-box; resize: vertical;
+  margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--night); color: var(--muted); font: 14px/1.5 var(--sans); }
+.repair-help { margin-top: 20px; }
+#learning-message { display: block; width: 100%; box-sizing: border-box;
+  margin: 12px 0 16px; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--night);
+  color: var(--ink); font: 16px/1.5 var(--sans); }
 .extract .hint code, .extract .note code { font-family: var(--sans); color: var(--signal); }
 @media (max-width: 560px) {
+  .costs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8em; }
+  .costs dt { font-size: 28px; }
+  .costs dd { font-size: 13px; }
   #analytics-message { font-size: 16px; }
   #analytics-signature { font-size: 16px; margin-bottom: 16px; }
   #analytics-dialog .actions { display: grid; grid-template-columns: 1fr; }
@@ -210,13 +245,16 @@ td.state.connected { color: var(--signal); }
 footer { margin-top: auto; padding-top: calc(var(--gap) * 1.6); }
 footer .rule { height: 2px; background: var(--line); }
 footer .row { display: flex; justify-content: space-between; gap: 1em; align-items: baseline;
-  margin-top: 0.9em; font-size: clamp(14px, 2vw, 22px); }
+  margin-top: 16px; font-size: 12px; }
 footer .stat { color: var(--dim); overflow-wrap: anywhere; min-width: 0; }
 footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
 
 [hidden] { display: none !important; }
 @media (max-width: 560px) {
-  main { padding: 32px 16px; }
+  main { padding: 24px 22px; }
+  .brand { font-size: 25px; gap: 8px; }
+  .brand svg { width: 34px; height: 24px; }
+  .hero { margin-top: 36px; }
   ol.rules > li { grid-template-columns: 2.1em 1fr; }
 }
 </style>
@@ -224,91 +262,119 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
 <body>
 <main>
   <header class="brand">
-    <svg viewBox="0 -8 62 42" aria-hidden="true"><path d="{{MARK_PATH}}"/></svg>
+    <svg viewBox="0 0 62 34" aria-hidden="true"><path d="{{MARK_PATH}}"/></svg>
     <span>Varyz</span>
   </header>
 
   <section class="hero">
     <h1>Set up Varyz</h1>
-    <p class="archetype">Your way, from the first task.</p>
-    <p class="line">Seven steps, on this machine. Your archive stays private.</p>
+    <p class="line" id="intro" hidden></p>
   </section>
 
-  <p class="quote" id="quote">&ldquo;Tick what Varyz may read. Nothing else is touched.&rdquo;</p>
+  <p class="hint" id="quote" hidden>Choose what Varyz may read.</p>
 
-  <h2 class="label">What setup does</h2>
+  <section id="ai-setup" aria-labelledby="ai-title">
+    <h2 class="label" id="ai-title">Step 1 of 3</h2>
+    <p class="privacy-text" id="machine-summary">Choose where Varyz learns.</p>
+    <ul class="choices" id="ai-modes"></ul>
+    <div class="actions"><button id="ai-continue" disabled>Continue</button></div>
+  </section>
+
+  <div id="setup-details" hidden>
+  <div class="actions"><button id="ai-back" class="quiet">Back</button></div>
+  <h2 class="label" id="setup-heading">Step 2 of 3</h2>
+  <p id="completed-step" role="status" hidden></p>
   <ol class="rules" id="steps" aria-live="polite">
     <li data-step="0"><span class="num">01</span><div>
       <div class="name">Archive</div>
-      <div class="desc">Creates your private archive at <code id="config-path">…</code>, or keeps the one already there.</div>
+      <div class="desc">Your private archive: <code id="config-path">…</code></div>
       <div class="status"></div></div></li>
     <li data-step="1"><span class="num">02</span><div>
-      <div class="name">Daemon</div>
-      <div class="desc">Starts the small local service your agents ask, on 127.0.0.1 only.</div>
+      <div class="name">Local service</div>
+      <div class="desc">Runs on this device.</div>
       <div class="status"></div></div></li>
     <li data-step="2"><span class="num">03</span><div>
-      <div class="name">Agents</div>
-      <div class="desc">Connects the agents you tick, so each task they get arrives briefed.</div>
+      <div class="name">Which AI tools do you use?</div>
+      <div class="desc">Varyz will give them your preferences.</div>
       <ul class="choices" id="agents"></ul>
       <div class="status"></div></div></li>
     <li data-step="3"><span class="num">04</span><div>
-      <div class="name">Data sources</div>
-      <div class="desc">Indexes what you tick, on this machine. Read locally, never uploaded.</div>
+      <div class="name">What may Varyz read?</div>
+      <div class="desc">Choose the chats and files it can use.</div>
       <ul class="choices" id="sources"></ul>
-      <div class="note" id="sources-note">The first indexing downloads the local models it uses: about 1.3&nbsp;GB, once. Any download can be paused and carried on later.</div>
+      <details id="cloud-details" hidden><summary>How your chats are used</summary>
+        <p class="note">Parts of the chats you select may be sent to your AI provider to learn your
+          preferences. Sensitive content is skipped; detected credentials are removed.
+          Documents and repositories stay on this device.</p>
+      </details>
+      <div class="note" id="sources-note">Search models: about 1.3&nbsp;GB on first use.</div>
       <div class="status"></div>
       <div class="bar" role="progressbar" aria-label="Data sources progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div></div></li>
     <li data-step="4"><span class="num">05</span><div>
-      <div class="name">Graph</div>
-      <div class="desc">Builds the graph of what your archive says, and the personal model your agents look things up in.</div>
+      <div class="name">Your context</div>
+      <div class="desc">Prepares your history for your AI tools.</div>
       <div class="status"></div>
       <div class="bar" role="progressbar" aria-label="Graph progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div></div></li>
     <li data-step="5"><span class="num">06</span><div>
-      <div class="name">Autosync</div>
-      <div class="desc">Keeps all of it current in the background, from now on and at every login.</div>
+      <div class="name">Stay up to date</div>
+      <div class="desc">Syncs in the background.</div>
       <div class="status"></div>
       <div class="bar" role="progressbar" aria-label="Autosync progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div></div></li>
     <li data-step="6"><span class="num">07</span><div>
-      <div class="name">Classifier</div>
-      <div class="desc">Readies the local model that sorts your agents&rsquo; questions, installing Ollama if it is missing.</div>
-      <div class="note">Downloads <span id="classifier-model">the model</span> once: a few&nbsp;GB. It runs on this machine.</div>
+      <div class="name">AI mode</div>
+      <div class="desc" id="classifier-description">Readies the mode selected for this machine.</div>
+      <div class="note" id="classifier-note"></div>
       <div class="status"></div>
       <div class="bar" role="progressbar" aria-label="Classifier progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div></div></li>
   </ol>
+  <div class="actions" id="setup-nav"><button id="sources-continue">Continue</button></div>
 
   <div class="actions" id="actions">
     <button id="go" disabled>Set up Varyz</button>
     <button id="pause" class="quiet" hidden>Pause download</button>
     <button id="resume" hidden>Resume</button>
-    <span class="hint" id="hint">Safe to run again: every step keeps what is already there.</span>
-    <span class="hint" id="analytics-status">Optional sharing is off. You&rsquo;ll choose before setup starts.</span>
+    <span class="hint" id="hint"></span>
+    <span class="hint" id="analytics-status" hidden></span>
     <span class="hint" id="downloads" hidden></span>
     <div class="bar" id="wait-bar" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div>
+  </div>
   </div>
   <p class="error" id="error" role="alert" hidden></p>
 
   <section class="extract" id="extract" aria-live="polite" hidden>
     <h2 class="label">Your past chats</h2>
-    <p class="extract-title" id="extract-title">Extract preferences from your existing chats?</p>
+    <p class="extract-title" id="extract-title">Learn from your past chats now?</p>
     <p class="privacy-text" id="extract-text"></p>
+    <div class="learning-activity" id="learning-activity" hidden>
+      <span class="learning-spinner" aria-hidden="true"></span>
+      <span id="learning-activity-label" role="status" aria-live="polite"></span>
+      <span class="learning-elapsed" id="learning-elapsed" aria-hidden="true" title="Time in this stage"></span>
+    </div>
     <dl class="costs" id="extract-costs"></dl>
     <div class="bar" id="extract-bar" role="progressbar" aria-label="Extraction progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div>
     <p class="hint" id="extract-status"></p>
     <div class="actions" id="extract-actions">
-      <button id="extract-yes">Yes, extract (recommended)</button>
+      <button id="extract-yes">Start learning</button>
       <button id="extract-no" class="quiet">Not now</button>
     </div>
     <p class="note" id="extract-note"></p>
+    <div class="actions" id="extract-wait-actions" hidden>
+      <button id="extract-retry" class="quiet">Retry learning</button>
+      <button id="extract-skip" class="quiet">Learn later</button>
+    </div>
+    <div id="extract-help" class="repair-help" hidden></div>
   </section>
 
   <section id="result" hidden>
     <p class="verdict-word" id="verdict-word"></p>
     <p class="quote" id="summary" style="margin-top:0"></p>
     <div id="reading" hidden>
-      <h2 class="label">Last step: teach it how you work</h2>
+      <h2 class="label">Start learning your preferences</h2>
       <p class="privacy-text" id="reading-text"></p>
+      <input id="learning-message" type="text" readonly aria-label="Message to start learning" value="{{LEARNING_MESSAGE}}">
+      <button id="copy-learning-message">Copy message</button>
     </div>
-    <h2 class="label">Data sources</h2>
+    <h2 class="label" id="sources-title">Data sources</h2>
     <table id="source-table"><tbody></tbody></table>
     <div id="privacy" hidden>
       <h2 class="label" id="privacy-title"></h2>
@@ -317,16 +383,21 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
       <p class="privacy-text" id="privacy-scope"></p>
       <div class="actions privacy-actions" id="privacy-actions">
         <button id="privacy-open" class="quiet"></button>
-        <button id="privacy-skip" class="quiet">Skip, I&rsquo;ll sync them myself</button>
+        <button id="privacy-skip" class="quiet">Skip for now</button>
         <span class="hint" id="privacy-hint" hidden>Add <code id="privacy-program"></code>, then switch it on.</span>
       </div>
       <p class="error" id="privacy-error" role="alert" hidden></p>
     </div>
-    <h2 class="label">Next</h2>
+    <h2 class="label" id="next-title">Next</h2>
     <ul class="next" id="next"></ul>
+    <details id="recovery" hidden open><summary>Get help fixing this</summary>
+      <ul class="next" id="recovery-steps"></ul>
+      <div id="repair-help" class="repair-help" hidden></div>
+    </details>
     <div class="actions">
       <button id="close" class="quiet">Close setup</button>
-      <span class="hint">Run it again any time with <code>varyz setup</code>.</span>
+      <a id="review-rules" class="button" href="/review?t={{TOKEN_URL}}" target="_blank" rel="noopener" hidden>Review preferences</a>
+      <a id="setup-cloud" class="button" href="/cloud?t={{TOKEN_URL}}" target="_blank" rel="noopener noreferrer">Set up Varyz Cloud</a>
     </div>
   </section>
 
@@ -336,7 +407,7 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
   </footer>
 </main>
 <dialog id="analytics-dialog" aria-labelledby="analytics-title" aria-describedby="analytics-message">
-  <p class="label">An optional note from the developer</p>
+  <p class="label">Optional</p>
   <h2 id="analytics-title" tabindex="-1" autofocus>Help me improve Varyz?</h2>
   <p id="analytics-message"></p>
   <p id="analytics-signature">Egor Menshikov · Creator of Varyz</p>
@@ -348,7 +419,7 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
   <p class="hint" id="analytics-current"></p>
   <div class="actions">
     <button id="analytics-decline" class="quiet" type="button">No thanks</button>
-    <button id="analytics-share" class="quiet" type="button">Share anonymous counts</button>
+    <button id="analytics-share" class="quiet" type="button">Share usage counts</button>
   </div>
 </dialog>
 <script>
@@ -360,10 +431,30 @@ const WORDS = { running: "working", paused: "paused", done: "done", failed: "fai
 // Every download setup makes says so first, and only a download can be paused.
 const DOWNLOADING = "Downloading ";
 let polling = null;
+// A completed page stops progress polling but its review link still needs the server.
+const keepAlive = setInterval(() => { api("/api/ping").catch(() => {}); }, 20000);
 let analyticsSharing = false;
+let analyticsAvailable = false;
 let setupStarting = false;
+let inferenceMode = "conversations";
 // The last state polled, for what the result shows about the reading.
 let lastState = null;
+let choiceStep = 1;
+
+function showChoiceStep(step) {
+  choiceStep = step;
+  $("ai-setup").hidden = step !== 1;
+  $("setup-details").hidden = step === 1;
+  $("quote").hidden = true;
+  $("actions").hidden = step !== 3;
+  $("setup-nav").hidden = step !== 2;
+  $("setup-heading").textContent = step === 2 ? "Step 2 of 3" : "Step 3 of 3";
+  for (const item of document.querySelectorAll("li[data-step]")) {
+    item.hidden = Number(item.dataset.step) !== (step === 2 ? 2 : 3);
+    item.querySelector(".num").hidden = true;
+  }
+  $("completed-step").hidden = true;
+}
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -400,28 +491,47 @@ function choice(name, value, label, what, checked, enabled) {
 }
 
 function renderPlan(plan) {
+  analyticsAvailable = Boolean(plan.analytics);
+  if (!plan.ai) throw new Error("Update Varyz to load both AI choices, then reopen setup.");
+  const ai = plan.ai;
+  // A recommendation is not permission to send chats to cloud AI.
+  inferenceMode = ai.selected === "conversations" && !ai.cloud_conversations ? null : ai.selected;
+  $("machine-summary").textContent = "Choose where Varyz learns.";
+  $("ai-modes").replaceChildren(...ai.choices.map((mode) => {
+    const local = mode === "local";
+    const input = el("input", {type: "radio", name: "ai-mode", value: mode});
+    input.checked = mode === inferenceMode;
+    const label = el("span", {}, local ? "On this device" : "Your AI account");
+    label.append(el("span", {class: "what"}, local
+      ? "Local learning. Downloads 3.4 GB plus Ollama."
+      : "Uses your AI plan to learn from chats you choose."));
+    input.addEventListener("change", () => { inferenceMode = mode; renderAIMode(); });
+    return el("li", {}, el("label", {class: "choice"}, input, label));
+  }));
+  renderAIMode();
   analyticsSharing = Boolean(plan.analytics?.sharing);
-  $("analytics-message").textContent = plan.analytics?.message || plan.analytics?.description
-    || "Sharing is optional and off by default.";
-  $("analytics-counts").textContent = plan.analytics?.counts || "";
-  $("analytics-privacy").textContent = plan.analytics?.privacy || "";
+  $("analytics-message").textContent = "I’m Egor, Varyz’s developer. Usage counts help me find problems.";
+  $("analytics-counts").textContent = [plan.analytics?.counts, plan.analytics?.privacy].filter(Boolean).join(" ");
+  $("analytics-privacy").textContent = "No chats or preferences are shared. Optional; you can turn it off later.";
   $("analytics-status").textContent = analyticsSharing
     ? "Optional sharing is on. You can turn it off before setup starts."
     : "Optional sharing is off. You'll choose before setup starts.";
   $("analytics-current").textContent = analyticsSharing
-    ? "Sharing is currently on. Choose No thanks to turn it off, or close this popup to keep your setting."
-    : "Nothing is shared unless you choose Share anonymous counts.";
+    ? "Sharing is currently on."
+    : "Sharing is currently off.";
   $("config-path").textContent = plan.config;
-  $("footer-stat").textContent = plan.config;
-  if (plan.classifier) $("classifier-model").textContent = plan.classifier;
+  $("footer-stat").textContent = "Your archive stays on this device";
   const agents = $("agents");
   agents.replaceChildren(...plan.agents.map((agent) =>
     choice("agent", agent.id, agent.name, agent.installed ? "" : "not installed", agent.installed, agent.installed)));
   const items = plan.sources.map((source) => {
-    const item = choice("source", source.id, source.name, "", source.checked, true);
+    const item = choice("source", source.id, {ai_conversations: "AI chats", git: "Code history"}[source.id] || source.name, "", source.checked, true);
     const detail = item.querySelector("label > span");
-    if (source.reads) detail.append(el("span", { class: "what" }, source.reads));
-    for (const line of source.lines) detail.append(el("span", { class: "what path" }, line));
+    const reads = {ai_conversations: "Your saved chats with AI tools.",
+      git: "Past changes in the projects you select.", documents: "Text files in the folders you select."};
+    if (source.reads) detail.append(el("span", { class: "what" }, reads[source.id] || source.reads));
+    if (source.lines.length) detail.append(el("details", {}, el("summary", {}, "Locations"),
+      ...source.lines.map((line) => el("span", {class: "what path"}, line))));
     return item;
   });
   if (plan.github) items.push(githubItem(plan.github));
@@ -431,6 +541,18 @@ function renderPlan(plan) {
   }
   $("sources").replaceChildren(...items);
   $("go").disabled = false;
+  $("ai-continue").disabled = !inferenceMode;
+  showChoiceStep(1);
+}
+
+function renderAIMode() {
+  const local = inferenceMode === "local";
+  $("cloud-details").hidden = inferenceMode !== "conversations";
+  $("ai-continue").disabled = !inferenceMode;
+  $("classifier-description").textContent = local
+    ? "Prepares the local model."
+    : "Connects conversation learning when allowed.";
+  $("classifier-note").textContent = "";
 }
 
 // GitHub, once linked, is a tick like the rest. Before that it asks for the
@@ -450,7 +572,7 @@ function githubItem(github) {
   const connect = el("button", { type: "button", class: "quiet" }, "Connect");
   const form = el("div", { class: "form" });
   if (github.cli) {
-    const viaCli = el("button", { type: "button" }, "Use your GitHub CLI login");
+    const viaCli = el("button", { type: "button" }, "Use existing GitHub login");
     viaCli.addEventListener("click", () => linkGithub(null, item, github, error));
     form.append(viaCli, el("span", { class: "or" }, "or"));
   }
@@ -462,9 +584,10 @@ function githubItem(github) {
   const help = el("span", { class: "what" }, "Make one at ",
     el("a", { href: "https://github.com/settings/tokens", target: "_blank", rel: "noopener noreferrer" },
       "github.com/settings/tokens"),
-    " with the repo scope (public_repo for public repositories only). It goes to your system keychain, never to a file.");
+    " with repo access (public_repo for public repositories only). Stored in your system keychain.");
   const item = el("li", { class: "link" }, el("span"),
-    el("div", {}, el("span", {}, "GitHub"), el("span", { class: "what" }, github.reads), form, help, error));
+    el("div", {}, el("details", {}, el("summary", {}, "GitHub (optional)"),
+      el("span", { class: "what" }, github.reads), form, help, error)));
   return item;
 }
 
@@ -496,6 +619,13 @@ function renderState(state) {
   lastState = state;
   // Before a run the numbers stay marigold, as on the card.
   if (!state.started) return;
+  $("ai-setup").hidden = true;
+  $("setup-details").hidden = false;
+  $("ai-back").hidden = true;
+  $("quote").hidden = true;
+  $("setup-nav").hidden = true;
+  $("actions").hidden = state.finished;
+  $("setup-heading").textContent = "Setting up";
   renderDownloads(state.finished || state.paused ? null : state.downloads);
   renderExtract(state.extract);
   if ($("analytics-dialog").open) $("analytics-dialog").close();
@@ -516,6 +646,13 @@ function renderState(state) {
   // Between steps (the macOS privacy check after the last one) the wait is
   // the run's own, so it shows under the button.
   const running = state.steps.findIndex((step) => step.state === "running");
+  const stageNames = ["Creating your archive", "Starting Varyz", "Connecting AI tools",
+    "Reading your sources", "Preparing your preferences", "Turning on background sync", "Preparing your AI"];
+  const active = running >= 0 ? running : state.steps.findIndex((step) =>
+    ["failed", "paused", "waiting"].includes(step.state));
+  const completed = state.steps.filter((step) => step.state === "done").length;
+  $("completed-step").textContent = completed ? `${completed} of ${state.steps.length} steps complete` : "";
+  $("completed-step").hidden = !completed || state.finished;
   const between = !state.finished && running < 0 && Boolean(state.activity);
   // What a step is doing, and how long it has left once its pace is measured.
   const doing = state.left ? `${state.activity} · ${state.left}` : state.activity;
@@ -523,12 +660,18 @@ function renderState(state) {
     : state.paused ? "Paused. What has downloaded is kept: resume here, or close this tab and run varyz setup later to carry on."
     : between ? doing
     : `${running >= 0 ? `Step ${running + 1} of ${state.steps.length}. ` : ""}`
-      + "Indexing and the first downloads can take a while. Keep this tab open.";
+      + "Keep this tab open.";
   renderBar($("wait-bar"), between ? state : null);
   for (const step of state.steps) {
     const index = state.steps.indexOf(step);
     const item = document.querySelector(`li[data-step="${index}"]`);
     item.dataset.state = step.state;
+    item.querySelector(".name").textContent = stageNames[index];
+    for (const detail of item.querySelectorAll(".desc, .note, #cloud-details")) detail.hidden = true;
+    item.hidden = state.finished || index !== active;
+    item.querySelector(".num").hidden = false;
+    // Completed choices remain in the DOM so their selected values survive reloads.
+    for (const choices of item.querySelectorAll(".choices")) choices.hidden = true;
     const status = item.querySelector(".status");
     const parts = [];
     if (WORDS[step.state]) parts.push(el("span", { class: "word" }, WORDS[step.state]));
@@ -555,42 +698,80 @@ function renderBar(bar, state) {
   else bar.removeAttribute("aria-valuetext");
 }
 
+function renderRepair(container, prompt) {
+  container.hidden = !prompt;
+  if (!prompt || container.dataset.prompt === prompt) return;
+  container.dataset.prompt = prompt;
+  const text = el("textarea", {class:"repair-prompt", readonly:true, "aria-label":"AI repair prompt"}, prompt);
+  const copy = el("button", {}, "Copy repair prompt");
+  copy.addEventListener("click", async () => {
+    let copied = false;
+    try { await navigator.clipboard.writeText(prompt); copied = true; }
+    catch (error) {
+      details.open = true; text.focus(); text.select();
+      try { copied = document.execCommand("copy"); } catch (error) { /* selected for manual copying */ }
+    }
+    copy.textContent = copied ? "Copied" : "Prompt selected. Copy it.";
+  });
+  const details = el("details", {}, el("summary", {}, "View prompt"), text);
+  container.replaceChildren(el("p", {class:"hint"}, "Paste this into Codex or Claude Code on this computer."),
+    copy, details);
+}
+
 function renderResult(result) {
   $("actions").hidden = true;
   $("quote").hidden = true;
   const go = result.verdict === "GO";
-  $("verdict-word").textContent = result.verdict;
+  $("setup-heading").hidden = true;
+  const permissionPending = Boolean(result.privacy && !privacySkipped);
+  document.querySelector("h1").textContent = go
+    ? permissionPending ? "One more step" : "You’re ready" : "Almost there";
+  $("intro").hidden = true;
+  $("verdict-word").textContent = go
+    ? permissionPending ? "Folder permission needed" : "Setup complete" : "Needs attention";
   $("verdict-word").className = `verdict-word ${go ? "go" : "nogo"}`;
-  $("summary").textContent = result.summary;
+  const configured = result.connected_agents;
+  const connected = configured ? configured.length > 0 : Boolean(go && lastState?.picked?.agents?.length);
+  const agentLabel = configured?.length ? configured.join(" and ") : "your AI tools";
+  $("summary").textContent = go
+    ? connected ? "Varyz is connected to your AI tools." : "Your archive is ready. Connect an AI tool to use it."
+    : result.summary;
   const rows = result.sources.map((source) => el("tr", {},
     el("td", {}, source.name),
     el("td", { class: `state ${source.state === "connected" ? "connected" : ""}` }, source.state),
-    el("td", { class: "items" }, source.items.toLocaleString()),
-    el("td", { class: "when" }, source.last_sync || "–")));
+    el("td", { class: "items" }, `${source.items.toLocaleString()} items`)));
   $("source-table").tBodies[0].replaceChildren(...rows);
-  const next = result.problems.map(([name, detail]) =>
+  $("source-table").hidden = $("sources-title").hidden = !rows.length;
+  const next = result.problems.filter(([name, detail]) => `${name}: ${detail}` !== result.summary)
+    .map(([name, detail]) =>
     el("li", { class: "nogo" }, `${name}: ${detail}`));
-  for (const line of result.next) {
-    next.push(el("li", {}, line.startsWith("varyz ") ? el("code", {}, line) : line));
-  }
+  if (connected) next.push(el("li", {}, result.restart
+    ? `Restart ${agentLabel} to load Varyz, then start a task.`
+    : `Open ${agentLabel} and start a task.`));
   $("next").replaceChildren(...next);
+  $("recovery").hidden = go || !result.next.length;
+  $("recovery-steps").replaceChildren(...(!go ? result.next : []).map((line) =>
+    el("li", {}, line.startsWith("varyz ") ? el("code", {}, line) : line)));
+  $("recovery-steps").hidden = Boolean(result.repair_prompt);
+  renderRepair($("repair-help"), result.repair_prompt);
   // The offer, or the reading under way, goes on under the verdict.
   $("result").insertBefore($("extract"), $("reading"));
-  renderReading(result.reading);
+  const agentLearning = lastState?.extract?.phase === "agent";
+  renderReading(result.reading || (agentLearning ? {agents:configured || [],
+    restart:result.restart, turns_waiting:lastState.extract.turns || 0} : null));
+  $("next-title").hidden = $("next").hidden = !next.length || !$("reading").hidden;
   renderPrivacy(result.privacy);
   $("result").hidden = false;
 }
 
 function renderReading(reading) {
   // Taken on the page: no agent needs to start it.
-  if (lastState?.extract?.state === "accepted") reading = null;
+  if (lastState?.extract?.state === "accepted" && lastState.extract.phase !== "agent") reading = null;
   $("reading").hidden = !reading;
   if (!reading) return;
-  const agents = reading.agents.join(" or ");
-  const open = reading.restart ? `Restart ${agents} so it loads Varyz` : `Open ${agents}`;
-  const turns = reading.turns_waiting.toLocaleString();
-  const messages = reading.turns_waiting === 1 ? "message" : "messages";
-  $("reading-text").textContent = `${open} and give it any task. It first tells you what happens next, then learns how you work in the background: a smaller model on your own plan reads your ${turns} past ${messages} to AI agents for each project’s aim, your taste, how you like work done and what you already decided. It skips anything sensitive. Rules with strong evidence take effect on trial; the rest wait for your review. Not now? Tell the agent, and it asks when.`;
+  const agents = reading.agents.join(" or ") || "your connected AI tool";
+  const open = reading.restart ? `Restart ${agents} to load Varyz` : `Open ${agents}`;
+  $("reading-text").textContent = `${open}, then send this message to start learning from your approved chats.`;
 }
 
 // -- downloads and the offer to read past chats ------------------------------
@@ -616,7 +797,7 @@ function clock(epoch) {
 }
 
 function percent(value) {
-  return value < 1 ? "under 1%" : `about ${Math.round(value)}%`;
+  return value === 0 ? "0%" : value < 1 ? "under 1%" : `about ${Math.round(value)}%`;
 }
 
 function renderDownloads(downloads) {
@@ -641,31 +822,88 @@ function cost(value, label, sub) {
     el("dd", {}, label, sub ? el("span", {}, sub) : ""));
 }
 
+// This clock is independent of polling: quiet batches still look alive.
+let learningActivity = null;
+let learningActivityTimer = null;
+let extractStarting = false;
+
+function updateLearningElapsed() {
+  if (!learningActivity) return;
+  const seconds = Math.max(0, Math.floor((performance.now() - learningActivity.since) / 1000));
+  $("learning-elapsed").textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} elapsed`;
+}
+
+function renderLearningActivity(extract) {
+  const labels = {
+    preparing: "Preparing your chats…",
+    starting: "Setting up the reader…",
+    reading: "Finding your preferences…",
+    merging: "Organizing preferences…",
+    checking: "Connecting to your AI…",
+    waiting_model: "Getting the local model ready…",
+  };
+  const phase = ["preparing", "starting"].includes(extract?.state) ? extract.state
+    : extract?.state === "accepted" ? extract.phase : null;
+  const label = labels[phase];
+  $("learning-activity").hidden = !label;
+  if (!label) {
+    clearInterval(learningActivityTimer);
+    learningActivityTimer = null;
+    learningActivity = null;
+    return;
+  }
+  if (learningActivity?.phase !== phase) {
+    learningActivity = {phase, since: performance.now()};
+    $("learning-activity-label").textContent = label;
+  }
+  updateLearningElapsed();
+  if (!learningActivityTimer) learningActivityTimer = setInterval(updateLearningElapsed, 1000);
+}
+
 function renderExtract(extract) {
+  if (extractStarting && extract?.state === "offered") extract = {...extract, state: "starting"};
+  renderLearningActivity(extract);
+  $("review-rules").hidden = !(lastState?.finished && extract?.state === "accepted"
+    && extract.phase === "done");
   const card = $("extract");
   card.hidden = !extract;
+  $("extract-wait-actions").hidden = extract?.state !== "accepted"
+    || !["waiting", "agent", "failed", "stopped"].includes(extract.phase);
+  renderRepair($("extract-help"), extract?.repair_prompt);
   if (!extract) return;
   const state = extract.state;
+  if (state === "preparing") {
+    $("extract-title").textContent = "Estimating learning time…";
+    $("extract-text").textContent = "Setup continues while we check your selected chats.";
+    $("extract-text").hidden = false;
+    for (const id of ["extract-actions", "extract-costs", "extract-note", "extract-bar"]) $(id).hidden = true;
+    $("extract-status").textContent = "";
+    return;
+  }
   const turns = (extract.turns || 0).toLocaleString();
   const messages = extract.turns === 1 ? "message" : "messages";
   const asking = state === "offered" || state === "starting";
   $("extract-actions").hidden = !asking;
   $("extract-yes").disabled = $("extract-no").disabled = state === "starting";
-  $("extract-yes").textContent = state === "starting" ? "Starting…" : "Yes, extract (recommended)";
+  $("extract-yes").textContent = state === "starting" ? "Starting…" : "Start learning";
   $("extract-costs").hidden = !asking;
   $("extract-text").hidden = !asking;
   $("extract-note").hidden = !asking;
   if (asking) {
-    $("extract-title").textContent = "Extract preferences from your existing chats?";
-    $("extract-text").textContent = `Learns how you work from ${turns} past ${messages} to AI agents. Skips anything sensitive; runs in the background.`;
+    $("extract-title").textContent = "Learn from your past chats now?";
+    const local = extract.runner === "local";
+    $("extract-text").textContent = local
+      ? `Read ${turns} chat ${messages} on this device? Uses no AI plan allowance.`
+      : `Read ${turns} chat ${messages} using ${extract.plan}? Sensitive content is skipped.`;
     $("extract-costs").replaceChildren(
-      cost(percent(extract.five_hour), `${extract.plan} 5-hour limit`),
-      cost(percent(extract.weekly), `${extract.plan} weekly limit`),
-      cost(duration(extract.seconds), "to finish"));
-    const notes = [];
-    if (extract.starts_at) notes.push(`Your limits are low now: it starts at ${clock(extract.starts_at)}.`);
-    else if (extract.pauses_until) notes.push(`Pauses to spare your limits; finishes after ${clock(extract.pauses_until)}.`);
-    if (!extract.known) notes.push(`Usage share estimated from earlier readings.`);
+      cost(percent(extract.five_hour), "5-hour limit"),
+      cost(percent(extract.weekly), "weekly limit"),
+      cost(duration(extract.seconds), "reading time"));
+    const notes = [extract.estimate_note || "Estimates vary by plan and model."];
+    if (extract.runner === "agent") notes.push("Varyz cannot access the Claude/Codex CLI. Start a task after setup; your agent will start learning your rules.");
+    else if (extract.usage_unknown) notes.push("Usage is unavailable. Learning still starts after you approve.");
+    if (!local) notes.push("Low allowance will not delay learning. Provider limits may interrupt it; progress is saved.");
+    notes.push("Setup continues. You can close this page after setup finishes.");
     $("extract-note").textContent = notes.join(" ");
     $("extract-note").hidden = !notes.length;
     $("extract-status").textContent = "";
@@ -674,14 +912,17 @@ function renderExtract(extract) {
   }
   if (state === "declined" || state === "unavailable") {
     $("extract-title").textContent = state === "declined" ? "Skipped for now." : "It could not start here.";
-    $("extract-status").textContent = "Your agent will offer it again on first use.";
+    $("extract-status").textContent = state === "declined" ? "Setup continues without learning now."
+      : "Setup continues. Try learning again later.";
     renderBar($("extract-bar"), null);
     return;
   }
   // Accepted: how far it has got, how long it still takes and what it has used.
   const phase = extract.phase;
-  $("extract-title").textContent = phase === "done" ? "Your preferences are extracted."
-    : phase === "failed" ? "Extracting stopped." : "Extracting your preferences…";
+  $("extract-title").textContent = phase === "agent" ? "Continue in your AI"
+    : phase === "done" ? "Ready to review"
+    : phase === "waiting" ? "Learning paused"
+    : phase === "failed" ? "Learning stopped" : "Learning your preferences…";
   const read = ((extract.turns || 0) - (extract.turns_left || 0)).toLocaleString();
   const parts = [];
   const used = [];
@@ -690,44 +931,58 @@ function renderExtract(extract) {
   const usedLine = used.join(" and ");
   const status = $("extract-status");
   const away = "Runs in the background.";
-  if (phase === "reading") {
+  if (phase === "agent") {
+    status.textContent = (extract.reason === "usage_unavailable"
+      ? `Varyz could not check your ${extract.plan} usage. `
+      : "The background reader is unavailable. ")
+      + "Retry here, or send the message below to your AI.";
+  } else if (phase === "reading") {
     parts.push(`${read} of ${turns} read`);
     if (extract.seconds_left != null) parts.push(`${duration(extract.seconds_left)} left`);
-    if (usedLine) parts.push(`${usedLine} used`);
+    if (usedLine && extract.runner !== "local") parts.push(`Plan change: ${usedLine}`);
     status.textContent = `${parts.join(" · ")}. ${away}`;
   } else if (phase === "merging") {
     parts.push("Sorting what it found into rules");
     if (extract.seconds_left != null) parts.push(`${duration(extract.seconds_left)} left`);
-    if (usedLine) parts.push(`${usedLine} used`);
+    if (usedLine && extract.runner !== "local") parts.push(`Plan change: ${usedLine}`);
     status.textContent = `${parts.join(" · ")}. ${away}`;
+  } else if (phase === "checking") {
+    status.textContent = "Connecting to your AI. Setup continues.";
+  } else if (phase === "waiting_model") {
+    status.textContent = "Waiting for the local model download. Starts automatically when ready. Setup continues.";
   } else if (phase === "waiting") {
-    status.textContent = `Paused to spare your ${extract.plan} limits; resumes `
-      + (extract.until ? `at ${clock(extract.until)}.` : "after they reset.");
+    const progress = typeof extract.turns_left === "number" ? ` ${read} of ${turns} read.` : "";
+    status.textContent = `Your AI provider stopped learning: ${extract.reason || "usage limit reached"}.${progress} Progress is saved.`
+      + (extract.until ? ` Retries at ${clock(extract.until)}.` : " Retry below when your plan is available.");
   } else if (phase === "done") {
-    status.replaceChildren(`Done${usedLine ? `, using ${usedLine}` : ""}. See what it found with `,
-      el("code", {}, "varyz rules review"), ".");
+    status.textContent = "Learning finished. Your preferences are ready to review.";
   } else {
     status.replaceChildren(phase === "failed" ? `It could not finish (${extract.reason}). ` : "Stopped for now. ",
       el("code", {}, "varyz rules read --status"), " says more.");
   }
-  const moving = ["reading", "merging", "waiting", "done"].includes(phase);
+  const moving = ["reading", "merging", "waiting", "waiting_model", "checking", "done"].includes(phase);
   renderBar($("extract-bar"), moving
     ? { fraction: phase === "merging" ? null : extract.fraction, activity: status.textContent } : null);
 }
 
 // The page polls on while the reading it started is under way.
 function extractActive(extract) {
-  return extract?.state === "starting" || (extract?.state === "accepted"
-    && ["reading", "merging", "waiting"].includes(extract.phase));
+  return ["preparing", "starting"].includes(extract?.state) || (extract?.state === "accepted"
+    && ["reading", "merging", "waiting", "waiting_model", "checking", "agent"].includes(extract.phase));
 }
 
 async function answerExtract(yes) {
   showError("");
   $("extract-yes").disabled = $("extract-no").disabled = true;
+  extractStarting = yes;
+  if (yes) renderExtract({...lastState?.extract, state: "starting"});
   try {
     await api("/api/extract", { extract: yes });
   } catch (error) {
     showError(`Could not ${yes ? "start it" : "answer"}: ${error.message}`);
+    renderLearningActivity(null);
+  } finally {
+    extractStarting = false;
   }
   if (!polling) polling = setInterval(poll, 700);
   poll();
@@ -736,9 +991,31 @@ async function answerExtract(yes) {
 $("extract-yes").addEventListener("click", () => answerExtract(true));
 $("extract-no").addEventListener("click", () => answerExtract(false));
 
+async function controlExtract(action) {
+  $("extract-retry").disabled = $("extract-skip").disabled = true;
+  showError("");
+  try { await api("/api/extract/control", {action}); }
+  catch (error) { showError(`Could not update learning: ${error.message}`); }
+  finally { $("extract-retry").disabled = $("extract-skip").disabled = false; }
+  if (!polling) polling = setInterval(poll, 700);
+  poll();
+}
+$("extract-retry").addEventListener("click", () => controlExtract("retry"));
+$("extract-skip").addEventListener("click", () => controlExtract("skip"));
+
+$("copy-learning-message").addEventListener("click", async () => {
+  const text = $("learning-message"), button = $("copy-learning-message");
+  let copied = false;
+  try { await navigator.clipboard.writeText(text.value); copied = true; }
+  catch (error) { text.focus(); text.select(); try { copied = document.execCommand("copy"); } catch (error) {} }
+  button.textContent = copied ? "Copied" : "Message selected. Copy it.";
+});
+
 let privacyShown = null;
+let privacySkipped = false;
 
 function renderPrivacy(privacy) {
+  if (privacySkipped && privacy) return;
   privacyShown = privacy;
   $("privacy").hidden = !privacy;
   if (!privacy) return;
@@ -746,16 +1023,16 @@ function renderPrivacy(privacy) {
   const sources = [...new Set(privacy.folders.map((folder) => folder.source))].join(" and ");
   const one = privacy.folders.length === 1;
   const it = one ? "it" : "them";
-  $("privacy-title").textContent = `${sources} ${one ? "needs" : "need"} one more permission`;
+  $("privacy-title").textContent = "Folder access";
   $("privacy-paths").replaceChildren(
     ...privacy.folders.map((folder) => el("li", {}, `${folder.source}: ${folder.path}`)));
   const app = privacy.via === "app";
   $("privacy-text").textContent = app
-    ? `macOS hasn\u2019t let Varyz read ${one ? "this folder" : "these folders"} yet, so background syncing skips ${it}. If macOS asked, choose Allow. If you chose Don\u2019t Allow, switch ${it} on under Varyz in Files and Folders.`
-    : `macOS keeps background programs out of ${one ? "this folder" : "these folders"}, so background syncing skips ${it}.`;
+    ? `Allow Varyz to read ${one ? "this folder" : "these folders"} in macOS Files and Folders settings.`
+    : `macOS needs your permission to read ${one ? "this folder" : "these folders"}.`;
   $("privacy-scope").textContent = app
-    ? `That opens only the ${one ? "folder" : "folders"} listed here. Varyz reads ${it} on this Mac, and nothing leaves it.`
-    : "macOS has no folder-only switch for a program like this. The one it offers is Full Disk Access, which opens more than these folders. Varyz reads only the folders you connected, and nothing leaves this Mac.";
+    ? `Only the listed ${one ? "folder is" : "folders are"} opened. These files stay on this Mac.`
+    : "Full Disk Access opens more than these folders. Varyz reads only the folders you selected. These files stay on this Mac.";
   $("privacy-open").textContent = app ? "Open Files and Folders" : "Open Full Disk Access";
   $("privacy-hint").hidden = app;
   $("privacy-program").textContent = privacy.program;
@@ -773,9 +1050,25 @@ async function poll() {
 
 $("go").addEventListener("click", () => {
   if (!setupStarting) {
+    if (!analyticsAvailable) { startSetup(false); return; }
     $("analytics-details").open = false;
     $("analytics-dialog").showModal();
   }
+});
+
+$("ai-continue").addEventListener("click", () => {
+  showChoiceStep(2);
+  $("sources-continue").focus();
+});
+
+$("ai-back").addEventListener("click", () => {
+  showChoiceStep(choiceStep - 1);
+  (choiceStep === 1 ? $("ai-continue") : $("sources-continue")).focus();
+});
+
+$("sources-continue").addEventListener("click", () => {
+  showChoiceStep(3);
+  $("go").focus();
 });
 
 async function startSetup(sharing) {
@@ -788,7 +1081,9 @@ async function startSetup(sharing) {
   const disabled = controls.map((control) => control.disabled);
   lockChoices();
   try {
-    await api("/api/run", { agents: picked("agent"), sources: picked("source"), analytics: sharing });
+    await api("/api/run", { agents: picked("agent"), sources: picked("source"), analytics: sharing,
+      inference_mode: inferenceMode,
+      cloud_conversations: inferenceMode === "conversations" });
   } catch (error) {
     setupStarting = false;
     controls.forEach((control, index) => { control.disabled = disabled[index]; });
@@ -854,18 +1149,22 @@ $("privacy-open").addEventListener("click", async () => {
 });
 
 $("privacy-skip").addEventListener("click", () => {
-  $("privacy-text").replaceChildren(
-    "Skipped. Background syncing leaves these folders out; run ",
-    el("code", {}, "varyz sync"), " whenever you want them updated.");
+  privacySkipped = true;
+  document.querySelector("h1").textContent = "You’re ready";
+  $("verdict-word").textContent = "Setup complete";
+  $("privacy-title").textContent = "Folders skipped";
+  $("privacy-text").textContent = "These folders will not sync in the background.";
   for (const id of ["privacy-paths", "privacy-scope", "privacy-actions", "privacy-error"]) $(id).hidden = true;
 });
 
 $("close").addEventListener("click", async () => {
+  clearInterval(keepAlive);
   try { await api("/api/close", {}); } catch (error) { /* already stopped */ }
+  renderLearningActivity(null);
   document.querySelector("main").replaceChildren(
     document.querySelector(".brand"),
     el("section", { class: "hero" },
-      el("h1", {}, "Setup closed."),
+      el("h1", {}, "Setup closed"),
       el("p", { class: "line" }, "You can close this tab.")));
 });
 

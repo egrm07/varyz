@@ -34,13 +34,32 @@ from varyz.coordination import ROUTE_DESCRIPTION, ROUTE_SCHEMA, WORKFLOW_TOOLS, 
 from varyz.resolution.away import AWAY_POLICY
 from varyz.resolution.memory_policy import REALTIME_CORRECTION_POLICY
 from varyz.resolution.questioning import QUESTION_POLICY
+from varyz.session_progress import PROGRESS_POLICY
 
+from .access import account_access
 from .admission import Admission, Backpressure
-from .billing import effective_account, event_time, record_payment, record_refund
+from .billing import (
+    effective_account,
+    event_time,
+    record_payment,
+    record_refund,
+    subscription_deadline,
+)
 from .browser import delete_cookie, read_cookie, set_cookie
+from .creators import (
+    account_created,
+    forget_account,
+    record_adjustment,
+    record_transaction,
+    register_creators,
+    remember_signup_referral,
+    take_return,
+)
 from .hosted_data import POLICY as HOSTED_DATA_POLICY
 from .hosted_data import HostedDataRejected, require_hosted_safe
+from .navigation import is_admin, register_navigation, website_session_request
 from .payloads import canonical_payload, normalize_scope
+from .project_identity import project_names
 from .signup import InvalidSignupEmail, SignupDNSUnavailable, normalize_email, validate_signup_email
 from .store import Conflict, QuotaExceeded, Store, digest
 from .ui import brand_header, dashboard_style, form_scope, parse_preference_form, render_dashboard
@@ -56,6 +75,8 @@ security_log = logging.getLogger("varyz.cloud.security")
 TOOL_NAMES = (
     "route_task",
     "start_task",
+    "record_progress",
+    "claim_work",
     "ask",
     "finish_check",
     "remember_owner_rule",
@@ -222,10 +243,21 @@ def paddle_write(url, api_key, body):
         return None
 
 
-def paddle_read(url, api_key):
-    """GET one billing-provider object; None when the provider cannot answer within seconds."""
+# The provider answered that the object does not exist, as opposed to not answering.
+PROVIDER_MISSING = {"missing": True}
+
+
+class SubscriptionMissing(Exception):
+    """The billing provider says this subscription does not exist."""
+
+
+def paddle_read(url, api_key, missing=None):
+    """GET one billing-provider object; None when the provider cannot answer within seconds,
+    `missing` when it answers that the object does not exist."""
     try:
         response = httpx.get(url, headers={"Authorization": "Bearer " + api_key}, timeout=5)
+        if response.status_code == 404:
+            return missing
         if response.status_code >= 400:
             return None
         return response.json().get("data")
@@ -324,6 +356,12 @@ class Settings:
     archive_embedding_cache: str = ""
     archive_encryption_key: str = ""
     archive_embedder: object = None  # Offline test adapter; production uses cached local weights.
+    # Verified account emails that may open /admin. Everyone else gets a 404.
+    admin_emails: tuple[str, ...] = ()
+    # Notification delivery is independent of the accounts allowed into /admin.
+    creator_notification_email: str = ""
+    # Creator Program applications start open or closed; the admin panel can switch them.
+    creators_open: bool = False
 
     @classmethod
     def from_env(cls):
@@ -362,6 +400,15 @@ class Settings:
             google_client_secret=os.getenv("VARYZ_CLOUD_GOOGLE_CLIENT_SECRET", ""),
             github_client_id=os.getenv("VARYZ_CLOUD_GITHUB_CLIENT_ID", ""),
             github_client_secret=os.getenv("VARYZ_CLOUD_GITHUB_CLIENT_SECRET", ""),
+            admin_emails=tuple(
+                email.strip().lower()
+                for email in os.getenv("VARYZ_CLOUD_ADMIN_EMAILS", "").split(",")
+                if email.strip()
+            ),
+            creators_open=os.getenv("VARYZ_CLOUD_CREATORS_OPEN", "false").lower() == "true",
+            creator_notification_email=os.getenv(
+                "VARYZ_CLOUD_CREATOR_NOTIFICATION_EMAIL", ""
+            ).strip().lower(),
         )
 
 
@@ -589,7 +636,8 @@ def create_app(settings=None):
         ):
             return JSONResponse({"detail": "Invalid host"}, status_code=400)
         origin = request.headers.get("origin")
-        if origin and origin not in (settings.public_url, *settings.allowed_origins):
+        if (origin and origin not in (settings.public_url, *settings.allowed_origins)
+                and not website_session_request(request)):
             return JSONResponse({"detail": "Invalid origin"}, status_code=403)
         category = (
             "auth"
@@ -752,6 +800,48 @@ def create_app(settings=None):
                 result = effective_account(db, result)
         if not result:
             raise HTTPException(401, "Account deleted")
+        # Older accounts predate stored period ends. Read the provider once to
+        # populate them rather than letting a delayed cancellation grant forever.
+        if (result.get("paid_status") == "active" and result.get("subscription")
+                and result.get("subscription_ends_at") is None and settings.paddle_api_key):
+            subscription = result["subscription"]
+            cached = subscription_details.get(subscription)
+            if not cached or time.time() - cached[0] > SUBSCRIPTION_SUMMARY_TTL:
+                cached = (time.time(), paddle_get("/subscriptions/" + subscription,
+                                                  PROVIDER_MISSING))
+                subscription_details[subscription] = cached
+            details = cached[1]
+            try:
+                if details is PROVIDER_MISSING:
+                    raise SubscriptionMissing(subscription)
+                if not details or details.get("id") != subscription:
+                    raise ValueError("Subscription could not be verified")
+                deadline = subscription_deadline(details)
+                provider_status = details.get("status")
+                if provider_status in {"canceled", "paused", "past_due"}:
+                    deadline = min(deadline, time.time()) if deadline else time.time()
+                elif provider_status != "active" or deadline is None:
+                    raise ValueError("Subscription period could not be verified")
+            except SubscriptionMissing:
+                # A subscription the provider has no record of (such as a sandbox one
+                # after going live) is no paid access; "try later" would never come true.
+                if not result.get("free_access"):
+                    result["status"] = "inactive"
+            except (KeyError, ValueError, TypeError, AttributeError):
+                # Management/export remain available. Unverifiable legacy paid
+                # access cannot serve Cloud data, but this is not an expiry notice.
+                if not result.get("free_access"):
+                    result["status"] = "unverified"
+            else:
+                with store.connection() as db:
+                    db.execute(
+                        "UPDATE accounts SET subscription_ends_at=? WHERE id=? "
+                        "AND subscription=? AND billing_at=? AND subscription_ends_at IS NULL",
+                        (deadline, result["id"], subscription, result["billing_at"]),
+                    )
+                    result = effective_account(db, db.execute(
+                        "SELECT * FROM accounts WHERE id=?", (result["id"],)
+                    ).fetchone())
         shared_access = grant is not None and grant["scope"] == "varyz.shared"
         request.state.shared_connection = digest(row["client"] + ":" + row["challenge"])
         if not browser and request.url.path == "/mcp/shared" and not shared_access:
@@ -786,7 +876,9 @@ def create_app(settings=None):
                 403, "Manage billing and deletion from your Varyz account page or local Varyz"
             )
         if paid and result["status"] != "active":
-            raise HTTPException(402, "A paid Cloud subscription is required; no free trial")
+            if result["status"] == "unverified":
+                raise HTTPException(503, "Cloud billing status could not be verified; try later")
+            raise HTTPException(402, account_access(result))
         if local or recent:
             try:
                 authenticated_at = float(row["challenge"])
@@ -897,6 +989,7 @@ def create_app(settings=None):
         title=None,
         description=None,
         url=None,
+        owner=None,
     ):
         if not auth and "<main" not in content:
             content = '<main class="cloud-document">' + content + '</main>'
@@ -932,7 +1025,7 @@ def create_app(settings=None):
             "<style>"
             + dashboard_style()
             + ('</style></head><body class="cloud-auth">' if auth else "</style></head><body>")
-            + brand_header()
+            + brand_header(owner=owner, admin=is_admin(owner, settings))
             + ('<main class="cloud-auth-panel">' if auth else "")
             + content
             + ("</main>" if auth else "")
@@ -1008,6 +1101,8 @@ def create_app(settings=None):
     def health():
         return {"status": "ok"}
 
+    register_navigation(app, settings, account)
+
     @app.get("/login")
     def login_page(request: Request, reauth: bool = False):
         # Direct local connection may redirect through authorize to the callback
@@ -1030,7 +1125,11 @@ def create_app(settings=None):
             account(request, browser=True)
         except HTTPException:
             return auth_form("login")
-        return RedirectResponse("/", status_code=303)
+        response = RedirectResponse("/", status_code=303)
+        target = take_return(request, response, secure)
+        if target:
+            response.headers["location"] = target
+        return response
 
     def auth_form(action, error="", status_code=200):
         token = secrets.token_urlsafe(32)
@@ -1157,6 +1256,7 @@ def create_app(settings=None):
                 "INSERT INTO pending_signups VALUES(?,?,?,?,?)",
                 (email, username, encoded, digest(raw), now + 3600),
             )
+            remember_signup_referral(db, email, read_cookie(request, "ref"))
         background_tasks.add_task(deliver_account_email, {"email": email}, "verification", raw)
         return page(generic)
 
@@ -1208,6 +1308,11 @@ def create_app(settings=None):
                 db.execute("DELETE FROM oauth_flows WHERE hash=?", (digest(flow_cookie),))
         response = RedirectResponse(destination, status_code=303)
         delete_cookie(response, "auth_flow", secure=secure)
+        if destination == "/":
+            # The creator portal and admin panel send visitors here to sign in first.
+            target = take_return(request, response, secure)
+            if target:
+                response.headers["location"] = target
         with store.connection() as db:
             db.execute(
                 "DELETE FROM credentials WHERE hash=? AND kind='session'",
@@ -1338,17 +1443,21 @@ def create_app(settings=None):
                             409,
                             "Email or username is already registered; return to signup or recovery",
                         )
+                    created = secrets.token_hex(16)
                     db.execute(
                         "INSERT INTO accounts(id,email,password,username,email_verified) "
                         "VALUES(?,?,?,?,1)",
                         (
-                            secrets.token_hex(16),
+                            created,
                             pending["email"],
                             pending["password"],
                             pending["username"],
                         ),
                     )
                     db.execute("DELETE FROM pending_signups WHERE email=?", (pending["email"],))
+                    account_created(
+                        db, created, email=pending["email"], code=read_cookie(request, "ref")
+                    )
                     return RedirectResponse("/login", status_code=303)
             credential = db.execute(
                 "SELECT * FROM credentials WHERE hash=? AND kind=? AND expires>?",
@@ -1455,6 +1564,7 @@ def create_app(settings=None):
                 report_status=(app.state.session_reports.status(owner["id"])
                                if hasattr(app.state, "session_reports") else None),
                 project_summaries=summaries,
+                project_scope=project_names(store, owner["id"]),
                 section=request.query_params.get("section", "projects"),
                 sharing_enabled=settings.shared_varyz_enabled,
                 paused_projects=project_sync.paused(owner["id"]),
@@ -1465,6 +1575,7 @@ def create_app(settings=None):
             computer_nonce=computer_nonce,
             payment_nonce=payment_nonce,
             dashboard_nonce=script_nonce,
+            owner=owner,
         )
         set_cookie(
             response, "csrf", token, httponly=True, secure=secure, samesite="lax",
@@ -1547,11 +1658,9 @@ def create_app(settings=None):
                 headers={"Content-Disposition": 'attachment; filename="varyz-export.json"'},
             )
         if action in {"export_project", "pause_project_sync", "resume_project_sync"}:
-            from varyz.scopes import stored_scope
-
             if not data.get("project", "").strip():
                 raise HTTPException(422, "Specify a project")
-            scope = stored_scope(data["project"])
+            scope = project_names(store, owner["id"])(data["project"])
             if action == "export_project":
                 from varyz.cloud.dashboard import export_project_preferences
 
@@ -1563,16 +1672,16 @@ def create_app(settings=None):
             return RedirectResponse("/?view=dashboard", status_code=303)
         if action == "delete_project":
             from varyz.cloud.dashboard import delete_project_preferences
-            from varyz.scopes import stored_scope
 
             if data.get("confirm_action") != "1" or not data.get("project", "").strip():
                 raise HTTPException(422, "Confirm project deletion")
-            scope = stored_scope(data["project"])
+            resolve = project_names(store, owner["id"])
+            scope = resolve(data["project"])
             # Revoke every historical alias as well as the canonical project.
             for lane in (archive, reports):
                 names = {scope} | {
                     p["project"] for p in lane.status(owner["id"])["projects"]
-                    if stored_scope(p["project"]) == scope
+                    if resolve(p["project"]) == scope
                 }
                 for name in names:
                     lane.revoke(owner["id"], name)
@@ -1733,6 +1842,7 @@ def create_app(settings=None):
             "username": owner["username"],
             "entitlement": owner["status"] == "active",
             "status": owner["status"],
+            "cloud_access": account_access(owner),
         }
 
     @app.get("/api/export")
@@ -1787,10 +1897,12 @@ def create_app(settings=None):
                 "cloud_session_reports",
                 "session_report_terms",
                 "session_report_permissions",
+                "session_work_claims",
                 "cloud_project_sync",
             ):
                 db.execute(f"DELETE FROM {table} WHERE account=?", (owner["id"],))
             db.execute("DELETE FROM varyz_task_routes WHERE namespace=?", (owner["id"],))
+            forget_account(db, owner["id"])
             db.execute("DELETE FROM accounts WHERE id=?", (owner["id"],))
         return {"deleted": True}
 
@@ -1800,7 +1912,7 @@ def create_app(settings=None):
         return {"canceled": True, "effective_from": "next_billing_period"}
 
     async def cancel_subscription(owner, immediately=False):
-        if owner["subscription"] and owner["status"] != "canceled":
+        if owner["subscription"] and owner.get("paid_status", owner["status"]) != "canceled":
             if not settings.paddle_api_key:
                 raise HTTPException(
                     503,
@@ -1857,6 +1969,7 @@ def create_app(settings=None):
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(waiter[1].wait(), min(left, SYNC_RECHECK_SECONDS))
                 waiter[1].clear()
+                await asyncio.to_thread(account, request, paid=True)
                 result = await asyncio.to_thread(store.pull, owner["id"], cursor, limit)
                 if result["records"] or await request.is_disconnected():
                     break
@@ -2375,7 +2488,7 @@ def create_app(settings=None):
     price_details: dict[str, tuple[float, dict | None]] = {}
     subscription_details: dict[str, tuple[float, dict | None]] = {}
 
-    def paddle_get(path):
+    def paddle_get(path, missing=None):
         """One read from the billing provider, or None when it cannot answer quickly."""
         if not settings.paddle_api_key:
             return None
@@ -2384,7 +2497,7 @@ def create_app(settings=None):
             if settings.paddle_sandbox
             else "https://api.paddle.com"
         )
-        return paddle_read(base + path, settings.paddle_api_key)
+        return paddle_read(base + path, settings.paddle_api_key, missing)
 
     def plan_options(peer=None):
         """Every configured plan, labelled with its real price once the provider has said it,
@@ -2448,7 +2561,9 @@ def create_app(settings=None):
     def subscription_summary(owner):
         """When a paid subscription renews, or when a canceled one stops."""
         subscription = owner.get("subscription")
-        if not subscription or owner["status"] not in ("active", "past_due", "paused"):
+        if not subscription or owner.get("paid_status", owner["status"]) not in (
+            "active", "past_due", "paused"
+        ):
             return None
         cached = subscription_details.get(subscription)
         if not cached or time.time() - cached[0] > SUBSCRIPTION_SUMMARY_TTL:
@@ -2475,7 +2590,7 @@ def create_app(settings=None):
         return response
 
     async def begin_checkout(owner, data, peer=None):
-        if owner["subscription"] and owner["status"] != "canceled":
+        if owner["subscription"] and owner.get("paid_status", owner["status"]) != "canceled":
             raise HTTPException(
                 409, "An existing subscription must be canceled before starting another"
             )
@@ -2655,6 +2770,10 @@ def create_app(settings=None):
             if owner_id is not None and not isinstance(owner_id, str):
                 raise HTTPException(422, "Invalid subscription account")
             price_ids = {item["price"]["id"] for item in items}
+            try:
+                deadline = subscription_deadline(data)
+            except (KeyError, ValueError, TypeError, AttributeError):
+                raise HTTPException(422, "Invalid subscription period") from None
         with store.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT 1 FROM events WHERE id=?", (event_id,)).fetchone():
@@ -2663,8 +2782,10 @@ def create_app(settings=None):
             try:
                 if event_type == "transaction.completed":
                     record_payment(db, data, occurred, settings.paddle_prices)
+                    record_transaction(db, data, occurred, settings.paddle_prices)
                 elif event_type in ("adjustment.created", "adjustment.updated"):
                     record_refund(db, data)
+                    record_adjustment(db, data)
             except (KeyError, ValueError, TypeError, AttributeError):
                 raise HTTPException(422, "Invalid billing data") from None
             if event_type.startswith("subscription."):
@@ -2696,8 +2817,14 @@ def create_app(settings=None):
                         else "inactive"
                     )
                     db.execute(
-                        "UPDATE accounts SET subscription=?,status=?,billing_at=? WHERE id=?",
-                        (data.get("id"), effective, occurred, owner["id"]),
+                        "UPDATE accounts SET subscription=?,status=?,billing_at=?,"
+                        "subscription_ends_at=CASE WHEN ?=1 THEN ? "
+                        "ELSE subscription_ends_at END WHERE id=?",
+                        (data.get("id"), effective, occurred,
+                         int(any(key in data for key in (
+                             "current_billing_period", "scheduled_change", "next_billed_at"
+                         )) or owner["subscription"] != data.get("id")),
+                         deadline, owner["id"]),
                     )
                     db.execute("DELETE FROM billing_checkouts WHERE account=?", (owner["id"],))
         return {"received": True}
@@ -2727,6 +2854,19 @@ def create_app(settings=None):
                     reports.permit(owner["id"], project)
                     return {"approved": True}
                 return {"removed": reports.revoke(owner["id"], project)}
+            if action == "claim":
+                return await asyncio.to_thread(
+                    progress.pickup, owner["id"], Pickup.model_validate(data))
+            if action == "checkpoint":
+                return await asyncio.to_thread(
+                    progress.record, owner["id"], HostedCheckpoint.model_validate(data))
+            if action == "open" and set(data) <= {"project", "task", "conversation_id"}:
+                query = ReportQuery.model_validate({"project": data.get("project")})
+                task = data.get("task", "")
+                if not isinstance(task, str) or len(task) > 240:
+                    raise ValueError("Use a compact task summary")
+                return await asyncio.to_thread(progress.open_threads, owner["id"], query.project,
+                                               task, data.get("conversation_id"))
             if action == "sync" and set(data) == {"records"} and isinstance(data["records"], list):
                 if len(data["records"]) > 25:
                     raise ValueError("Invalid batch")
@@ -2735,7 +2875,7 @@ def create_app(settings=None):
             raise ValueError("Invalid action")
         except QuotaExceeded:
             raise HTTPException(413, "Report storage quota exceeded") from None
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, KeyError):
             raise HTTPException(422, "Invalid report request, approval or content") from None
 
     @app.get("/reports/{identity}")
@@ -3014,8 +3154,13 @@ def create_app(settings=None):
     @app.post("/mcp")
     async def mcp(request: Request):
         combined = request.url.path == "/mcp/plugin"
-        owner = None if combined else account(request, paid=True)
+        owner = None if combined else account(request)
         message = await object_body(request)
+        if (owner and owner["status"] != "active"
+                and message.get("method") not in {
+                    "tools/call", "initialize", "tools/list", "ping", "notifications/initialized"
+                }):
+            raise HTTPException(402, account_access(owner))
         if message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
             raise HTTPException(400, "Invalid JSON-RPC envelope")
         identifier = message.get("id")
@@ -3033,7 +3178,7 @@ def create_app(settings=None):
         )
         if combined and not discovery:
             try:
-                owner = account(request, paid=True)
+                owner = account(request)
             except HTTPException as error:
                 if not (
                     combined and message["method"] == "tools/call" and error.status_code == 401
@@ -3054,6 +3199,18 @@ def create_app(settings=None):
             raise HTTPException(403, "Connect with the explicit plugin scope")
         if request.url.path == "/mcp/context" and not request.state.context_readonly:
             raise HTTPException(403, "Connect with the explicit read-only context scope")
+        if owner and owner["status"] != "active" and message["method"] == "tools/call":
+            if owner["status"] == "unverified":
+                return tool_error(identifier, "Cloud billing status could not be verified. "
+                                  "Try later; local Varyz remains available.")
+            access = account_access(owner)
+            result = tool_error(identifier, access["message"] + " " + access["instruction"])
+            result["result"]["structuredContent"] = {"cloud_access": access}
+            return result
+        if owner and owner["status"] != "active" and message["method"] not in {
+            "initialize", "tools/list", "ping", "notifications/initialized"
+        }:
+            raise HTTPException(402, account_access(owner))
         if request.url.path in {"/mcp/archive", "/mcp/context"} or getattr(
             request.state, "archive_readonly", False
         ):
@@ -3088,7 +3245,9 @@ def create_app(settings=None):
                     + QUESTION_POLICY
                     + " " + AWAY_POLICY
                     + " Record actual replies with answer_owner_question. Call finish_check "
-                    "before reporting. Cloud has no direct local archive access."
+                    "before reporting. "
+                    + PROGRESS_POLICY
+                    + " Cloud has no direct local archive access."
                     " When local Varyz is also connected, use route_task on both connections "
                     "to assign one workflow backend. Prefer working authorized local Varyz. "
                     "Pass the same project/conversation_id to workflow tools; do not repeat "
@@ -3156,6 +3315,12 @@ def create_app(settings=None):
                                 "properties": {
                                     "project": {"type": "string"},
                                     "task": {"type": "string", "minLength": 1, "maxLength": 8000},
+                                    "conversation_id": {"type": "string", "maxLength": 200},
+                                    "rules_page": {
+                                        "type": "integer", "minimum": 1, "maximum": 50,
+                                        "description": "2 or more: the standing rules the "
+                                        "first briefing left out, less related to the task.",
+                                    },
                                 },
                                 "required": ["project"],
                             },
@@ -3218,6 +3383,9 @@ def create_app(settings=None):
                             {
                                 "type": "object",
                                 "properties": {"project": {"type": "string"},
+                                    "task": {"type": "string", "minLength": 1,
+                                             "maxLength": 8000},
+                                    "conversation_id": {"type": "string", "maxLength": 200},
                                     "evidence": {"type": "array", "maxItems": 100,
                                         "items": {"type": "object", "properties": {
                                             "rule_id": {"type": "string", "maxLength": 128},
@@ -3297,6 +3465,8 @@ def create_app(settings=None):
                         name, args = dispatch(name, args)
                     except ValidationError:
                         return tool_error(identifier, "Check the fields for this sharing operation")
+            if name in {"record_progress", "claim_work"} and not request.state.archive_allowed:
+                return tool_error(identifier, "Connect with explicit report/history access")
             if name == "session_history" and request.state.archive_allowed:
                 async with archive_read_slots:
                     return await asyncio.to_thread(archive_mcp, owner, message, True)
@@ -3308,7 +3478,7 @@ def create_app(settings=None):
             # Tool failures are results the agent can read and act on (MCP isError),
             # not transport errors that make clients drop the connection.
             try:
-                if combined and name == "start_task":
+                if name == "start_task":
                     async with archive_read_slots:
                         value = await asyncio.to_thread(
                             call_tool, owner, name, args,
@@ -3333,6 +3503,9 @@ def create_app(settings=None):
                 "error": {"code": -32601, "message": "Method not found"},
             }
         if method == "tools/list":
+            from .progress import tools as progress_tools
+
+            result["tools"].extend(progress_tools())
             if not combined and request.state.archive_allowed:
                 result["tools"].append(json.loads(json.dumps(REPORT_TOOL)))
             result["tools"].append(
@@ -3412,6 +3585,10 @@ def create_app(settings=None):
             mode["how"] = AWAY_POLICY
         return mode
 
+    from .progress import HostedCheckpoint, HostedProgress, Pickup
+
+    progress = HostedProgress(reports)
+
     def call_tool(owner, name, args, *, history_access=False):
         if name == "route_task":
             try:
@@ -3433,6 +3610,17 @@ def create_app(settings=None):
                 "status": "unavailable",
                 "reason": "Cloud stores compiled preferences only; archive tools require local Varyz.",  # noqa: E501
             }
+        elif name in {"record_progress", "claim_work"}:
+            if secure and not settings.archive_encryption_key:
+                raise HTTPException(503, "Report writes need configured storage encryption")
+            try:
+                if name == "record_progress":
+                    value = progress.record(owner["id"], HostedCheckpoint.model_validate(args))
+                else:
+                    value = progress.pickup(owner["id"], Pickup.model_validate(args))
+            except (ValueError, KeyError):
+                raise HTTPException(422, "Checkpoint or claim rejected; check project approval, "
+                                    "pause state, fields and active thread claim") from None
         elif name == "owner_questions":
             with store.connection() as db:
                 rows = db.execute(
@@ -3573,7 +3761,7 @@ def create_app(settings=None):
             if not isinstance(project, str) or not project or len(project) > 128:
                 raise HTTPException(422, "Project required")
             try:
-                project = normalize_scope(project)
+                project = project_names(store, owner["id"])(normalize_scope(project))
             except ValueError:
                 raise HTTPException(422, "Invalid project") from None
             records = store.knowledge(owner["id"], project)
@@ -3694,31 +3882,40 @@ def create_app(settings=None):
                     results.append(value)
                 value = {"results": results} if batch is not None else results[0]
             else:
+                from varyz.cloud.rule_briefing import briefing, checked_rules
+
+                task = args.get("task")
+                if task is not None and (
+                    not isinstance(task, str) or not task.strip() or len(task) > 8000
+                ):
+                    raise HTTPException(422, "Task must be nonempty text of at most 8000 chars")
+                page = args.get("rules_page", 1)
+                if not isinstance(page, int) or isinstance(page, bool) or not 1 <= page <= 50:
+                    raise HTTPException(422, "rules_page must be a whole number from 1 to 50")
+                known = store.projects(owner["id"])
                 value = {
                     "project": project,
-                    "rules": [r for r in records if r["kind"] == "rule"],
+                    **briefing(records, task or "", project, page=page, known_projects=known),
                     "workflows": [r for r in records if r["kind"] == "workflow"],
                     "limitation": "Compiled confirmed preferences only; no archive access.",
                 }
                 if name == "finish_check":
                     from varyz.resolution.verification import verify
 
+                    # Without a task every rule is checked, as before; with one,
+                    # what the briefing showed and the task's definition of done.
+                    items = checked_rules(records, task, project, known) if task else [
+                        {"id": r["id"], "item": r["payload"]["statement"],
+                         "domain": r["payload"].get("domain") or "standing"}
+                        for r in records if r["kind"] == "rule"
+                    ]
                     try:
-                        value["verification"] = verify([
-                            {"id": r["id"], "item": r["payload"]["statement"],
-                             "domain": r["payload"].get("domain", "standing")}
-                            for r in records if r["kind"] == "rule"
-                        ], evidence=args.get("evidence"))
+                        value["verification"] = verify(items, evidence=args.get("evidence"))
                     except ValueError:
                         raise HTTPException(422, "Invalid completion evidence") from None
                 if name == "start_task":
                     from varyz.resolution.task_history import cloud_history, preflight
 
-                    task = args.get("task")
-                    if task is not None and (
-                        not isinstance(task, str) or not task.strip() or len(task) > 8000
-                    ):
-                        raise HTTPException(422, "Task must be nonempty text of at most 8000 chars")
                     check = preflight(task or "", project)
                     if not task:
                         check["status"] = "task_required"
@@ -3737,6 +3934,10 @@ def create_app(settings=None):
                     else:
                         check["status"] = "access_required"
                     value["history_check"] = check
+                    if task:
+                        value["open_threads"] = progress.open_threads(
+                            owner["id"], project, task, args.get("conversation_id")) \
+                            if history_access else {"status": "access_required", "threads": []}
                     from varyz.resolution.continuation import requested
 
                     if task and requested(task):
@@ -3779,6 +3980,10 @@ def create_app(settings=None):
     from .sharing_routes import register_sharing
 
     register_sharing(app, settings, store, archive, account, csrf, form, page)
+    register_creators(app, settings, store, account, csrf, form, page)
+    from .admin import register_admin
+
+    register_admin(app, settings, store, account, csrf, form, page)
     app.state.admission = Admission()
     app.add_middleware(Backpressure, gate=app.state.admission)
     return app

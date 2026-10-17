@@ -3,21 +3,13 @@
 The briefing used to ask the working agent to start a reader subagent, and an
 agent busy with its task often did not. Now the hook (and start_task) hands the
 job to this supervisor instead: it starts ``claude -p`` or ``codex exec`` in the
-background with only varyz's two reading tools, on the cheapest model, and
+background with only varyz's reading tools, on the cheapest model, and
 watches the owner's plan limits while it reads.
 
-Limits (`[workflows]`, percent left of each window):
-
-- the full reading of the backlog (large) never starts, and stops, once the
-  five-hour window has `large_reading_min_left_5h` (30) or less left or the
-  week `large_reading_min_left_weekly` (25) or less;
-- the live reading of the last day (small) at 10 and 5.
-
-Usage that cannot be read allows only the live reading, and only until the
-first reading of it: a run whose usage stays unknown is stopped. A stopped run
-loses nothing -- a task's turns count as read only once it is submitted -- and
-the job waits for the window that stopped it to start over; the resolution
-daemon starts it again then (`maybe_resume`).
+Usage readings are informational. Low or unknown remaining allowance never
+blocks or stops learning. Actual provider rate-limit errors are reported
+with saved progress and a scheduled retry. Batches continue until all
+approved messages and their merges are complete.
 
 The runner is the one with more of its limits left (`reader_runner = "auto"`).
 Kill switches: `varyz hooks pause`, `[workflows] live_reading = false` (live),
@@ -28,7 +20,6 @@ asking the working agent), `varyz rules read --stop`.
 from __future__ import annotations
 
 import contextlib
-import glob
 import json
 import os
 import shutil
@@ -52,11 +43,9 @@ from varyz.resolution.usage import Gate, Usage, describe, gates
 ENV = "VARYZ_HEADLESS_READER"
 TOKEN_ENV = "VARYZ_AGENT_TOKEN"
 KINDS = ("full", "live")
-TOOLS = ("profile_reading_task", "submit_profile_reading")
-# A job whose usage could not be read is checked again this often.
+TOOLS = ("profile_reading_task", "submit_profile_reading", "profile_reading_status")
+# A provider refusal without a reported reset is retried after this delay.
 RECHECK_SECONDS = 30 * 60
-# Usage that is still unknown this long after a run started stops it.
-UNKNOWN_GRACE_SECONDS = 120.0
 # A stopped reader has this long to end on its own before it is killed.
 STOP_GRACE_SECONDS = 90.0
 MONITOR_SECONDS = 2.0
@@ -65,8 +54,12 @@ NO_PROGRESS_LIMIT = 2
 STATUS_LOCK_SECONDS = 5.0
 
 HEADLESS_NOTE = (
-    "\n\nYou run unattended: use only the two varyz tools, never ask anything. Do at most "
-    "{tasks} tasks in this run and then stop; varyz starts a fresh reader for the rest. "
+    "\n\nYou run unattended: use only the varyz reading and status tools, never ask "
+    "anything. Do at most "
+    "{tasks} tasks in this batch and then stop; varyz starts a fresh reader for the rest. "
+    "A batch ending or items queued does not mean learning is complete. "
+    "Before exiting, call profile_reading_status and report complete or partial, "
+    "messages and merges remaining, and any actual provider error. "
     "When profile_reading_task says done or stopped, stop at once."
 )
 
@@ -178,17 +171,10 @@ def _agent_token(client: str, config_file: Path) -> str | None:
 
 
 def _codex_executable() -> str | None:
-    """Codex's own program, not the npm shim: a .cmd would mangle the reader's arguments."""
-    found = shutil.which("codex")
-    if found is None:
-        return None
-    if sys.platform != "win32" or found.lower().endswith(".exe"):
-        return found
-    root = Path(found).parent / "node_modules" / "@openai" / "codex"
-    pattern = str(root / "node_modules" / "@openai" / "codex-win32-*" / "vendor" / "*"
-                  / "bin" / "codex.exe")
-    native = sorted(glob.glob(pattern))
-    return native[0] if native else None
+    """Share the installer's discovery, including app and editor runtimes outside PATH."""
+    from varyz.codex_runtime import find_codex
+
+    return find_codex()
 
 
 def find_runners(cfg: Any, config_file: Path) -> dict[str, Runner]:
@@ -210,6 +196,12 @@ def find_runners(cfg: Any, config_file: Path) -> dict[str, Runner]:
 
 def enabled(cfg: Any, kind: str) -> bool:
     workflows = cfg.workflows
+    if workflows.inference_mode == "local":
+        return False
+    if workflows.inference_mode == "conversations" and not cfg.connector_options(
+        "ai_conversations"
+    ).get("approved", False):
+        return False
     if not workflows.rule_reader_agent or workflows.reader_runner == "agent":
         return False
     return kind == "full" or workflows.live_reading
@@ -336,35 +328,16 @@ class Choice:
 
 
 def choose(kind: str, gate: Gate, usages: dict[str, Usage | None], now: float) -> Choice:
-    """The runner with the most room above ``gate``, or why none may run and when to look again.
-
-    Unknown usage lets only the live reading run, on Claude first: its stream
-    reports the usage with the first model call.
-    """
-    room = {name: gate.headroom(found) for name, found in usages.items() if found is not None}
-    open_runners = {name: value for name, value in room.items()
-                    if value is not None and value > 0}
-    if open_runners:
-        best = max(open_runners, key=lambda name: open_runners[name])
-        return Choice(best, f"{best}: {describe(usages[best])}")
-    unknown = [name for name, found in usages.items() if found is None or not found.known]
-    if kind == "live" and unknown:
-        name = "claude" if "claude" in unknown else unknown[0]
-        return Choice(name, f"{name}: usage unknown; it must show within the first call")
-    resumes: list[float] = []
-    reasons: list[str] = []
-    for name, found in usages.items():
-        if found is None or not found.known:
-            reasons.append(f"{name}: usage unknown")
-            resumes.append(now + RECHECK_SECONDS)
-            continue
-        blocking = gate.blocks(found)
-        reasons.append(f"{name}: {describe(found)}")
-        resets = [window.resets_at for window in blocking]
-        resumes.append(max((at for at in resets if at is not None), default=now + RECHECK_SECONDS)
-                       if all(at is not None for at in resets) else now + RECHECK_SECONDS)
-    return Choice(None, "; ".join(reasons) or "no runner",
-                  min(resumes) if resumes else now + RECHECK_SECONDS)
+    """Choose an available runner; usage ranks accounts but never prevents a start."""
+    known = {name: min(found.five_hour.left, found.weekly.left)
+             for name, found in usages.items() if found is not None and found.known}
+    if known:
+        name = max(known, key=lambda item: known[item])
+        return Choice(name, f"{name}: {describe(usages[name])}; usage is informational")
+    if usages:
+        name = "claude" if "claude" in usages else next(iter(usages))
+        return Choice(name, f"{name}: usage unavailable; learning starts anyway")
+    return Choice(None, "no runner", now + RECHECK_SECONDS)
 
 
 # -- running one reader -------------------------------------------------------------
@@ -395,6 +368,8 @@ class _Output:
                 try:
                     event = json.loads(line)
                 except ValueError:
+                    if provider_limited(line):
+                        self.error = line.strip()[:300]
                     continue
                 if not isinstance(event, dict):
                     continue
@@ -403,9 +378,14 @@ class _Output:
                     self.usage = _merged(self.usage, reported)
                 kind = event.get("type")
                 if kind in {"error", "turn.failed"} or (kind == "result" and event.get("is_error")):
-                    message = event.get("message") or event.get("error") or event.get("result")
+                    message = (event.get("message") or event.get("error") or event.get("result")
+                               or event.get("errors"))
                     if isinstance(message, dict):
-                        message = message.get("message")
+                        message = message.get("message") or message.get("code")
+                    elif isinstance(message, list):
+                        message = "; ".join(str(item.get("message", item)
+                                              if isinstance(item, dict) else item)
+                                            for item in message)
                     self.error = str(message or kind)[:300]
 
     def join(self, timeout: float) -> None:
@@ -452,14 +432,18 @@ def _launch(command: list[str], env: dict[str, str], cwd: Path) -> Any:
     )
 
 
-def _blocked_history(status: dict[str, Any], runner: str, gate: Gate, now: float) -> Usage | None:
-    """An unreadable endpoint cannot override a known limit whose reset is still ahead."""
-    raw = (status.get("usage") or {}).get(runner)
-    prior = Usage.from_dict(raw) if isinstance(raw, dict) else None
-    if prior is None or not prior.known:
-        return None
-    blocks = gate.blocks(prior)
-    return prior if any(w.resets_at is not None and w.resets_at > now for w in blocks) else None
+def provider_limited(error: str) -> bool:
+    text = error.casefold().replace("_", " ")
+    return any(word in text for word in (
+        "rate limit", "usage limit", "quota exceeded", "limit reached", "hit your limit",
+        "hit your usage", "out of extra usage", "too many requests"))
+
+
+def _read_usage(read: Callable[[str], Usage | None], name: str) -> Usage | None:
+    # Usage endpoints and Keychain availability cannot hold up learning.
+    with contextlib.suppress(Exception):
+        return read(name)
+    return None
 
 
 def run_one(
@@ -470,10 +454,18 @@ def run_one(
     clock: Callable[[], float] = time.time,
     sleep: Callable[[float], None] = time.sleep,
 ) -> RunResult:
-    """Run one reader to its end, stopping it when the usage, time or owner says so."""
+    """Run one reader to its end, stopping it for a time bound or the owner."""
     workflows = cfg.workflows
     run_id = uuid.uuid4().hex
     env = {**os.environ, TOKEN_ENV: runner.token, ENV: run_id}
+    # Approval covers the subscription, so inherited paid API credentials cannot
+    # silently switch the reader to API billing or a different provider.
+    for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+                "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_PROFILE",
+                "ANTHROPIC_FEDERATION_RULE_ID", "OPENAI_API_KEY", "CODEX_API_KEY",
+                "OPENAI_BASE_URL"):
+        env.pop(key, None)
     started = clock()
     update_status(cfg, lambda status: status.update({
         "state": "running", "kind": kind, "runner": runner.name, "run_id": run_id,
@@ -499,20 +491,10 @@ def run_one(
             continue
         if now - polled_at >= workflows.reader_usage_poll_seconds:
             polled_at = now
-            polled = read_usage(runner.name) or polled
+            polled = _read_usage(read_usage, runner.name) or polled
         latest = _fresher(polled, output.usage)
-        if latest is None or not latest.known:
-            latest = _blocked_history(load_status(cfg), runner.name, gate, now) or latest
         reason: str | None = None
-        if latest is not None and (blocking := gate.blocks(latest)):
-            reason = f"usage: {describe(latest)}"
-            resets = [window.resets_at for window in blocking]
-            resume_after = max(at for at in resets if at is not None) \
-                if all(at is not None for at in resets) else now + RECHECK_SECONDS
-        elif latest is None and now - started >= UNKNOWN_GRACE_SECONDS:
-            reason = "usage: unknown"
-            resume_after = now + RECHECK_SECONDS
-        elif now - started >= workflows.reader_max_minutes * 60:
+        if now - started >= workflows.reader_max_minutes * 60:
             reason = "time"
         elif _paused(cfg) or not enabled(cfg, kind):
             reason = "turned off"
@@ -614,6 +596,9 @@ def _supervise(cfg: Any, config_file: Path, kind: str | None,
         update_status(cfg, lambda status: status.update(
             {"pending": sorted(_pending(status) | {kind})}))
     runners = dict(runners if runners is not None else find_runners(cfg, config_file))
+    approved_runner = load_status(cfg).get("setup_runner")
+    if approved_runner:
+        runners = {name: runner for name, runner in runners.items() if name == approved_runner}
     every_gate = gates(cfg)
     no_progress = {name: 0 for name in KINDS}
 
@@ -632,36 +617,29 @@ def _supervise(cfg: Any, config_file: Path, kind: str | None,
         if (until := _deferred(cfg, now)) is not None:
             return _settle_scheduled(cfg, until, settle)
         if not pending:
-            return settle("idle", pending=[], reason="nothing waiting to be read",
+            return settle("idle", pending=[], reason="no background reading is queued",
                           resume_after=None, next_check=None)
         if not runners:
+            if status.get("setup_allow_agent_fallback"):
+                return hand_back(cfg, "cli_unavailable")
             return settle("no_runner", reason="neither Claude Code nor Codex can run the "
                           "reader here; use the working agent fallback",
                           resume_after=None, next_check=now + RECHECK_SECONDS)
-        usages = {name: read_usage(name) for name in runners}
+        usages = {name: _read_usage(read_usage, name) for name in runners}
         readings = {name: found.as_dict() for name, found in usages.items() if found is not None}
         update_status(cfg, lambda status, readings=readings: status.setdefault(
             "usage", {}).update(readings))
-        chosen: tuple[str, Choice] | None = None
-        waits: list[Choice] = []
-        for job in [name for name in KINDS if name in pending]:
-            guarded = {name: (found if found is not None and found.known else
-                             _blocked_history(status, name, every_gate[job], now) or found)
-                       for name, found in usages.items()}
-            choice = choose(job, every_gate[job], guarded, now)
-            if choice.runner is not None:
-                chosen = (job, choice)
-                break
-            waits.append(choice)
-        if chosen is None:
-            resume = min((c.resume_after for c in waits if c.resume_after), default=None)
-            reason = waits[0].reason if waits else "no runner"
-            log(cfg, "waiting", pending=sorted(pending), reason=reason, resume_after=resume)
-            return settle("waiting_for_usage", reason=reason, resume_after=resume,
-                          next_check=min(resume or now + RECHECK_SECONDS, now + RECHECK_SECONDS))
-        job, choice = chosen
+        job = next(name for name in KINDS if name in pending)
+        choice = choose(job, every_gate[job], usages, now)
+        if choice.runner is None:
+            return settle("no_runner", reason=choice.reason, next_check=now + RECHECK_SECONDS)
         runner = runners[str(choice.runner)]
         before = _work_left(cfg, job, now)
+        if before[0] == 0 and before[1] == 0:
+            finished = set(KINDS) if job == "full" else {job}
+            update_status(cfg, lambda status, finished=finished: status.update(
+                {"pending": sorted(_pending(status) - finished)}))
+            continue
         rejected = list(status.get("rejected_models") or [])
         commands = _commands(cfg, runner, job, config_file, rejected)
         if not commands:
@@ -696,12 +674,16 @@ def _supervise(cfg: Any, config_file: Path, kind: str | None,
             return _settle_scheduled(cfg, until, settle)
         if result.stopped in {"asked", "turned off"}:
             return settle("stopped", reason=result.stopped, pending=[])
-        if result.stopped and result.stopped.startswith("usage"):
-            if result.stopped == "usage: unknown":
-                # Not run blind again: without a reading it waits for the next check.
-                runners.pop(runner.name)
-            # The other sign-in may still have room: the next pass looks.
-            continue
+        if provider_limited(result.error) and (after[0] or after[1]):
+            latest_usage = result.usage or usages.get(runner.name)
+            resets = ([window.resets_at for window in
+                       (latest_usage.five_hour, latest_usage.weekly)
+                       if window is not None and window.left <= 0
+                       and window.resets_at is not None and window.resets_at > clock()]
+                      if latest_usage is not None else [])
+            resume = max(resets, default=clock() + RECHECK_SECONDS)
+            return settle("rate_limited", reason=f"{runner.name}: {result.error}",
+                          resume_after=resume, next_check=resume)
         done = after[0] == 0 and after[1] == 0
         if done:
             finished = set(KINDS) if job == "full" else {job}
@@ -717,8 +699,10 @@ def _supervise(cfg: Any, config_file: Path, kind: str | None,
                               f"{NO_PROGRESS_LIMIT} runs: {result.error or 'no error given'}")
         else:
             no_progress[job] = 0
-    return settle("waiting_for_usage" if _pending(load_status(cfg)) else "idle",
-                  reason="started again later", next_check=clock() + 60)
+    remaining = bool(_pending(load_status(cfg)))
+    return settle("queued" if remaining else "idle",
+                  reason="More batches remain; resumes automatically" if remaining
+                  else "Learning complete", next_check=clock() + 1 if remaining else None)
 
 
 def _settle_scheduled(cfg: Any, until: float,
@@ -783,6 +767,16 @@ def spawn(config_file: Path | None, kind: str | None = None) -> None:
     )
 
 
+def hand_back(cfg: Any, reason: str) -> dict[str, Any]:
+    """Let the connected agent take approved setup learning on its next task."""
+    from varyz.resolution.profile_reader import _offer_times, _save_offer_times
+
+    _save_offer_times(cfg, {**_offer_times(cfg), "taken_at": 0, "offered_at": 0})
+    return update_status(cfg, lambda status: status.update(
+        state="agent", pending=[job for job in status.get("pending", []) if job != "full"],
+        setup_agent_fallback=True, reason=reason, next_check=None, resume_after=None))
+
+
 def request(cfg: Any, kind: str, config_file: Path | None, *,
             runners: dict[str, Runner] | None = None,
             start: Callable[[Path | None, str | None], None] | None = None,
@@ -792,6 +786,8 @@ def request(cfg: Any, kind: str, config_file: Path | None, *,
     A job waiting for the limits stays queued until its next check.
     """
     if not enabled(cfg, kind) or config_file is None:
+        return False
+    if kind == "full" and load_status(cfg).get("setup_agent_fallback"):
         return False
     config_file = Path(config_file).resolve()
     if runners is None:
@@ -803,7 +799,7 @@ def request(cfg: Any, kind: str, config_file: Path | None, *,
         {"pending": sorted(_pending(status) | {kind})}))
     if _running(cfg):
         return True
-    if status.get("state") == "waiting_for_usage" and now < float(status.get("next_check") or 0):
+    if status.get("state") == "rate_limited" and now < float(status.get("next_check") or 0):
         return True
     update_status(cfg, lambda status: status.update({"state": "queued", "checked_at": now}))
     try:
@@ -862,10 +858,10 @@ def maybe_resume(cfg: Any, config_file: Path | None, now: float, *,
     """Start a waiting job again once its check is due; True when one was started."""
     status = load_status(cfg)
     if not _pending(status) or status.get("state") not in {
-        None, "queued", "no_runner", "waiting_for_usage", "running", "scheduled",
+        None, "queued", "no_runner", "waiting_for_usage", "rate_limited", "running", "scheduled",
     }:
         return False
-    if status.get("state") in {"waiting_for_usage", "no_runner", "scheduled"} and now < float(
+    if status.get("state") in {"rate_limited", "no_runner", "scheduled", "queued"} and now < float(
         status.get("next_check") or 0
     ):
         return False
@@ -911,11 +907,11 @@ def health(cfg: Any, *, now: float | None = None) -> tuple[bool, str]:
         if now > due + 180:
             return False, "scheduled reading has not started; run varyz rules read --status"
         return True, "reading scheduled for " + _local(due)
-    if pending and state == "waiting_for_usage":
+    if pending and state == "rate_limited":
         due = float(status.get("next_check") or status.get("resume_after") or 0)
         if not due or now > due + 180:
             return False, "reader quota recheck overdue; run varyz rules read --status"
-        return True, "waiting for usage limits; next check scheduled"
+        return True, "AI provider reported a usage limit; retry scheduled"
     if pending and state in {None, "queued"}:
         if now - float(status.get("checked_at") or 0) > 120:
             return False, "queued reading has not started; run varyz rules read --status"
@@ -965,7 +961,7 @@ def summary(cfg: Any, now: float | None = None) -> str:
     if state == "scheduled" and status.get("next_check"):
         parts.append("starts " + _local(float(status["next_check"])))
     resume = status.get("resume_after")
-    if state == "waiting_for_usage" and resume:
+    if state == "rate_limited" and resume:
         parts.append("resumes " + datetime.fromtimestamp(float(resume), UTC)
                      .astimezone().strftime("%a %H:%M"))
     last = status.get("last_run")

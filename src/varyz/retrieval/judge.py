@@ -229,7 +229,8 @@ def _classifier_judge(cfg: Config) -> Judge | None:
     from varyz.resolution.local_classifier import gpu_memory_mib
 
     provider = _ClassifierModel(cfg)
-    if not provider.available() or gpu_memory_mib() is None:
+    apple_gpu = platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+    if not provider.available() or (gpu_memory_mib() is None and not apple_gpu):
         return None
     return Judge(provider)
 
@@ -253,6 +254,8 @@ def load_judge(cfg: Config) -> Judge | None:
     uses the configured model whenever it is configured, and a failure still
     falls back.
     """
+    if cfg.workflows.inference_mode == "conversations":
+        return None
     mode = cfg.retrieval.judge
     if mode == "off" or os.environ.get("VARYZ_DISABLE_JUDGE") == "1":
         return None

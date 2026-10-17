@@ -9,7 +9,19 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Machine-aware setup (2026-10-16):** Setup checks memory, disk, CPU and GPU headroom before downloading Qwen. Constrained machines automatically use AI conversation mode; capable machines offer More privacy or Lighter on your device. Conversation cloud reading needs separate permission and approved AI histories, excludes documents/repositories and older saved-rule context, and never starts Ollama. More privacy disables the automatic cloud reader and uses a bounded local reader. Apple Silicon is recognized by the local evidence judge. Choices persist across browser/terminal setup and reruns; `--yes` does not approve cloud processing.
+
+- **Creator Program and owner admin page (2026-10-15):** Approved creators earn 30% of referred Varyz Cloud payments after discounts, excluding tax and refunds, with a 30-day hold and monthly payouts in each payment's own currency by PayPal or Wise (only a payout email is stored). Creators get three free Cloud months once, and people who sign up through a creator link get one; grants never stack or renew. Links live at `varyzai.com/r/CODE` (30-day last-click cookie), applications and the creator dashboard at `/creators`, and the program terms at `varyzai.com/creators`. `/admin` shows sign-ups, revenue, subscriptions, applications, payouts due, disputes, grants and usage only to verified emails in `VARYZ_CLOUD_ADMIN_EMAILS`; others get a 404. Recording a payout needs a recent sign-in and checks the amount against a fresh calculation. Revenue and sign-up statistics start with this release. The program terms need legal review before applications open.
+- **Liability cap in the terms (2026-10-15):** The Terms of service limit the operator's total liability to what the customer paid for Varyz Cloud in the 12 months before the claim, and to zero for anyone who paid nothing, and exclude indirect loss. The Creator Program terms add that, apart from earned commissions, liability to creators is zero. Intent, deliberate recklessness, fraud, death or personal injury and mandatory consumer rights stay outside the cap, as Dutch and EU law require.
+
+- **More payout methods and account drill-downs in the admin (2026-10-15):** Creators can be paid by PayPal, Wise, Payoneer, Revolut (Revtag) or bank transfer (IBAN with its checksum verified, or an account number with a SWIFT/BIC, routing number or sort code). Payout details are stored encrypted with the Cloud key, bank details are refused without one, and the creator dashboard and admin overview show only a masked hint; full details appear only on the owner's payouts-due cards. Card numbers and Apple Pay are not offered: neither is a way to send a payout by hand, and storing card numbers would bring PCI scope. The admin overview tiles and subscription statuses now open account lists (all, new in 7 or 30 days, paying, free access, referred, creators, any status) with email search, paging and CSV export, and every email opens an account page with sign-in methods, subscription, free access, referral, usage, payments and, for creators, their referred sign-ups. varyzai.com/admin links keep their path.
+
 ### Changed
+
+- **varyzai.com mail moves to Google Workspace (2026-10-17):** Mail for varyzai.com is delivered to the egor@varyzai.com Google Workspace mailbox; hello@, support@, security@ and no-reply@ are aliases of it, and nothing forwards it to a personal address. The Cloudflare Email Routing rules that forwarded these addresses to a personal Gmail account are deleted. `docs/PRIVACY.md` says so.
+- **Mail on varyzai.com (2026-10-15):** The contact, privacy, terms, refunds and creators pages name hello@, support@ and security@varyzai.com, which Cloudflare Email Routing forwarded to the maintainer until 2026-10-17; `SECURITY.md` names security@ as the fallback to GitHub private reporting. The site worker now serves `/llms.txt`, `/llms-full.txt` and `/sitemap.xml`, which the zone's discovery rewrite rule sends to it and which had returned 404.
 
 - **Native acceptance pipeline (2026-10-15):** Public standard runners can build an unsigned Windows installer from locked inputs and test its actual install, reinstall, removal and Start Menu startup on a disposable Windows host. The workflow retains synthetic receipts and holds the unsigned installer. Mac notarization verifies the exact signing run, source and package hashes before Apple submission, stapling and Gatekeeper assessment.
 
@@ -159,6 +171,45 @@ All notable changes to Varyz are recorded here. The format follows
   into the home and pricing pages. The dollar price is the fallback everywhere.
 
 ### Fixed
+
+- Cloud setup adds Select all / Deselect all to Choose projects (2026-10-17),
+  including projects hidden by search. Selection persists for preview; upload
+  still requires approval.
+
+- Cloud connection after local setup now starts and checks the browser bridge
+  before opening Cloud (2026-10-17). The curated local package includes its native
+  connection dependencies. Older installs keep their resolution port while Cloud
+  receives its fixed loopback endpoint on 1207. An unavailable or stale helper gets
+  a visible retry; readiness does not sign in, select data or start a sync worker.
+
+- Setup ends with a yellow Set up Varyz Cloud link to the Cloud connection page;
+  the short message for the user's AI appears in a compact bordered box (2026-10-17).
+
+- First-run AI guidance verifies all reading and merging, asks whether to review
+  preferences, then offers a question grounded in a real imported project (2026-10-17).
+  Setup shows only "Help me with Varyz"; any first-use Varyz mention triggers the
+  sequence. Full instructions live in the installed skill and startup context.
+  Examples use read, currently cloud-safe sources; unavailable project history
+  falls back to a preference question.
+  These product instructions are separate from learned owner preferences.
+- Setup learning can retry after falling back to the connected AI (2026-10-17).
+  Retry clears the fallback flag only after finding an approved runner, keeps saved
+  reading progress and preserves the selected provider. The page also recognises
+  when learning through the copied prompt has finished.
+
+- Setup's Review preferences action opens an authenticated review link directly
+  instead of creating a blank tab that disappears on a failed request (2026-10-17).
+  Launch failures remain visible with a retry link. Completed setup pages keep
+  their server alive while open, so the review link does not silently expire.
+
+- Preference mining reads smaller batches and complete overlapping excerpts of long
+  messages, accounts for every merge note, and rewrites conversational wording as
+  usable instructions (2026-10-17). Explicit lasting project requirements survive
+  at project scope; consent exceptions remain conditional. Generation 9 rereads
+  earlier mining results. Two fresh invented cloud-test windows recovered 25/26
+  supported targets versus 11/26 before, including 10/10 general preferences versus
+  0/10. Local-model comparison failed on truncated output; real-archive improvement
+  is unmeasured. See `reports/rule_mining_thoroughness_2026-10-17.md`.
 
 - Cloud session reports deployed (2026-10-08): production at cloud.varyzai.com now
   serves `/api/reports/*` and the read-only `session_history` tool. The candidate
@@ -1207,25 +1258,3 @@ All notable changes to Varyz are recorded here. The format follows
   fixed by a new regression and fresh resolver output, not by rewriting that score.
 - Local model evaluation is synthetic and small. Gemma remains the conservative default;
   Qwen and SemIf speed paths are not promoted.
-
-## 2026-10-15 Plugin 0.1.13 hosted-data safeguards
-
-- State hosted prohibited-data limits before tool calls and respect withheld records.
-- Preserve existing-installation onboarding and native OAuth; retain five positive and three negative review cases.
-- Clarify that no hosted special-category-data process is currently supported; align privacy and compliance documentation.
-
-## 2026-10-15 Archive package generation
-
-- Regenerate the separate read-only archive draft after the hosted plugin version and data-limit guidance update.
-- Restore the archive export reproducibility check without changing the submitted main plugin package.
-
-## 2026-10-15 Windows release acceptance
-
-- Retain the exact unsigned Windows candidate with provenance and checksums.
-- Complete clean and returning-user onboarding using only an isolated fictional document.
-- Verify configured reinstall, uninstall/reinstall, and preserved synthetic preferences through the installed CLI.
-
-## 2026-10-15 Isolated native daemon restart
-
-- Preserve isolated Python mode when the native CLI starts its daemon child, so inherited foreign PYTHONHOME/PYTHONPATH cannot break restart after installation.
-- Add a live synthetic daemon regression reproducing the failure and verifying authenticated startup and shutdown.

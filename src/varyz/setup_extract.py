@@ -59,27 +59,19 @@ def _best(usages: dict[str, Usage | None], gate: Gate) -> str:
 
 
 def estimate(turns: int, found: Usage | None, gate: Gate) -> dict[str, Any]:
-    """What reading ``turns`` takes: percent of each limit, seconds, and a pause it needs."""
+    """What reading ``turns`` takes: percent of each limit, seconds and available allowance."""
     five = turns / 1000 * FIVE_HOUR_PER_1000
     weekly = turns / 1000 * WEEKLY_PER_1000
     seconds = START_SECONDS + turns / 1000 * (READ_SECONDS_PER_1000 + MERGE_SECONDS_PER_1000)
     view: dict[str, Any] = {
         "five_hour": round(five, 1), "weekly": round(weekly, 1), "seconds": round(seconds),
         "five_hour_left": None, "weekly_left": None, "pauses_until": None,
-        # Where the reader stops to leave the owner the rest of their plan.
-        "gate": {"five_hour": round(gate.five_hour), "weekly": round(gate.weekly)},
     }
     if found is None or not found.known:
         return view
     assert found.five_hour is not None and found.weekly is not None
     view["five_hour_left"] = round(found.five_hour.left)
     view["weekly_left"] = round(found.weekly.left)
-    # The reader stops at the gate and carries on once that window starts over.
-    if five > found.five_hour.left - gate.five_hour:
-        view["pauses_until"] = found.five_hour.resets_at
-    if weekly > found.weekly.left - gate.weekly:
-        view["pauses_until"] = max(found.weekly.resets_at or 0.0,
-                                   view["pauses_until"] or 0.0) or None
     return view
 
 
@@ -100,17 +92,37 @@ def offer(
 
     now = time.time() if now is None else now
     read_usage = read_usage or usage_mod.read
+    if cfg.workflows.inference_mode == "local":
+        from varyz.resolution import local_reader
+
+        if not local_reader._allowed(cfg):
+            return None
+        turns, merges = local_reader.work_left(cfg)
+        if not turns and not merges:
+            return None
+        return {
+            "state": "offered", "turns": turns, "runner": "local", "plan": "AI plan",
+            "known": True, "five_hour": 0, "weekly": 0,
+            "seconds": 60 + turns * 2,
+            "estimate_note": ("Rough local time estimate; updates as it reads. "
+                              "Starts when the model is ready."),
+        }
     if not reader.enabled(cfg, "full") or deferred_until(cfg, now) is not None:
         return None
     if runners is None:
         runners = reader.find_runners(cfg, Path(config_file).resolve())
-    if not runners:
-        return None
     turns, merges, _, _ = reader._work_left(cfg, "full", now)
     first = not ProfileState(profile_path(cfg, "cloud")).exists
     if (turns == 0 and not merges) or (not first and turns < AGENT_OFFER_MIN_TURNS):
         return None
-    usages = {name: read_usage(name) for name in runners}
+    if not runners:
+        return {
+            "state": "offered", "turns": turns, "runner": "agent", "plan": "AI account",
+            "known": False, "allow_agent_fallback": True,
+            "estimate_note": "Estimates vary by plan and model.",
+            **estimate(turns, None, usage_mod.gates(cfg)["full"]),
+        }
+    usages = {name: reader._read_usage(read_usage, name) for name in runners}
     gate = usage_mod.gates(cfg)["full"]
     choice = reader.choose("full", gate, usages, now)
     name = choice.runner or _best(usages, gate)
@@ -123,6 +135,10 @@ def offer(
         "known": found is not None and found.known,
         # Set when the limits stop it from starting now: when it starts by itself.
         "starts_at": choice.resume_after if choice.runner is None else None,
+        "estimate_note": ("Based on an earlier Codex reading; "
+                          "your plan and model may use more or less."),
+        "usage_unknown": found is None or not found.known,
+        "allow_agent_fallback": True,
         **estimate(turns, found, gate),
     }
 
@@ -139,12 +155,33 @@ def start(
 
     now = time.time() if now is None else now
     read_usage = read_usage or usage_mod.read
+    if offered.get("runner") == "local":
+        from varyz.resolution import local_reader
+
+        if not local_reader.request(cfg, config_file, wait_model=True):
+            return None
+        return {"at": now, "turns": int(offered["turns"]), "runner": "local",
+                "seconds": float(offered["seconds"]), "merging_since": None}
+    if offered.get("runner") == "agent":
+        reader.hand_back(cfg, "cli_unavailable")
+        return {"at": now, "turns": int(offered["turns"]), "runner": "agent",
+                "seconds": float(offered["seconds"])}
+    reader.update_status(cfg, lambda status: status.update({
+        "setup_runner": offered["runner"], "setup_agent_fallback": False,
+        "setup_allow_agent_fallback": bool(offered.get("allow_agent_fallback")),
+        "next_check": 0, "resume_after": None,
+    }))
     if not (request or reader.request)(cfg, "full", Path(config_file).resolve(), now=now):
+        if (offered.get("allow_agent_fallback") and reader.enabled(cfg, "full")
+                and not reader._paused(cfg)):
+            reader.hand_back(cfg, "cli_unavailable")
+            return {"at": now, "turns": int(offered["turns"]), "runner": "agent",
+                    "seconds": float(offered["seconds"])}
         return None
     # The owner chose on the page: their agent neither asks again nor announces it.
     reading_taken(cfg, now)
     announced(cfg, now)
-    found = read_usage(offered["runner"]) if offered.get("known") else None
+    found = reader._read_usage(read_usage, offered["runner"]) if offered.get("known") else None
     return {
         "at": now,
         "turns": int(offered["turns"]),
@@ -154,6 +191,38 @@ def start(
         "weekly_used": found.weekly.used if found and found.weekly else None,
         "merging_since": None,
     }
+
+
+def retry(cfg: Any, config_file: Path) -> bool:
+    """Recheck the already-approved plan now, without widening the approval."""
+    from varyz.resolution import headless_reader as reader
+
+    if not reader.enabled(cfg, "full") or reader._paused(cfg):
+        return False
+    runners = reader.find_runners(cfg, Path(config_file).resolve())
+    approved = reader.load_status(cfg).get("setup_runner")
+    if approved:
+        runners = {name: runner for name, runner in runners.items() if name == approved}
+    if not runners:
+        reader.hand_back(cfg, "cli_unavailable")
+        return False
+    reader.update_status(cfg, lambda status: status.update(
+        setup_agent_fallback=False, next_check=0, resume_after=None))
+    return reader.request(cfg, "full", config_file, runners=runners)
+
+
+def stop(cfg: Any) -> None:
+    """Cancel setup's cloud reading; keep its completed work and other pending jobs."""
+    from varyz.resolution import headless_reader as reader
+
+    def cancel(status: dict[str, Any]) -> None:
+        status["pending"] = [job for job in status.get("pending", []) if job != "full"]
+        if status.get("state") == "running" and status.get("kind") == "full":
+            status["stop_run"] = status.get("run_id") or "*"
+        elif status.get("state") != "running":
+            status.update(state="stopped", reason="Learning skipped in setup",
+                          next_check=None, resume_after=None)
+    reader.update_status(cfg, cancel)
 
 
 # -- its progress -------------------------------------------------------------------
@@ -182,8 +251,17 @@ def progress(
     """
     from varyz.resolution import headless_reader as reader
 
+    if started.get("runner") == "local":
+        return _local_progress(cfg, started, now)
     status = reader.load_status(cfg)
-    turns_left, _, _, _ = work if work is not None else reader._work_left(cfg, "full", now)
+    turns_left, work_merges, _, _ = (work if work is not None else
+                                   reader._work_left(cfg, "full", now))
+    if status.get("setup_agent_fallback"):
+        done = turns_left == 0 and work_merges == 0
+        return {"state": "accepted", "phase": "done" if done else "agent",
+                "turns": started["turns"], "turns_left": turns_left,
+                "reason": status.get("reason", "cli_unavailable"),
+                "fraction": 1.0 if done else None}
     total = max(int(started["turns"]), turns_left)
     read = total - turns_left
     state = status.get("state")
@@ -198,13 +276,16 @@ def progress(
     }
     if state in {"failed", "no_runner"}:
         view.update(phase="failed", reason=str(status.get("reason") or state))
-    elif state == "waiting_for_usage":
-        view.update(phase="waiting", until=status.get("resume_after") or status.get("next_check"))
+    elif state == "rate_limited":
+        view.update(phase="waiting", reason=str(status.get("reason") or ""),
+                    until=status.get("next_check") or status.get("resume_after"))
     elif state in {"scheduled", "paused", "stopped"}:
         view.update(phase="stopped", reason=str(status.get("reason") or state),
                     until=status.get("next_check") if state == "scheduled" else None)
-    elif not pending:
+    elif not pending and turns_left == 0 and work_merges == 0:
         view.update(phase="done", fraction=1.0)
+    elif not pending:
+        view.update(phase="stopped", reason="Learning is incomplete; resume the reader.")
     elif turns_left == 0:
         if started.get("merging_since") is None:
             started["merging_since"] = now
@@ -216,6 +297,32 @@ def progress(
             view["seconds_left"] = elapsed * turns_left / read + merge_seconds
         else:
             view["seconds_left"] = max(float(started["seconds"]) - elapsed, 30.0)
+    return view
+
+
+def _local_progress(cfg: Any, started: dict[str, Any], now: float) -> dict[str, Any]:
+    from varyz.resolution import local_reader
+
+    status = local_reader.load_status(cfg)
+    left, merges = local_reader.work_left(cfg)
+    total = max(int(started["turns"]), left)
+    done = total - left
+    phase = status.get("state", "queued")
+    view: dict[str, Any] = {
+        "state": "accepted", "runner": "local", "turns": total, "turns_left": left,
+        "fraction": done / total if total else 0, "used_five_hour": 0, "used_weekly": 0,
+        "seconds_left": None, "reason": status.get("reason", ""),
+    }
+    if phase in {"queued", "waiting_model"}:
+        view.update(phase="waiting_model", fraction=None)
+    elif phase in {"failed", "stopped"}:
+        view["phase"] = phase
+    elif phase == "idle" and not left and not merges:
+        view.update(phase="done", fraction=1)
+    else:
+        elapsed = now - float(status.get("reading_at") or now)
+        seconds = elapsed * left / done if done >= SETTLE_TURNS else float(started["seconds"])
+        view.update(phase="merging" if not left else "reading", seconds_left=max(seconds, 30))
     return view
 
 

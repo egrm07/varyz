@@ -320,8 +320,14 @@ def line(item: NewsItem) -> str:
     return text
 
 
-def agent_notice(cfg: Config, *, now: datetime | None = None) -> str | None:
+def agent_notice(cfg: Config, *, now: datetime | None = None,
+                 conversation_id: str | None = None) -> str | None:
     """The posts to hand an agent now, marked seen; None when there are none."""
+    from varyz.onboarding import news_allowed
+
+    if not news_allowed(cfg, conversation_id=conversation_id,
+                        now=now.timestamp() if now is not None else None):
+        return None
     if not is_on(cfg):
         return None
     fresh = unseen(cfg, now=now)[:SHOW_AT_ONCE]

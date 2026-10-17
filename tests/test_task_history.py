@@ -59,7 +59,10 @@ def test_old_schema_and_preferences_only_grant_do_not_claim_history_checked(host
         "alice", "access", 3600, "test", scope=PLUGIN_SCOPE,
     )}
     assert briefing(client, plugin, task=None)["history_check"]["status"] == "task_required"
-    assert briefing(client, auth(), path="/mcp")["history_check"]["status"] == "access_required"
+    assert briefing(client, auth(client_id="preferences-only"), path="/mcp")[
+        "history_check"
+    ]["status"] == "access_required"
+    assert briefing(client, auth(), path="/mcp")["history_check"]["status"] == "checked"
     tools = rpc(client, plugin, "/mcp/plugin", "tools/list").json()["result"]["tools"]
     schema = next(tool for tool in tools if tool["name"] == "start_task")["inputSchema"]
     assert "task" in schema["properties"]

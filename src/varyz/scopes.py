@@ -22,12 +22,23 @@ _FOREIGN_ID_RESERVED = frozenset({"", "*", "all", "any", "every", "global", "eve
 _VERSION_TAIL = re.compile(
     r"^(?P<base>.*\w)[-_ ]v\d+(?:\.\d+)*$|^(?P<name>.*[^\W\d_]\d+)(?:\.\d+)+$"
 )
+_CHECKOUT_TAIL = re.compile(r"(?:-(?:main|master))+$")
 
 
 def _general_label(value: str) -> bool:
     # Separators are equivalent only for reserved labels, not for project names.
     label = " ".join(re.split(r"[\s_-]+", value))
     return label in _GLOBAL_ALIASES or _GLOBAL_PROJECT_LABEL.fullmatch(label) is not None
+
+
+def checkout_scope(scope: str) -> str:
+    """Fold default-branch download names; preserve exact report version identities."""
+    value = " ".join(unicodedata.normalize("NFKC", scope).casefold().split())
+    if value.startswith(_FOREIGN_PREFIXES):
+        return value
+    base = _CHECKOUT_TAIL.sub("", value)
+    # A project alias must never acquire General's wider scope.
+    return base if base and not _general_label(base) else value
 
 
 def normalize_scope(scope: str | None) -> str:
@@ -42,8 +53,14 @@ def normalize_scope(scope: str | None) -> str:
             return prefix + identity
     if _general_label(value):
         return GLOBAL_SCOPE
-    version = _VERSION_TAIL.match(value)
-    return (version.group("base") or version.group("name")) if version else value
+    while True:
+        canonical = checkout_scope(value)
+        version = _VERSION_TAIL.match(canonical)
+        if version:
+            canonical = version.group("base") or version.group("name")
+        if canonical == value or _general_label(canonical):
+            return value
+        value = canonical
 
 
 def stored_scope(scope: str | None) -> str:

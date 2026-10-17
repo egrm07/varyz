@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from varyz.onboarding import GUIDANCE as ONBOARDING_GUIDANCE
 from varyz.resolution.memory_policy import MEMORY_POLICY, REALTIME_CORRECTION_POLICY
 from varyz.resolution.questioning import QUESTION_POLICY
 from varyz.session_progress import PROGRESS_POLICY
@@ -66,6 +67,9 @@ SESSION_START_CONTEXT = (
     "list its briefings and checklists - report only what is not done or still open."
 )
 SESSION_START_CONTEXT += "\n\n" + PROGRESS_POLICY
+
+
+SESSION_START_CONTEXT += "\n\n" + ONBOARDING_GUIDANCE
 
 
 # -- plumbing ------------------------------------------------------------------
@@ -277,6 +281,16 @@ def _start_daemon_if_down(host: str, port: int, config_file: Path | None) -> Non
 
 def user_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
     """The briefing for this prompt, with any news post the owner has not seen."""
+    from varyz.onboarding import GUIDANCE, is_request, note_conversation
+
+    prompt = event.get("prompt")
+    session_id = str(event.get("session_id") or "")
+    if cfg.agent.briefing_hooks and isinstance(prompt, str) and not _CLIENT_GENERATED.match(prompt):
+        note_conversation(cfg, session_id, onboarding=is_request(prompt, cfg))
+        if is_request(prompt, cfg):
+            return _context("UserPromptSubmit", GUIDANCE + "\n"
+                            + (f"Use conversation_id {session_id!r}. " if session_id else "")
+                            + "Call start_task now.")
     prompt = event.get("prompt")
     if isinstance(prompt, str) and not _CLIENT_GENERATED.match(prompt):
         nudge_live_reading(cfg)
@@ -294,7 +308,7 @@ def user_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
         if updates:
             previous = (result or {}).get("hookSpecificOutput", {}).get("additionalContext", "")
             result = _context("UserPromptSubmit", _joined(previous, updates))
-    return _with_news(cfg, result)
+    return _with_news(cfg, result, conversation_id=str(event.get("session_id") or "") or None)
 
 
 def _preference_updates(cfg: Any, event: dict[str, Any], *, was_briefed: bool) -> str:
@@ -341,17 +355,28 @@ def _preference_updates(cfg: Any, event: dict[str, Any], *, was_briefed: bool) -
     return _joined(text, REALTIME_CORRECTION_POLICY)
 
 
-def _with_news(cfg: Any, result: dict[str, Any] | None) -> dict[str, Any] | None:
+def _with_news(cfg: Any, result: dict[str, Any] | None, *,
+               conversation_id: str | None = None) -> dict[str, Any] | None:
     """Adds unseen news posts, and an update a `notify` check found, for the owner."""
     from varyz import news, update
 
     notices: list[str] = []
+    learning_failure = None
+    with contextlib.suppress(Exception):
+        from varyz.onboarding import learning_notice
+
+        learning_failure = learning_notice(cfg)
+        if learning_failure:
+            notices.append(learning_failure)
     with contextlib.suppress(Exception):
         news.maybe_check_on_use(cfg, _config_file())
-    for notice_for in (update.agent_notice, news.agent_notice):
-        with contextlib.suppress(Exception):
-            if found := notice_for(cfg):
-                notices.append(found)
+    with contextlib.suppress(Exception):
+        if found := update.agent_notice(cfg):
+            notices.append(found)
+    with contextlib.suppress(Exception):
+        if not learning_failure and (found := news.agent_notice(
+                cfg, conversation_id=conversation_id)):
+            notices.append(found)
     if not notices:
         return result
     notice = "\n\n".join(notices)
@@ -462,6 +487,11 @@ def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | No
         )
         if briefing.get("status") == "delegated":
             return None
+        from varyz.cloud.local_access import briefing_notice
+
+        cloud_access = briefing_notice(_config_file())
+        if cloud_access:
+            briefing["cloud_access"] = cloud_access
         # The reader's ask rides on the briefing every session gets, not only
         # on a start_task the agent would call itself: the full reading's on a
         # session's first prompt, the live reading's on any.

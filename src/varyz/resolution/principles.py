@@ -32,7 +32,6 @@ from varyz.resolution.knowledge import (
     _datetime,
     _iso,
     _next_monotonic_seq,
-    _terms,
     _write_transaction,
     fold_stored_scopes,
     normalize_scope,
@@ -500,54 +499,24 @@ class SQLitePrincipleStore:
         A domain rule ('website': add a favicon) applies only when the task is that
         kind of work; ``domains`` names the kinds detected for this task. At least
         half of ``limit`` goes to rules for every project when there are that many.
+        A rule saved twice in near-identical words is shown once, and a rule for
+        every project that is about another of the owner's projects stays out
+        unless the task names that project (``rule_selection``).
         """
-        wanted_domains = {normalize_domain(domain) for domain in domains}
-        project_scope = normalize_scope(project) if project else None
-        lowered = unicodedata.normalize("NFKC", text).casefold()
-        task_terms = _terms(text)
-        in_scope: list[tuple[int, int, int, int, Applicable]] = []
-        for principle in self.current("confirmed"):
-            if principle.domain and principle.domain not in wanted_domains:
-                continue
-            specific = principle.scope != GLOBAL_SCOPE
-            if specific and principle.scope != project_scope and not re.search(
-                rf"(?<!\w){re.escape(principle.scope)}(?!\w)", lowered
-            ):
-                continue
-            matched = tuple(
-                sorted(task_terms & _terms(principle.statement + " " + principle.rationale))
-            )
-            vision = principle.kind == "vision"
-            in_scope.append((
-                0 if vision and specific else 1,
-                # A direct owner rule must not be crowded out by speculative
-                # learned trials with more overlapping task words.
-                1 if principle.trial else 0,
-                -len(matched),
-                0 if specific else 1,
-                Applicable(principle, matched),
-            ))
-        # Stable sort keeps newest-first within equal keys (current() order).
-        in_scope.sort(key=lambda item: item[:4])
-        # Half the places are kept for rules that hold in every project, so a
-        # project with many rules of its own never crowds out how the owner
-        # works everywhere; places either side leaves empty go to the other.
-        limit = max(0, limit)
-        general = sum(1 for item in in_scope if item[4].principle.scope == GLOBAL_SCOPE)
-        own = len(in_scope) - general
-        take_general = min(general, max(limit // 2, limit - own))
-        take_own = min(own, limit - take_general)
-        chosen_items: list[Applicable] = []
-        for item in in_scope:
-            if item[4].principle.scope == GLOBAL_SCOPE:
-                if take_general > 0:
-                    chosen_items.append(item[4])
-                    take_general -= 1
-            elif take_own > 0:
-                chosen_items.append(item[4])
-                take_own -= 1
-        chosen = tuple(chosen_items)
-        return chosen, max(0, len(in_scope) - len(chosen))
+        from varyz.resolution.rule_selection import select
+
+        current = self.current("confirmed")
+        selection = select(
+            current,
+            text,
+            project=project,
+            domains={normalize_domain(domain) for domain in domains},
+            limit=limit,
+            known_projects={p.scope for p in current},
+            normalize_scope=normalize_scope,
+        )
+        chosen = tuple(Applicable(rule, matched) for rule, matched in selection.chosen)
+        return chosen, selection.withheld
 
     def checklist(
         self, domains: Collection[str], *, project: str | None = None, text: str = ""

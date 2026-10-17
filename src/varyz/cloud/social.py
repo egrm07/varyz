@@ -20,6 +20,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from .browser import delete_cookie, read_cookie, set_cookie
+from .creators import account_created
 from .store import digest
 from .ui import provider_icon
 
@@ -384,6 +385,7 @@ class SocialAuth:
                     (identity["provider"], identity["subject"], owner),
                 )
                 db.execute("DELETE FROM oauth_flows WHERE hash=?", (digest(token),))
+                account_created(db, owner, code=read_cookie(request, "ref"))
         except sqlite3.IntegrityError:
             return self.username_page(
                 "That username or email is already registered. Choose another name or sign in.", 409

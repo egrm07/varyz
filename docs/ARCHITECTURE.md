@@ -103,6 +103,32 @@ authoritative.
 
 ## Components
 
+Account navigation (2026-10-17): `cloud/navigation.py` exposes only signed-in/admin
+flags at `GET /api/browser-session`. The public website reads them with credentials
+and an exact `https://varyzai.com` CORS grant; other account APIs keep their existing
+origin restrictions. The browser credential stays in Cloud's Secure, HttpOnly,
+host-only cookie, with the existing 30-day renewal. `scripts/site/account.js`
+refreshes the menu on page return/focus; logout or an account change is reflected
+without copying tokens to the website. The site builder adds a plain sign-in link
+on every public page; JavaScript failure leaves that link usable. Admin visibility
+is only navigation: server-side verified-email authorization still controls access.
+Local app OAuth grants and upload consent remain separate from browser navigation.
+
+Creator Program (2026-10-15): `cloud/creator_policy.py` holds the pure rules (30% of net
+revenue in integer minor units, 30-day hold, calendar-month free grants, monthly cutoff,
+refunds after payout as debts, a disputed or non-approved creator blocks that currency's
+batch). `cloud/creators.py` records clicks, referrals (bound at account creation from the
+`ref` cookie, never to the creator's own account), Paddle net revenue and adjustments, and
+serves `/r/{code}` and `/creators`. Free months live in `cloud_grants`; `billing.py` treats
+an active grant as access while keeping the paid status separate. `cloud/admin.py` serves
+`/admin` (plus `/admin/accounts`, a CSV export and `/admin/accounts/{id}`) to verified
+`VARYZ_CLOUD_ADMIN_EMAILS` only (404 otherwise) and records payouts under
+`BEGIN IMMEDIATE` against a fresh preview. Money is never moved by Varyz: the owner pays
+by PayPal, Wise, Payoneer, Revolut or bank transfer and records it. Payout details are
+JSON sealed with the archive Fernet key (`PayoutVault`); bank details are refused without
+a key, and card numbers are never collected. Account deletion removes referrals and grants and
+leaves revenue and commission rows anonymous for the books.
+
 Away mode (2026-09-27): `resolution/away.py` holds durable mode state and return
 reviews (migration `0042`). MCP's `away` and the local `varyz away` command share it.
 The working agent recognises owner instructions and judges delegation, reversibility

@@ -99,6 +99,10 @@ class LiveIngest:
                 time.sleep(self.delay)
                 with contextlib.suppress(Exception):  # the next nudge or autosync reads it
                     self._ingest(self.cfg)
+                    if self.cfg.workflows.inference_mode == "local" and self.cfg.source_file:
+                        from varyz.resolution.local_reader import request
+
+                        request(self.cfg, self.cfg.source_file)
                 with self._guard:
                     if not self._again:
                         self._running = False

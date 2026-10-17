@@ -402,7 +402,8 @@ def _job_rows(job: dict[str, Any]) -> list[str]:
     # A notice (varyz's own reader took a major or setup reading) has no subagent to start.
     if not job.get("subagent_prompt"):
         return [job["do"]]
-    return [job["do"], "", "The subagent's prompt:", job["subagent_prompt"]]
+    return [job["do"], job.get("follow_up", ""), "",
+            "The subagent's prompt:", job["subagent_prompt"]]
 
 
 def _job_title(job: dict[str, Any], start: str) -> str:
@@ -423,6 +424,9 @@ def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True) 
     if briefing.get("status") == "delegated":
         return "Varyz workflow is assigned to Cloud for this task; use its briefing and checks."
     lines = [f"# varyz briefing - project: {briefing.get('project') or 'unknown'}"]
+    if briefing.get("cloud_access"):
+        access = briefing["cloud_access"]
+        lines.extend(["", access["message"], access["instruction"]])
     if briefing.get("conversation_id"):
         lines.append(f"conversation_id: {briefing['conversation_id']} (reuse in Varyz calls)")
     if (briefing.get("away_mode") or {}).get("active"):

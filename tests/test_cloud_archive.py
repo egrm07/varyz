@@ -28,6 +28,50 @@ def payload(identity="one", text="We chose SQLite for offline project memory.", 
     ).model_dump()
 
 
+@pytest.mark.parametrize("tag", ["hook_prompt", "external_codex_apps_open_page"])
+def test_legacy_machine_transcript_is_not_returned_as_authored(hosted, tag):
+    _client, store, _auth = hosted
+    archive = Archive(store, "http://localhost", 2_000_000)
+    text = f"From: me\nConversation: Codex — varyz\n\n<{tag}>Fictional tool context.</{tag}>"
+    record = payload("machine-context", text)
+    record.update(source="ai_conversations", authored=True)
+    archive.push("alice", [Change(id="machine-context", base_version=0, payload=record)])
+    assert not Document.model_validate(record).authored
+    # An earlier release could have saved the incorrect flag before validation
+    # knew about these wrappers. Recheck it on reads without rewriting history.
+    with store.connection() as db:
+        db.execute("UPDATE archive_documents SET payload=? WHERE account=? AND id=?",
+                   (archive.seal(json.dumps(record)), "alice", "machine-context"))
+    fetched = archive.fetch("alice", "machine-context")
+    assert fetched["text"] == text  # Preserve the actual quoted source.
+    assert not fetched["metadata"]["authored"]
+    assert fetched["metadata"]["provenance"] == "external"
+
+
+def test_hosted_authorship_check_needs_no_local_connectors_or_keychain(tmp_path):
+    import subprocess
+    import sys
+
+    program = '''
+import importlib.abc
+import sys
+class NoLocalDependencies(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "keyring" or fullname.startswith("varyz.connectors"):
+            raise AssertionError("Hosted validation imported a local dependency: " + fullname)
+sys.meta_path.insert(0, NoLocalDependencies())
+from varyz.cloud.archive import Document
+text = "<hook_prompt>Fictional tool context.</hook_prompt>"
+doc = Document(id="test", project="demo", source="ai_conversations", external_id="test",
+               title="", text=text, occurred_at="2026-10-17T12:00:00+00:00",
+               sensitivity="personal", authored=True, chunks=[{"text": text}])
+assert doc.authored is False
+'''
+    result = subprocess.run([sys.executable, "-c", program], cwd=tmp_path,
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+
+
 @pytest.fixture
 def hosted(tmp_path):
     app = create_app(

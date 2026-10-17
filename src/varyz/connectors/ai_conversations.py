@@ -46,6 +46,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 from typing import Any, ClassVar
 
+from varyz.ai_text import clean_generated_context
 from varyz.connectors.base import expand, register
 from varyz.domain import ConversationMetadata, Cursor, Kind, NormalizedEntry, RawItem, TimePrecision
 
@@ -129,7 +130,7 @@ _REPLAYED_SUMMARY = "This session is being continued from a previous conversatio
 
 # Bumped whenever a rule for what is not the person's speech changes, so a sync
 # re-judges the turns stored under the older rules once (`withdrawn`).
-AUTHORSHIP_RULES = 3
+AUTHORSHIP_RULES = 4
 
 # Bumped whenever the rule for which folder names a project changes, so a sync
 # reads every transcript once more and the natural-key upsert relabels the
@@ -266,6 +267,7 @@ def _clean(text: str) -> str:
     wrapper to strip — it is thousands of words of fluent first-person prose —
     so nothing less than dropping it works.
     """
+    text = clean_generated_context(text)
     opening = _MACHINE_OPENING.match(text)
     if opening and not re.search(rf"</{re.escape(opening.group(1))}>", text, re.IGNORECASE):
         return ""
@@ -276,7 +278,7 @@ def _clean(text: str) -> str:
         return ""
     if _HARNESS_LINE.match(text) or _HARNESS_COMMAND_TURN.match(text):
         return ""
-    return text
+    return clean_generated_context(text)
 
 
 def is_machine_text(text: str) -> bool:
@@ -286,6 +288,16 @@ def is_machine_text(text: str) -> bool:
     its rules existed: `prune_machine_turns` finds them with it.
     """
     return not _clean(text)
+
+
+def is_machine_entry(source: str, body: str | None) -> bool:
+    """Recheck stored AI rows, including the connector's provenance header."""
+    if source != "ai_conversations" or not body:
+        return False
+    header, separator, text = body.partition("\n\n")
+    if not (separator and header.startswith("From: ") and "\nConversation: " in header):
+        text = body
+    return is_machine_text(text)
 
 
 def _block_text(content: Any) -> str:

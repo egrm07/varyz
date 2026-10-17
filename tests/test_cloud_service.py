@@ -349,6 +349,10 @@ def test_cancel_keeps_paid_period_but_deletion_cancels_immediately(cloud, monkey
     client, store, auth = cloud
     billing(client, "active")
     client.app.state.settings.paddle_api_key = "test-only"
+    monkeypatch.setattr("varyz.cloud.app.paddle_read", lambda *_: {
+        "id": "sub_1", "status": "active",
+        "current_billing_period": {"ends_at": "2099-12-01T00:00:00Z"},
+    })
     requests = []
 
     async def post(self, url, **kwargs):

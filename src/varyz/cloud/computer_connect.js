@@ -111,6 +111,7 @@
       return;
     }
     const list = el('computer-projects'), all = el('computer-all-projects');
+    const selectAll = el('computer-select-all');
     list.replaceChildren();
     availableHistory = (choices.history_projects || []).map(p => p.name);
     availableReports = (choices.report_projects || []).map(p => p.name);
@@ -132,6 +133,11 @@
       const recommended = projectNames.filter(name => !projects.get(name).needs_review);
       all.checked = recommended.length > 0 && recommended.every(name => checked.includes(name));
       all.indeterminate = checked.length > 0 && !all.checked;
+      if (selectAll) {
+        selectAll.disabled = projectNames.length === 0;
+        selectAll.textContent = projectNames.length > 0 && projectNames.every(name => checked.includes(name))
+          ? 'Deselect all' : 'Select all';
+      }
       try {sessionStorage.setItem(draftKey, JSON.stringify(checked));} catch (_) {}
       el('computer-selection-status').textContent = checked.length ? `${checked.length} ${checked.length === 1 ? 'project selected' : 'projects selected'}` : 'Only general preferences will sync.';
     };
@@ -156,6 +162,12 @@
       for (const input of list.querySelectorAll('input')) {
         input.checked = all.checked && !projects.get(input.value).needs_review;
       }
+      changed();
+    };
+    if (selectAll) selectAll.onclick = () => {
+      const inputs = [...list.querySelectorAll('input')];
+      const select = inputs.some(input => !input.checked);
+      for (const input of inputs) input.checked = select;
       changed();
     };
     list.onchange = changed;

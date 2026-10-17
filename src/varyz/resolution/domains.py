@@ -97,6 +97,21 @@ DOMAINS: tuple[Domain, ...] = (
         ("Who is this document for, and where will it be read?",),
     ),
     Domain(
+        "video",
+        "Video",
+        _words(
+            r"videos?", r"promo(?: video)?s?", r"footage", r"trailers?", r"shorts",
+            r"reels?", r"screen ?recordings?", r"voice-?overs?", r"narrat(?:ion|ed|or)",
+            r"remotion", r"b-?roll", r"demo video", r"tiktoks?",
+        ),
+        (
+            "Whose voice narrates this video, and in which language?",
+            "How long is this video, and in which aspect ratio?",
+            "Which music fits this video, if any?",
+            "What does the end card show?",
+        ),
+    ),
+    Domain(
         "evaluation",
         "Evaluation or benchmark",
         _words(

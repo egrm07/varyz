@@ -1591,6 +1591,8 @@ def test_everyday_and_the_owners_own_kinds_of_work_are_read_merged_and_queued(
             _merged("done", "Book an aisle seat.", 1, applies="products", domain="travel"),
             _merged("done", "Use peat-free compost in pots.", 2, applies="products",
                     domain="gardening"),
+            *([{"notes": [3], "exclude": "The cited messages do not mention frost protection."}]
+              if len(state.tasks[merge.id]["notes"]) == 3 else []),
         ], tier="local").items
     kept = {item.statement: item.domain for item in items}
     assert kept["Book an aisle seat."] == "travel"

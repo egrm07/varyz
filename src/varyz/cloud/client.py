@@ -60,6 +60,16 @@ class CloudStorageLimit(CloudError):
     """The selected history or reports exceed Cloud storage capacity."""
 
 
+class CloudAccessInactive(CloudError):
+    """Billing ended; keep credentials and local data for automatic recovery."""
+
+    def __init__(self, body=None):
+        from varyz.cloud.access import response_notice
+
+        self.access = response_notice(body)
+        super().__init__(self.access["message"])
+
+
 class CloudProjectPaused(CloudError):
     def __init__(self, project: str):
         from varyz.scopes import stored_scope
@@ -156,10 +166,14 @@ class CloudClient:
             if not isinstance(current, dict):
                 raise CloudError("Cloud returned an invalid conflict response.")
             raise CloudConflict(current)
-        if response.status_code in {402, 403}:
-            raise CloudError(
-                "An active paid Varyz Cloud subscription is required; there is no trial."
-            )
+        if response.status_code == 402:
+            try:
+                body = response.json()
+            except ValueError:
+                body = None
+            raise CloudAccessInactive(body)
+        if response.status_code == 403:
+            raise CloudError("This Cloud connection does not have permission for this action.")
         if response.status_code == 401:
             raise CloudError("Cloud authorization expired or was revoked; reconnect.")
         if response.status_code in {413, 507} and path in {

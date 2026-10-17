@@ -59,13 +59,13 @@ def test_the_measured_codex_reading_is_what_the_estimate_gives_back() -> None:
     assert view["seconds"] == 566
     assert (view["five_hour_left"], view["weekly_left"]) == (100, 71)
     assert view["pauses_until"] is None
-    assert view["gate"] == {"five_hour": 30, "weekly": 25}
+    assert "gate" not in view
 
 
-def test_a_reading_larger_than_the_room_left_says_when_it_finishes() -> None:
+def test_estimates_do_not_reserve_allowance_or_promise_a_reset() -> None:
     view = setup_extract.estimate(2807, _usage("codex", 38, 71), GATE)
 
-    assert view["pauses_until"] == FIVE_HOUR_RESET
+    assert view["pauses_until"] is None
 
 
 def test_unknown_usage_still_estimates_the_share_but_not_what_is_left() -> None:
@@ -92,14 +92,14 @@ def test_the_offer_names_the_plan_with_the_most_room(cfg, monkeypatch) -> None:
     assert offer["five_hour_left"] == 90
 
 
-def test_limits_too_low_now_say_when_it_starts_by_itself(cfg, monkeypatch) -> None:
+def test_low_allowance_still_offers_an_immediate_start(cfg, monkeypatch) -> None:
     _waiting(monkeypatch, 500)
 
     offer = setup_extract.offer(cfg, Path("config.toml"), runners={"codex": 1},
                                 read_usage=lambda _name: _usage("codex", 20, 70), now=T0)
 
     assert offer is not None and offer["runner"] == "codex"
-    assert offer["starts_at"] == FIVE_HOUR_RESET
+    assert offer["starts_at"] is None
 
 
 @pytest.mark.parametrize("case", ["no runner", "nothing waiting", "too few after a reading"])
@@ -113,8 +113,12 @@ def test_no_offer_without_something_to_read_and_something_to_read_it(
         profile.parent.mkdir(parents=True, exist_ok=True)
         profile.write_text("{}", encoding="utf-8")
 
-    assert setup_extract.offer(cfg, Path("config.toml"), runners=runners,
-                               read_usage=lambda _name: None, now=T0) is None
+    result = setup_extract.offer(cfg, Path("config.toml"), runners=runners,
+                                 read_usage=lambda _name: None, now=T0)
+    if case == "no runner":
+        assert result["runner"] == "agent" and result["state"] == "offered"
+    else:
+        assert result is None
 
 
 # -- its start ----------------------------------------------------------------------
@@ -188,7 +192,7 @@ def test_with_every_turn_read_it_merges_then_is_done(cfg) -> None:
 
 
 def test_waiting_for_the_limits_and_failing_say_so(cfg) -> None:
-    _status(cfg, state="waiting_for_usage", pending=["full"], resume_after=FIVE_HOUR_RESET)
+    _status(cfg, state="rate_limited", pending=["full"], resume_after=FIVE_HOUR_RESET)
     view = setup_extract.progress(cfg, _started(), T0 + 50, work=(700, 0, 300, 0))
     assert (view["phase"], view["until"]) == ("waiting", FIVE_HOUR_RESET)
 

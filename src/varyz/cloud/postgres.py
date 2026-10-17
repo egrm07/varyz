@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS accounts(
  email_verified INTEGER DEFAULT 0);
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS email_verified INTEGER DEFAULT 0;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS subscription_ends_at DOUBLE PRECISION;
 CREATE UNIQUE INDEX IF NOT EXISTS accounts_username_unique ON accounts(lower(username));
 CREATE TABLE IF NOT EXISTS pending_signups(email TEXT PRIMARY KEY,
  username TEXT NOT NULL,password TEXT NOT NULL,hash TEXT UNIQUE,expires DOUBLE PRECISION);
@@ -86,6 +87,11 @@ ALTER TABLE billing_payments ADD COLUMN IF NOT EXISTS currency TEXT;
 ALTER TABLE billing_refunds ADD COLUMN IF NOT EXISTS refund_type TEXT DEFAULT 'full';
 ALTER TABLE billing_refunds ADD COLUMN IF NOT EXISTS total BIGINT;
 ALTER TABLE billing_refunds ADD COLUMN IF NOT EXISTS currency TEXT;
+CREATE TABLE IF NOT EXISTS cloud_grants(
+ account TEXT PRIMARY KEY, role TEXT NOT NULL, creator TEXT,
+ started_at DOUBLE PRECISION NOT NULL, ends_at DOUBLE PRECISION NOT NULL,
+ revoked_at DOUBLE PRECISION);
+CREATE INDEX IF NOT EXISTS cloud_grants_creator ON cloud_grants(creator,started_at);
 CREATE TABLE IF NOT EXISTS email_limits(key TEXT PRIMARY KEY, day BIGINT, count INTEGER);
 CREATE TABLE IF NOT EXISTS rate_limits(key TEXT PRIMARY KEY, window_start BIGINT, count INTEGER);
 CREATE INDEX IF NOT EXISTS rate_limits_window ON rate_limits(window_start);

@@ -199,12 +199,14 @@ def _post(client: Any, path: str, body: dict[str, Any]) -> Any:
 
 def _client(config_path: Path | None) -> Any | None:
     from varyz.cloud.client import CloudClient, credential_name, load_tokens
-    from varyz.cloud.collaboration import _account
+    from varyz.cloud.local_access import _identity
+    from varyz.config import find_config_file
 
-    account = _account(config_path)
-    if account is None:
+    config = find_config_file(config_path)
+    account = _identity(config) if config is not None else None
+    if account is None or config is None:
         return None
-    config, url = account
+    url = account["url"]
     name = credential_name(config, url)
     try:
         tokens = load_tokens(name)
@@ -222,6 +224,17 @@ def check(config_path: Path | None, *, runner: Runner = _run, client: Any = None
         client = client or _client(config_path)
         if client is None:
             return 0
+        from varyz.cloud import local_access
+        from varyz.config import find_config_file
+
+        config = find_config_file(config_path)
+        if config is not None:
+            state = local_access.check(config, client=client)
+            access = state.get("access", {})
+            if (access.get("active") is False and not state.get("notified")
+                    and show(TITLE, access["message"], client.url, runner=runner)):
+                local_access.mark_notified(config)
+                return 1
         found = client.request("GET", PATH, timeout=TIMEOUT)
         items = [n for n in (found or {}).get("notices", []) if isinstance(n, dict)]
         if not items:

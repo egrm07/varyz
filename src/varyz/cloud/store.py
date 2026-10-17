@@ -77,6 +77,9 @@ class Store:
               transaction_id TEXT,subscription TEXT);
             CREATE INDEX IF NOT EXISTS billing_refunds_transaction
               ON billing_refunds(transaction_id);
+            CREATE TABLE IF NOT EXISTS cloud_grants(account TEXT PRIMARY KEY,role TEXT NOT NULL,
+              creator TEXT,started_at REAL NOT NULL,ends_at REAL NOT NULL,revoked_at REAL);
+            CREATE INDEX IF NOT EXISTS cloud_grants_creator ON cloud_grants(creator,started_at);
             CREATE TABLE IF NOT EXISTS email_limits(key TEXT PRIMARY KEY,day INTEGER,count INTEGER);
             CREATE INDEX IF NOT EXISTS credentials_expiry ON credentials(expires);
             CREATE INDEX IF NOT EXISTS credentials_account ON credentials(account);
@@ -97,6 +100,7 @@ class Store:
                 "ON accounts(lower(username))"
             )
             for table, columns in {
+                "accounts": {"subscription_ends_at": "REAL"},
                 "billing_payments": {"grand_total": "INTEGER", "currency": "TEXT"},
                 "billing_refunds": {
                     "refund_type": "TEXT DEFAULT 'full'",
@@ -285,14 +289,33 @@ class Store:
         )
 
     def knowledge(self, account, project):
+        from .project_identity import project_names
+
         with self.connection() as db:
             rows = db.execute(
                 "SELECT * FROM records WHERE account=? AND payload!='null' ORDER BY cursor",
                 (account,),
             ).fetchall()
-        scope = normalize_scope(project)
+            names = project_names(self, account, db=db)
+        scope = names(project)
         records = [self.record(r) for r in rows]
+        for record in records:
+            record["payload"]["scope"] = names(record["payload"]["scope"])
         return [r for r in records if r["payload"]["scope"] in ("*", scope)]
+
+    def projects(self, account):
+        """Every project the owner has a preference for, to tell a rule about one
+        project apart from a rule for this one."""
+        from .project_identity import project_names
+
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT DISTINCT payload FROM records WHERE account=? AND payload!='null'",
+                (account,),
+            ).fetchall()
+            names = project_names(self, account, db=db)
+        scopes = {names(scoped_payload(json.loads(r["payload"])).get("scope")) for r in rows}
+        return sorted(scope for scope in scopes if isinstance(scope, str) and scope != "*")
 
     def queue_question(self, account, question, project):
         """Queue an unknown question; pending questions are bounded, never history.

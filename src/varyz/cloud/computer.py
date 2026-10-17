@@ -378,7 +378,8 @@ def handle_computer_request(
     """Handle only the bridge, keeping daemon authentication and CORS isolated."""
     path = urlsplit(handler.path).path
     actions = {BRIDGE_PATH + "/" + action: action for action in ("choices", "preview", "finish")}
-    if path != BRIDGE_PATH and path not in actions:
+    identity_path = BRIDGE_PATH + "/identity"
+    if path != BRIDGE_PATH and path not in actions and path != identity_path:
         return False
     host, port = cast(tuple[str, int], handler.server.server_address)[:2]
     allowed = (
@@ -412,6 +413,11 @@ def handle_computer_request(
         reply(200, {})
     elif bridge is None or not bridge.config.is_file():
         reply(503, {"error": "Local setup is unavailable."})
+    elif path == identity_path:
+        if handler.command == "GET":
+            reply(200, {"config_hash": _digest(str(bridge.config))})
+        else:
+            reply(405, {"error": "Unsupported method."})
     else:
         try:
             ticket = handler.headers.get("X-Varyz-Ticket", "")

@@ -850,6 +850,8 @@ def _ready_classifier(
     from varyz.resolution.ollama_setup import OllamaUnavailable, ensure_classifier
 
     cfg = _cfg(cfg_path)
+    if cfg.workflows.inference_mode == "conversations":
+        return "skipped", "AI conversation mode; Ollama and Qwen are not required", False
     fallback = "questions go to the embedding classifier instead, which is less exact"
     try:
         result = ensure_classifier(cfg, cfg_path, _bytes_progress(on_progress))
@@ -1062,6 +1064,15 @@ def setup(
         bool,
         typer.Option("--terminal", help="Ask in this terminal instead of opening a page"),
     ] = False,
+    ai_mode: Annotated[
+        str | None,
+        typer.Option("--ai-mode", help="local (more privacy) or conversations (lighter)"),
+    ] = None,
+    cloud_conversations: Annotated[
+        bool,
+        typer.Option("--cloud-conversations",
+                     help="Allow eligible AI conversation excerpts to your connected AI"),
+    ] = False,
     config: ConfigOpt = None,
 ) -> None:
     """First run, start to finish: archive, daemon, agents, data sources,
@@ -1086,6 +1097,7 @@ def setup(
         flag for flag, value in (
             ("--yes", yes), ("--dry-run", dry_run), ("--source", source),
             ("--no-sources", no_sources),
+            ("--ai-mode", ai_mode), ("--cloud-conversations", cloud_conversations),
         ) if value
     ]
     if web and given:
@@ -1126,9 +1138,49 @@ def setup(
     # What is offered is decided before anything changes, as on the page; the
     # questions come first, so the steps then run with no one at the keyboard.
     run = TerminalSetup(cfg_path, wanted=wanted)
+    if ai_mode is not None and ai_mode not in {"local", "conversations"}:
+        console.print("[red]--ai-mode must be local or conversations.[/red]")
+        raise typer.Exit(2)
+    if ai_mode is not None and ai_mode not in run.ai_plan["choices"]:
+        console.print("[red]This machine cannot comfortably run Qwen; use conversations.[/red]")
+        raise typer.Exit(2)
+    if cloud_conversations and ai_mode == "local":
+        console.print("[red]--cloud-conversations requires conversation mode.[/red]")
+        raise typer.Exit(2)
+    if ai_mode is not None:
+        run.inference_mode = ai_mode
+    if cloud_conversations:
+        run.inference_mode = "conversations"
     if dry_run:
         _setup_dry_run(run)
         return
+
+    console.print("AI setup: " + ("Both modes fit this machine." if run.ai_plan["comfortable"]
+                                 else "AI conversation mode selected for this machine."))
+    for reason in run.ai_plan["reasons"]:
+        console.print(f"  {reason}", markup=False)
+    if run.ai_plan["comfortable"] and ai_mode is None and not yes and not _confirm(
+        "More privacy: read locally? Choose no for Lighter on your device.",
+        instead="Use --ai-mode local or --ai-mode conversations.",
+        default=run.inference_mode == "local",
+    ):
+        run.inference_mode = "conversations"
+    if run.inference_mode == "conversations":
+        console.print(
+            "Lighter on your device: no Ollama/Qwen download. Only eligible AI conversation "
+            "excerpts may go to your connected AI. Documents and repositories stay local.",
+            markup=False,
+        )
+        if cloud_conversations:
+            run.cloud_conversations = True
+        elif not yes:
+            run.cloud_conversations = _confirm(
+                "Allow eligible AI conversation excerpts to your connected cloud AI?",
+                instead="Use --cloud-conversations to allow this explicitly.",
+                default=run.cloud_conversations,
+            )
+    else:
+        run.cloud_conversations = False
 
     present = [(cid, name) for cid, name, installed in run.agents if installed]
     agents: list[str] = []
@@ -1192,6 +1244,8 @@ def _setup_dry_run(run) -> None:
     from varyz.resolution.client import ResolutionClientError
 
     cfg_path = run.config_path
+    comfort = "local model fits" if run.ai_plan["comfortable"] else "lighter mode selected"
+    console.print(f"AI mode: {run.inference_mode}; {comfort}")
     if not cfg_path.exists():
         _step(1, "Archive", f"would create {cfg_path} and its database")
         console.print(
@@ -1238,8 +1292,12 @@ def _setup_dry_run(run) -> None:
     console.print("  Dry run: nothing connected or indexed.")
     _step(5, "Graph", "would build the graph and compile the personal model")
     _step(6, "Autosync", "would sync in the background, at login and on a schedule")
-    _step(7, "Classifier", f"would ready {cfg.workflows.classifier_model} in Ollama, "
-          "installing Ollama if it is missing")
+    if run.inference_mode == "local":
+        _step(7, "Classifier", f"would ready {cfg.workflows.classifier_model} in Ollama, "
+              "installing Ollama if it is missing")
+    else:
+        _step(7, "Classifier", "would use AI conversation mode; no Ollama/Qwen download; "
+              "cloud reading requires explicit consent")
     console.print()
     _print_sources(cfg)
 
@@ -2345,7 +2403,9 @@ def _read_profile(
 
             try:
                 items = read_with_model(
-                    state, conn, model, tier=reader, reader=reader, known=known,
+                    state, conn, model, tier=reader, reader=reader,
+                    known=(lambda _scope: []) if reader == "cloud"
+                    and cfg.workflows.inference_mode == "conversations" else known,
                     max_calls=None if reader == "local"
                     else cfg.workflows.rule_reader_cloud_max_calls,
                     on_progress=step, stats=stats,

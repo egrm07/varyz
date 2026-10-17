@@ -156,3 +156,28 @@ For a first useful task or a relevant explanation of local-history capabilities,
 use the bundled `varyz-get-started` workflow. Local installation is optional and
 does not approve or sync the archive to Cloud. History sharing needs its own
 explicit project/General approval and successful synchronization.
+
+
+## Work checkpoints and pickup
+
+Use `record_progress` on the selected workflow backend once the goal is clear,
+after meaningful changes/checks, and before the final report. Keep a current-state
+snapshot: task at most 240 characters; done, checks, pending and artifacts each
+at most six facts of 180 characters. Reuse project and conversation_id, with a
+new checkpoint_id for every change; retry an old ID only with identical content.
+Cloud writing requires an existing project report approval. Keep sensitive
+content local; never copy messages, hidden reasoning, secrets or tool dumps.
+A checkpoint is an agent claim, not owner knowledge or verified completion.
+
+Read `start_task.open_threads` for related unfinished work even without a resume
+request. Corroborate its artifacts. Before pickup, call `claim_work` with its
+thread_id and the new conversation_id. A competing claim is a reason to stop that
+pickup, not to bypass the lease. Include thread_id in subsequent checkpoints;
+writing renews the 15-minute lease, and complete/abandoned releases it. Use
+`action="release"` when stopping voluntarily. Use `session_history` for a full
+checkpoint timeline. Missing or truncated results do not prove no work happened.
+
+Approved local reports upload automatically through the existing sync loop.
+Do not widen project selection, sign in, pay or authorize uploads on the owner's
+behalf. Discovery metadata and server tools update independently of an installed
+client's cached tool list; an existing client may need reconnection.

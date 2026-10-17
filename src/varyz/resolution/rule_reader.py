@@ -140,6 +140,8 @@ def _unavailable(exc: Exception) -> bool:
 
 def reader_from_config(cfg: Any, *, schema: dict[str, Any], max_tokens: int) -> Completer:
     """The `[workflows]` local model, ready to read; ``ReaderUnavailable`` when it is not."""
+    if cfg.workflows.inference_mode == "conversations":
+        raise ReaderUnavailable("local inference is disabled in AI conversation mode")
     from varyz.llm.ollama_local import OllamaProvider
     from varyz.resolution.local_classifier import (
         CONTEXT_WINDOW,
@@ -170,6 +172,12 @@ def reader_from_config(cfg: Any, *, schema: dict[str, Any], max_tokens: int) -> 
 
 def cloud_reader_from_config(cfg: Any, *, max_tokens: int) -> tuple[Completer, str]:
     """The `[llm]` provider through the owner's sign-in, and the name its reads are kept under."""
+    if cfg.workflows.inference_mode == "local" or not cfg.workflows.rule_reader_cloud:
+        raise ReaderUnavailable("cloud conversation reading is disabled")
+    if cfg.workflows.inference_mode == "conversations" and not cfg.connector_options(
+        "ai_conversations"
+    ).get("approved", False):
+        raise ReaderUnavailable("AI conversation source access has not been approved")
     from varyz.llm.providers import NoCredentialsError, build_provider
 
     try:
@@ -177,16 +185,37 @@ def cloud_reader_from_config(cfg: Any, *, max_tokens: int) -> tuple[Completer, s
     except NoCredentialsError as exc:
         raise ReaderUnavailable(str(exc)) from exc
     name = cfg.llm.provider
-    return guarded(cfg, model), f"{name}:{cfg.llm.models_for(name).enrich_model}"
+    return ConversationGuard(cfg, guarded(cfg, model)), \
+        f"{name}:{cfg.llm.models_for(name).enrich_model}"
+
+
+class ConversationGuard:
+    """Recheck a saved setup permission before each call in a long reading."""
+
+    def __init__(self, cfg: Any, model: Completer) -> None:
+        self.cfg = cfg
+        self.model = model
+
+    def complete(self, system: str, user: str) -> str:
+        from varyz.config import ConfigError, load_config
+
+        current = self.cfg
+        if self.cfg.source_file is not None:
+            try:
+                current = load_config(self.cfg.source_file)
+            except ConfigError as exc:
+                raise ReaderUnavailable("setup permissions cannot be read") from exc
+        if current.workflows.inference_mode == "local" or not current.workflows.rule_reader_cloud:
+            raise ReaderUnavailable("cloud conversation reading was disabled")
+        if current.workflows.inference_mode == "conversations" and not current.connector_options(
+            "ai_conversations"
+        ).get("approved", False):
+            raise ReaderUnavailable("AI conversation source approval was removed")
+        return self.model.complete(system, user)
 
 
 class UsageGuard:
-    """A cloud reader on the owner's Claude or ChatGPT plan that stops before its limits run low.
-
-    `varyz rules mine` is a large reading: before a call, at most every
-    ``every`` seconds, it reads how much of the plan is left and stops, keeping
-    what it read, at `large_reading_min_left_5h` / `_weekly` percent or less,
-    or when that cannot be read.
+    """Legacy sign-in reader wrapper; calls proceed at every allowance level.
     """
 
     def __init__(self, model: Completer, provider: str, gate: Any,
@@ -201,19 +230,7 @@ class UsageGuard:
         self._checked_at: float | None = None
 
     def complete(self, system: str, user: str) -> str:
-        from varyz.resolution.usage import describe
-
-        now = self.clock()
-        if self._checked_at is None or now - self._checked_at >= self.every:
-            found = self.read()
-            if found is None or not found.known:
-                raise ReaderUnavailable(
-                    f"how much of your {self.provider} plan is left cannot be read")
-            if self.gate.blocks(found):
-                raise ReaderUnavailable(
-                    f"your {self.provider} plan is low ({describe(found)}; large readings stop "
-                    f"at {self.gate.five_hour:g}% / {self.gate.weekly:g}%)")
-            self._checked_at = now
+        # Legacy wrapper: low/unknown allowance never blocks a model request.
         return self.model.complete(system, user)
 
 
@@ -251,6 +268,8 @@ def guarded(cfg: Any, model: Any) -> Any:
 
 def local_fit(cfg: Any) -> tuple[str, str]:
     """How this machine runs the local model: 'fits', 'tight' or 'no', and why."""
+    if cfg.workflows.inference_mode == "conversations":
+        return "no", "local inference is disabled in AI conversation mode"
     from varyz.resolution.local_classifier import (
         ClassifierUnavailable,
         free_disk_mib,
@@ -275,6 +294,10 @@ def reading_order(cfg: Any, fit: tuple[str, str]) -> list[str]:
     The cloud reads first unless the owner keeps their turns on this machine;
     the local model takes over where the machine can run it.
     """
+    if cfg.workflows.inference_mode == "local":
+        return [] if fit[0] == "no" else ["local"]
+    if cfg.workflows.inference_mode == "conversations":
+        return ["cloud"] if cfg.workflows.rule_reader_cloud else []
     local = [] if fit[0] == "no" else ["local"]
     return ["cloud", *local] if cfg.workflows.rule_reader_cloud else local
 

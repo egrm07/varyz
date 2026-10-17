@@ -181,6 +181,7 @@ class LocalModel:
         gpu_memory: Callable[[], tuple[int, int] | None] = gpu_memory_mib,
         when_cold: str = "load",
         keep_alive: str = KEEP_ALIVE,
+        enabled: bool = True,
     ) -> None:
         parts = urlsplit(url)
         if parts.hostname not in _LOOPBACK:
@@ -188,6 +189,7 @@ class LocalModel:
             raise ValueError(f"the local classifier runs on this machine only, not {url}")
         host = "127.0.0.1" if parts.hostname == "localhost" else parts.hostname
         self.model = model
+        self.enabled = enabled
         self.host = host
         self.port = parts.port or 11434
         self.url = f"{parts.scheme}://{'[::1]' if host == '::1' else host}:{self.port}"
@@ -244,6 +246,8 @@ class LocalModel:
 
     def size_bytes(self) -> int:
         """The model's size on disk, from Ollama; ``ClassifierUnavailable`` if unknown."""
+        if not self.enabled:
+            raise ClassifierUnavailable("local inference is disabled in AI conversation mode")
         base = self.model.split(":")[0]
         for entry in self._get("/api/tags").get("models", []):
             name = str(entry.get("name", ""))
@@ -253,6 +257,8 @@ class LocalModel:
 
     def ready(self) -> None:
         """Ollama is up, the model is pulled, and answering will not crowd the card."""
+        if not self.enabled:
+            raise ClassifierUnavailable("local inference is disabled in AI conversation mode")
         if self._checked_at is not None and time.monotonic() - self._checked_at < READY_FOR:
             return
         try:
@@ -296,6 +302,8 @@ class LocalModel:
 
     def warm_in_background(self) -> None:
         """Load the model in a detached process; Ollama drops a load its caller leaves."""
+        if not self.enabled:
+            return
         script = (
             "import sys, httpx; httpx.post(sys.argv[1] + '/api/generate', "
             "json={'model': sys.argv[2], 'keep_alive': sys.argv[3], "
@@ -447,6 +455,7 @@ def local_model_from_config(
         gpu_memory=gpu_memory,
         when_cold=when_cold,
         keep_alive=settings.classifier_keep_alive,
+        enabled=settings.inference_mode != "conversations",
     )
 
 

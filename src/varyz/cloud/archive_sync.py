@@ -37,6 +37,8 @@ def read_archive_journal(path: Path) -> dict[str, Any]:
 
 
 def document(conn: sqlite3.Connection, identity: str, project: str) -> Document:
+    from varyz.connectors.ai_conversations import is_machine_entry
+
     row = conn.execute("SELECT * FROM entries WHERE id=?", (identity,)).fetchone()
     if row is None:
         raise ValueError("Archive entry unavailable")
@@ -51,7 +53,7 @@ def document(conn: sqlite3.Connection, identity: str, project: str) -> Document:
         occurred_at=row["occurred_start"] or row["ingested_at"],
         sensitivity=row["sensitivity"],
         thread_id=row["thread_id"],
-        authored=bool(row["authored_by_user"]),
+        authored=bool(row["authored_by_user"]) and not is_machine_entry(row["source"], text),
         chunks=[Chunk(text=text[start : start + 2000]) for start in range(0, len(text), 2000)],
     )
 

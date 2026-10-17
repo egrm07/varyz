@@ -94,7 +94,7 @@ def test_git_connector_asks_for_no_window(tmp_path, monkeypatch):
 
 def test_connection_refresh_codex_commands_ask_for_no_window(monkeypatch):
     monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", CREATE_NO_WINDOW, raising=False)
-    monkeypatch.setattr(install.shutil, "which", lambda _name: "codex.exe")
+    monkeypatch.setattr("varyz.codex_runtime.find_codex", lambda: "codex.exe")
     calls = []
 
     def fake_run(command, **kwargs):

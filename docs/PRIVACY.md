@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: 15 October 2026
+Last updated: 17 October 2026
 
 This is the privacy notice for the Varyz website (varyzai.com) and for the Varyz software it
 distributes. It is the canonical copy: the website's privacy page is generated from this file
@@ -8,20 +8,59 @@ by `scripts/site/build_site.py` and is never edited by hand.
 
 ## Who is responsible
 
-Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsible for the website and the software. For anything about your privacy, write to egrmenshikov@gmail.com.
+Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsible for the website and the software. For anything about your privacy, write to support@varyzai.com.
 
 ## The website
 
-- The website has no analytics, no advertising, no tracking pixels and no cookies.
-- There are no forms, and it asks you for nothing.
+- The public website counts public HTML requests by default to measure page popularity,
+  broad traffic sources, HTTP status categories and server response-time ranges. These
+  are daily aggregate counters, not individual visit records. No visitor identifier,
+  IP address, user agent, full referrer, query string, precise request timestamp or
+  sequence of pages is stored in this layer. No analytics code runs in your browser
+  for these counters. Requests from known bots and browser privacy signals are excluded.
+  Counters are retained for 90 days and are used only to operate and improve the site.
+  Network delivery still involves our hosting providers, as described below.
+- The public website also offers optional detailed usage and performance analytics
+  using self-hosted Umami on our Hetzner server in Germany. This browser tracker starts
+  only when you choose **Allow cookies** in the Cookies & privacy popup. The name is a
+  familiar privacy-control label; our analytics do not set tracking cookies. Declining
+  or dismissing the popup does not affect access. Cookie settings in the footer lets
+  you withdraw consent at any time. We respect Global
+  Privacy Control and Do Not Track signals. We store only your consent choice, version
+  and date in browser local storage for up to 180 days; the tracker sets no cookies.
+- With consent we measure public pages visited, referring website, selected campaign
+  labels (UTM), browser, OS, device, screen size, language, approximate location,
+  navigation and download clicks, section views, scrolling, visible-page time, FAQ use,
+  repeated clicks, media controls, copy actions (without clipboard content), performance
+  and error categories (without error messages or stacks). Query strings and URL
+  fragments are excluded except selected UTM labels. No advertising identifiers,
+  account identities, form values, messages or private Varyz content are sent.
+- Choosing **Allow cookies** includes masked session recordings and click/scroll
+  heatmaps for website improvement. Recordings mask text and inputs, block forms and private-marked elements,
+  and stop after five minutes per page. Pages opened with query strings or URL fragments
+  are excluded from recordings and heatmaps. Private Cloud account and payment pages
+  are outside this tracker. A download click does not tell us whether installation
+  succeeded. Copy events do not include the copied text.
+- Our server processes the network address to derive rotating pseudonymous session
+  identifiers and approximate location. Umami does not store the raw IP address in
+  its analytics tables. This is pseudonymous measurement, not a promise of anonymity.
+  Analytics events expire after 90 days; recordings and heatmaps after 30 days, with
+  daily cleanup. Encrypted analytics backups rotate after seven days; Hetzner's
+  whole-server snapshots may retain copies within their separate rotation below.
+  Withdrawal stops future collection and cannot recall already delivered records.
+  Optional detailed website analytics rely on your consent (GDPR Article 6(1)(a)).
+  Default counters contain no visitor-level records; transient processing of ordinary
+  request metadata to form these counters supports our legitimate interest in improving
+  and operating the website (Article 6(1)(f)). Browser GPC and DNT signals stop counting.
 - Fonts, images and scripts are served from the website itself. Nothing is loaded from Google
-  Fonts or any other third-party server, so opening the page does not send your IP address to
-  anyone else.
+  Fonts. Consented analytics scripts are served through analytics.varyzai.com on our
+  infrastructure; no analytics data is sent to Umami's hosted service.
 - Like every website, it is served by a hosting provider. That provider may keep standard,
   short-lived server logs (your IP address, the time, the page requested and the browser or
   program that asked for it) to deliver the site and protect it from abuse. We do not use
   those logs to profile anyone.
 - The public information website uses Cloudflare static hosting. Cloudflare processes requests to deliver and secure the site under its [privacy policy](https://www.cloudflare.com/privacypolicy/). This is separate from the private Cloud account and history deployment described below; public paid launch remains subject to release checks. To show Cloud prices in your currency, the site uses the country Cloudflare detects for your request and sends only that two-letter country code to the Varyz Cloud service, which asks Paddle for that country's price. The site keeps no record of it.
+- Email you send to an @varyzai.com address is delivered to the operator's Google Workspace mailbox for varyzai.com, where Google stores it under the [Google Workspace privacy notice](https://workspace.google.com/terms/privacy/). It is not forwarded anywhere else. Replies are sent from that mailbox; verification and recovery email is sent through Resend (described below). We use your address and message only to answer you.
 - The software's source repository is [egrm07/varyz](https://github.com/egrm07/varyz). Native installer availability is subject to separate release checks.
 
 ## The software
@@ -65,7 +104,8 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
 - Cloud stores your account email, a salted password hash, subscription status and identifiers, selected confirmed rules, explicit answers and stated workflows, pending questions, authorized connections and synchronization history. Raw passwords and connection credentials are not stored in plaintext.
 - Connecting an account does not itself upload preferences. You explicitly select what to sync. Your local archive, documents, transcripts, source snippets and candidate preferences are not part of that synchronization.
 - Connected tools receive relevant cloud preferences and task context when you authorize them. Your cloud preferences are private to your account; we do not sell them or use them for advertising. Your chosen AI provider's own terms apply to data its agent receives.
-- The cloud sign-in pages use essential session, form-security and authorization cookies. These differ from the public information website, which has no cookies or analytics.
+- The cloud sign-in pages use essential session, form-security and authorization cookies.
+  The optional public website tracker does not run on these account pages.
 - Hetzner hosts the Cloud service in Nuremberg, Germany, including account data,
   selected preferences and separately approved history. Encrypted application
   backups are kept on that server and on the owner's controlled recovery computer.

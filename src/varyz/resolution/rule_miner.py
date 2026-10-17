@@ -193,6 +193,12 @@ def _turn_scope(body: str) -> tuple[str, str]:
     named = (where and "--" not in where and "/" not in where
              and not _SESSION_ID.fullmatch(where))
     scope = stored_scope(where) if named else GLOBAL_SCOPE
+    # Recheck older stored rows too, before either deterministic or model-based
+    # mining can learn preferences from generated tool/reviewer transcripts.
+    from varyz.connectors.ai_conversations import is_machine_text
+
+    if is_machine_text(text):
+        text = ""
     return scope, text
 
 

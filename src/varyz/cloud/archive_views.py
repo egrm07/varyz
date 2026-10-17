@@ -10,9 +10,23 @@ from datetime import datetime
 from varyz.scopes import normalize_scope
 
 from .hosted_data import require_hosted_safe
+from .project_identity import project_names
 
 
 class ArchiveViews:
+    def project_permission_keys(self, db, account, project):
+        """Find existing labels in this account; never create or approve a permission."""
+        names = project_names(self.store, account, db=db)
+        scope = names(project)
+        rows = db.execute(
+            "SELECT project,label FROM archive_permissions WHERE account=?", (account,),
+        ).fetchall()
+        return sorted({
+            self.index_term(account, scope),
+            self.index_term(account, normalize_scope(project)),
+            *(r["project"] for r in rows if names(self.open(r["label"])) == scope),
+        })
+
     def revision_usage(self, account):
         with self.store.connection() as db:
             return db.execute(
@@ -41,6 +55,14 @@ class ArchiveViews:
     def permit(self, account, project):
         project = normalize_scope(project)
         with self.store.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            # This method is only the existing explicit owner reapproval action.
+            # Clear old spellings of that same veto, never approve another project.
+            for key in self.project_permission_keys(db, account, project):
+                db.execute(
+                    "UPDATE archive_permissions SET revoked=0 WHERE account=? AND project=?",
+                    (account, key),
+                )
             db.execute(
                 "INSERT INTO archive_permissions VALUES(?,?,?,0) "
                 "ON CONFLICT(account,project) DO UPDATE SET revoked=0",
@@ -52,10 +74,17 @@ class ArchiveViews:
         key = self.index_term(account, project)
         with self.store.connection() as db:
             db.execute("BEGIN IMMEDIATE")
+            keys = self.project_permission_keys(db, account, project)
+            marks = ",".join("?" for _ in keys)
             identities = db.execute(
-                "SELECT DISTINCT id FROM archive_chunks WHERE account=? AND project=?",
-                (account, key),
+                f"SELECT DISTINCT id FROM archive_chunks WHERE account=? AND project IN ({marks})",
+                (account, *keys),
             ).fetchall()
+            db.execute(
+                "UPDATE archive_permissions SET revoked=1 "
+                f"WHERE account=? AND project IN ({marks})",
+                (account, *keys),
+            )
             db.execute(
                 "INSERT INTO archive_permissions VALUES(?,?,?,1) "
                 "ON CONFLICT(account,project) DO UPDATE SET revoked=1",
@@ -110,7 +139,8 @@ class ArchiveViews:
             raise ValueError("Invalid timeline filter")
         if self.paused(account):
             return {"records": [], "paused": True}
-        scope = normalize_scope(project) if project is not None else None
+        names = project_names(self.store, account)
+        scope = names(project) if project is not None else None
         dates = {}
         for name, value in (("before", before), ("after", after)):
             if value is not None:
@@ -129,7 +159,9 @@ class ArchiveViews:
         for row in rows:
             doc = json.loads(self.open(row["payload"]))
             date = datetime.fromisoformat(doc["occurred_at"].replace("Z", "+00:00"))
-            if doc["project"] != scope or ("before" in dates and date >= dates["before"]):
+            if names(doc["project"]) != scope or (
+                "before" in dates and date >= dates["before"]
+            ):
                 continue
             if "after" in dates and date <= dates["after"]:
                 continue

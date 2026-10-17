@@ -87,6 +87,10 @@ class Capsule:
 
     @property
     def provenance(self) -> str:
+        from varyz.connectors.ai_conversations import is_machine_entry
+
+        if is_machine_entry(self.source, self.text):
+            return "external"
         return provenance_of(self.source, self.authored_by_user)
 
     def as_dict(self) -> dict[str, Any]:
@@ -228,7 +232,7 @@ def to_capsules(
                 entry_id=hit.entry.id,
                 score=hit.score,
                 sensitivity=str(hit.entry.sensitivity),
-                authored_by_user=hit.entry.authored_by_user,
+                authored_by_user=hit.entry.authored_by_user and not _machine_entry(hit.entry),
             )
         )
     if extra:
@@ -237,6 +241,12 @@ def to_capsules(
             for i, capsule in enumerate(capsules)
         ]
     return capsules, withheld
+
+
+def _machine_entry(entry: Any) -> bool:
+    from varyz.connectors.ai_conversations import is_machine_entry
+
+    return is_machine_entry(entry.source, entry.body)
 
 
 def allowed_sensitivity(include_sensitive: bool) -> tuple[Sensitivity, ...]:

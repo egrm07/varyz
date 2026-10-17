@@ -17,8 +17,11 @@ refreshes it itself.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import subprocess
+import sys
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
@@ -103,12 +106,8 @@ class Gate:
 
 
 def gates(cfg: Any) -> dict[str, Gate]:
-    """The large (full) and small (live) readings' gates from `[workflows]`."""
-    workflows = cfg.workflows
-    return {
-        "full": Gate(workflows.large_reading_min_left_5h, workflows.large_reading_min_left_weekly),
-        "live": Gate(workflows.small_reading_min_left_5h, workflows.small_reading_min_left_weekly),
-    }
+    """Compatibility for older callers; saved allowance thresholds are ignored."""
+    return {"full": Gate(0, 0), "live": Gate(0, 0)}
 
 
 def _window_from(raw: Any) -> Window | None:
@@ -153,13 +152,35 @@ def _json(path: Path) -> dict[str, Any]:
 
 def claude_token(home: Path | None = None, now: float | None = None) -> str | None:
     """Claude Code's sign-in token while it is still valid; never refreshed here."""
-    stored = _json((home or claude_home()) / ".credentials.json").get("claudeAiOauth")
-    if not isinstance(stored, dict) or not isinstance(stored.get("accessToken"), str):
-        return None
-    expires = _epoch(stored.get("expiresAt"))
-    if expires is not None and expires <= (now if now is not None else time.time()) + 30:
-        return None
-    return str(stored["accessToken"])
+    override = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") if home is None else None
+    if override:
+        return override
+    stores = [_json((home or claude_home()) / ".credentials.json")]
+    if sys.platform == "darwin" and home is None:
+        # Claude Code uses the Keychain on macOS, with a separate entry for a
+        # selected configuration directory. Never fall back to another account.
+        selector = os.environ.get("CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                                  os.environ.get("CLAUDE_CONFIG_DIR", ""))
+        suffix = "-" + hashlib.sha256(selector.encode()).hexdigest()[:8] if selector else ""
+        try:
+            result = subprocess.run(
+                ["/usr/bin/security", "find-generic-password", "-s",
+                 "Claude Code-credentials" + suffix, "-w"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            if result.returncode == 0:
+                stores.append(json.loads(result.stdout))
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+    candidates: list[tuple[float, str]] = []
+    for store in stores:
+        stored = store.get("claudeAiOauth") if isinstance(store, dict) else None
+        if not isinstance(stored, dict) or not isinstance(stored.get("accessToken"), str):
+            continue
+        expires = _epoch(stored.get("expiresAt"))
+        if expires is None or expires > (now if now is not None else time.time()) + 30:
+            candidates.append((expires or 0, str(stored["accessToken"])))
+    return max(candidates)[1] if candidates else None
 
 
 def read_claude(*, token: str | None = None, home: Path | None = None,

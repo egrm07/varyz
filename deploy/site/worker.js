@@ -1,4 +1,5 @@
-// varyzai.com: the static site, with Cloud prices shown in the visitor's own currency.
+// varyzai.com: static site, localized prices and server-side aggregate counters.
+import { metric, collect } from "./aggregate.js";
 //
 // Only the pages listed under assets.run_worker_first in wrangler.jsonc reach this script;
 // every other file is served straight from website/. Pages ship the US dollar price in
@@ -7,7 +8,8 @@
 // we swap the text in. Only the two-letter country code leaves this Worker. Any failure
 // serves the page unchanged, so the dollar price is the fallback, never an empty price.
 
-const PRICING = "https://cloud.varyzai.com/api/pricing?country=";
+const CLOUD = "https://cloud.varyzai.com";
+const PRICING = CLOUD + "/api/pricing?country=";
 const CACHE_SECONDS = 3600;
 
 async function localPrices(country, ctx) {
@@ -40,9 +42,51 @@ async function localPrices(country, ctx) {
 
 export default {
   async fetch(request, env, ctx) {
+    const started = performance.now();
+    let response;
+    try { response = await serve(request, env, ctx); }
+    catch { response = new Response("Temporarily unavailable", {status:503, headers:{"Content-Type":"text/html; charset=utf-8"}}); }
+    const value = metric(request, response, performance.now() - started);
+    if (value?.kind === "probe") {
+      const status = await collect(value, env.AGGREGATE_COLLECT_TOKEN);
+      const probeResponse = new Response(response.body, response);
+      probeResponse.headers.set("X-Varyz-Aggregate-Delivery", String(status));
+      return probeResponse;
+    }
+    if (value) ctx.waitUntil(collect(value, env.AGGREGATE_COLLECT_TOKEN));
+    return response;
+  },
+};
+
+async function serve(request, env, ctx) {
     // Search Console wants its ownership file at the exact .html address, not the clean
     // URL the assets layer redirects to, so serve it straight from the clean path.
-    const { pathname } = new URL(request.url);
+    const { pathname, search } = new URL(request.url);
+    // The admin panel and creator referral links live on Varyz Cloud, where the account
+    // session is. Send them there with the same path; nothing about the visitor is added.
+    if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+      return Response.redirect(CLOUD + pathname + search, 302);
+    }
+    if (["/login", "/account", "/dashboard"].includes(pathname)) {
+      const target = pathname === "/login" ? "/login" : "/?view=dashboard";
+      return Response.redirect(CLOUD + target, 302);
+    }
+    const referral = /^\/r\/([A-Za-z0-9_]{3,30})\/?$/.exec(pathname);
+    if (referral) {
+      return Response.redirect(CLOUD + "/r/" + referral[1].toLowerCase(), 302);
+    }
+    // The zone's URL Rewrite Rule "Varyz discovery files through Worker" sends /llms.txt,
+    // /llms-full.txt and /sitemap.xml here as /google-discovery-<file>.html (the /google*.html
+    // entry in run_worker_first), so answer with the real file and its own content type.
+    const discovery = /^\/google-discovery-(llms\.txt|llms-full\.txt|sitemap\.xml)\.html$/.exec(pathname);
+    if (discovery) {
+      const file = await env.ASSETS.fetch(new URL("/" + discovery[1], request.url));
+      if (!file.ok) return file;
+      const type = discovery[1].endsWith(".xml") ? "application/xml" : "text/plain";
+      const response = new Response(file.body, file);
+      response.headers.set("Content-Type", type + "; charset=utf-8");
+      return response;
+    }
     if (/^\/google[0-9a-f]+\.html$/.test(pathname)) {
       const file = await env.ASSETS.fetch(new URL(pathname.slice(0, -5), request.url));
       return new Response(file.ok ? await file.text() : "Not found", {
@@ -53,7 +97,7 @@ export default {
     const page = await env.ASSETS.fetch(request);
     const country = (request.cf && request.cf.country) || "";
     const html = (page.headers.get("Content-Type") || "").startsWith("text/html");
-    if (request.method !== "GET" || !page.ok || !html || !/^[A-Z]{2}$/.test(country)) {
+    if (request.method !== "GET" || !page.ok || !html || !/^[A-Z]{2}$/.test(country) || !["/", "/index.html", "/pricing", "/pricing.html"].includes(pathname)) {
       return page;
     }
     const local = await localPrices(country, ctx);
@@ -77,5 +121,4 @@ export default {
     // The page now differs by country: keep shared caches from serving it to anyone else.
     response.headers.set("Cache-Control", "private, no-cache");
     return response;
-  },
-};
+}

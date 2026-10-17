@@ -1,5 +1,37 @@
 # Plugin and cloud
 
+## Access expiry (2026-10-16)
+
+Cloud checks access on every protected request. Signed Paddle subscription events
+store the current period end and any earlier scheduled cancellation/pause date;
+access stops at that deadline even if the final lifecycle webhook is delayed.
+An unexpired creator/audience grant can still provide access independently of a
+paid subscription, and an expired free grant does not interrupt valid paid access.
+The period fields follow [Paddle's subscription webhook contract](https://developer.paddle.com/webhooks/subscriptions/subscription-updated/).
+
+`GET /api/account` includes `cloud_access`. Protected HTTP requests return 402
+with a safe reason and user message. Existing hosted MCP tools return an `isError`
+tool result with the same notice before reading context or executing a write.
+The agent is instructed to tell the user whether their free period or subscription
+ran out, stop Cloud calls and use local Varyz where available. This uses the
+existing ChatGPT plugin connection; no new plugin submission is required.
+
+The local client preserves credentials, selected projects, pending uploads and
+local preferences. Its Cloud status command, task briefings and desktop checks
+explain the reason. Desktop notices appear once per access interruption and
+respect the existing notification setting. Confirmed renewal clears the notice
+and restores the same connection without setup or another OAuth sign-in. Older
+local clients require the updated package to show the specific reason.
+
+Legacy subscriptions without a stored deadline are checked against Paddle before
+serving paid Cloud data. If the subscription cannot be verified, Cloud reports a
+verification outage rather than claiming the period expired. Account management
+and export remain available. Schema changes are additive in SQLite and PostgreSQL.
+
+Offline acceptance: `tests/test_cloud_access_expiry.py` and
+`scripts/cloud_access_probe.py`. The probe uses an isolated synthetic database,
+no email or payments, and runs against the candidate and deployed container.
+
 ## Project-based setup and smart loading — live 2026-10-08
 
 The redesigned browser setup connects this computer, presents one project list,

@@ -36,7 +36,7 @@ def provider_bypasses(source_root: Path) -> list[str]:
         if relative in APPROVED_PROVIDER_MODULES:
             continue
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"))
         except (SyntaxError, UnicodeError):
             findings.append(f"{relative}:unparseable")
             continue

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import json
@@ -14,6 +15,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from varyz.cloud.hosted_data import require_hosted_safe
+from varyz.cloud.project_identity import project_names
 from varyz.cloud.store import QuotaExceeded
 from varyz.privacy.secrets_scan import redact_tree
 
@@ -34,6 +36,7 @@ class Report(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
     project: Identity
     conversation_id: Identity
+    thread_id: Identity | None = None
     agent: Identity
     task: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)]
     status: Literal["working", "blocked", "complete", "abandoned"]
@@ -296,13 +299,17 @@ class SessionReports:
             projects=self.status(account)["projects"],
         )
 
-    def push(self, account, changes):
+    def push(self, account, changes, *, _db=None):
         if len(changes) > 25 or len({c.id for c in changes}) != len(changes):
             raise ValueError("Invalid report batch")
         now = datetime.now(UTC).isoformat()
         result = []
-        with self.store.connection() as db:
-            db.execute("BEGIN IMMEDIATE")
+        with contextlib.nullcontext(_db) if _db is not None else self.store.connection() as db:
+            if _db is None:
+                db.execute("BEGIN IMMEDIATE")
+            pause = db.execute("SELECT paused FROM archive_states WHERE account=?",
+                               (account,)).fetchone()
+            paused = bool(pause and pause["paused"])
             for change in changes:
                 payload = change.payload.model_dump(exclude_none=True) if change.payload else None
                 digest = fingerprint(payload)
@@ -319,7 +326,7 @@ class SessionReports:
                         "account=? AND project=?",
                         (account, self.key(account, payload["project"])),
                     ).fetchone()
-                    if not permit or permit["revoked"] or self.archive.paused(account):
+                    if not permit or permit["revoked"] or paused:
                         raise ValueError("Reports are paused or this project is not approved")
                 if old and old["fingerprint"] == digest:
                     result.append(dict(id=change.id, version=version, fingerprint=digest))
@@ -400,8 +407,19 @@ class SessionReports:
     def history(self, account, query: Query, max_chars=8000):
         if self.archive.paused(account):
             return dict(found=0, reports=[], paused=True)
-        clauses = ["r.account=?", "r.project=?", "r.payload!='null'"]
-        args = [account, self.key(account, query.project)]
+        with self.store.connection() as db:
+            names = project_names(self.store, account, db=db)
+            scope = names(query.project, exact_versions=True)
+            permits = [p for p in db.execute(
+                "SELECT project,label,revoked FROM session_report_permissions WHERE account=?",
+                (account,),
+            ).fetchall() if names(self.archive.open(p["label"]), exact_versions=True) == scope]
+        # Reading a merged view never approves a new report project. A veto on
+        # any spelling still blocks the combined view until explicitly renewed.
+        keys = sorted({p["project"] for p in permits} or {self.key(account, query.project)})
+        marks = ",".join("?" for _ in keys)
+        clauses = ["r.account=?", f"r.project IN ({marks})", "r.payload!='null'"]
+        args = [account, *keys]
         if query.agent:
             alias = query.agent.casefold() in {
                 "claude",
@@ -425,10 +443,11 @@ class SessionReports:
         if query.latest:
             clauses.append(
                 "(r.origin='agent_report' OR NOT EXISTS (SELECT 1 FROM "
-                "cloud_session_reports l WHERE l.account=r.account AND l.project=r.project "
+                f"cloud_session_reports l WHERE l.account=r.account AND l.project IN ({marks}) "
                 "AND l.conversation=r.conversation AND l.origin='agent_report' "
                 "AND l.payload!='null'))"
             )
+            args.extend(keys)
         if query.topic:
             words = list(dict.fromkeys(re.findall(r"[^\W_]+", query.topic.casefold())))[:16]
             if not words:
@@ -440,11 +459,12 @@ class SessionReports:
             )
             clauses.append(
                 "EXISTS (SELECT 1 FROM cloud_session_reports q WHERE q.account=r.account "
-                "AND q.project=r.project AND q.agent=r.agent "
+                f"AND q.project IN ({marks}) AND q.agent=r.agent "
                 "AND q.conversation=r.conversation AND q.payload!='null' AND " + terms + ")"
             )
+            args.extend(keys)
             args.extend(self.key(account, word) for word in words)
-        binding = query.model_dump(exclude={"cursor"})
+        binding = {**query.model_dump(exclude={"cursor"}), "project": scope}
         before = None
         if query.cursor:
             try:
@@ -459,6 +479,8 @@ class SessionReports:
                 before = json.loads(base64.urlsafe_b64decode(raw))
             except Exception:
                 raise ValueError("Invalid report cursor") from None
+        if not permits or any(p["revoked"] for p in permits):
+            return dict(found=0, reports=[], approved=False)
         where = " AND ".join(clauses)
         sql = "SELECT r.* FROM cloud_session_reports r WHERE " + where
         if query.latest:
@@ -474,11 +496,12 @@ class SessionReports:
         sql += " ORDER BY occurred DESC,source_seq DESC,id DESC LIMIT ?"
         args.append(1 if query.latest else query.limit + 1)
         with self.store.connection() as db:
-            permission = db.execute(
-                "SELECT revoked FROM session_report_permissions WHERE account=? AND project=?",
-                (account, self.key(account, query.project)),
-            ).fetchone()
-            if not permission or permission["revoked"]:
+            # Recheck the same permission keys inside the read transaction.
+            active = db.execute(
+                "SELECT project,revoked FROM session_report_permissions "
+                f"WHERE account=? AND project IN ({marks})", (account, *keys),
+            ).fetchall()
+            if len(active) != len(keys) or any(p["revoked"] for p in active):
                 return dict(found=0, reports=[], approved=False)
             rows = db.execute(sql, args).fetchall()
             reports, used, last = [], 0, None
@@ -490,9 +513,9 @@ class SessionReports:
                 if query.latest and report["provenance"] == "mined_report":
                     prior = db.execute(
                         "SELECT payload FROM cloud_session_reports WHERE account=? AND "
-                        "project=? AND agent=? AND conversation=? AND payload!='null' "
+                        f"project IN ({marks}) AND agent=? AND conversation=? AND payload!='null' "
                         "ORDER BY occurred DESC,source_seq DESC,id DESC LIMIT 20",
-                        (account, row["project"], row["agent"], row["conversation"]),
+                        (account, *keys, row["agent"], row["conversation"]),
                     ).fetchall()
                     seen = {report.get("evidence", {}).get("response_reference")}
                     context = []
@@ -515,7 +538,7 @@ class SessionReports:
                                     }
                                 )
                     context.sort(key=lambda p: p["occurred_at"])
-                    selected = []
+                    selected: list[dict[str, Any]] = []
                     for p in context[: min(query.limit, 4)]:
                         candidate = {**report, "earlier_session_outcomes": [*selected, p]}
                         if len(json.dumps(candidate, ensure_ascii=False)) <= max_chars:

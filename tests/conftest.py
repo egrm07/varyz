@@ -77,6 +77,14 @@ from varyz.vault import Vault
 UnreadablePath = Callable[[Path], AbstractContextManager[Path]]
 
 
+def synthetic_executable(path: Path) -> Path:
+    """Create a disposable runtime fixture; permission changes stay centralized."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic runtime", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
 def _readable(path: Path) -> bool:
     try:
         if path.is_dir():
@@ -291,7 +299,7 @@ def _no_live_billing_provider(monkeypatch):
         import varyz.cloud.app as cloud_app
     except ImportError:
         return
-    monkeypatch.setattr(cloud_app, "paddle_read", lambda url, api_key: None)
+    monkeypatch.setattr(cloud_app, "paddle_read", lambda url, api_key, missing=None: None)
 
 
 @pytest.fixture(autouse=True)
@@ -386,6 +394,7 @@ def _no_real_setup_installs(monkeypatch):
     monkeypatch.setattr(cli, "_ready_classifier", lambda cfg_path, on_progress=None: (
         "skipped", "not installed by the test suite", False))
     monkeypatch.setattr(cli, "_restart_daemon", lambda cfg_path: True)
+    monkeypatch.setattr("varyz.resolution.local_reader.request", lambda cfg, config_file: False)
     # Indexing fetches the search models first; their own tests take the real
     # fetch from `varyz.pipeline.model_download` and hand it a fake Hub.
     monkeypatch.setattr(cli, "fetch_search_models", lambda cfg, on_progress=None: True)

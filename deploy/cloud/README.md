@@ -33,6 +33,8 @@ The Dockerfile installs package source plus the `cloud` optional dependencies on
 | `VARYZ_CLOUD_DB_POOL_MAX` | PostgreSQL pool connections per process, default 8 (allowed 1–64); reserve DB capacity for replicas/deploy overlap |
 | `VARYZ_CLOUD_STORAGE_LIMIT_BYTES`, `VARYZ_CLOUD_CHANGE_LIMIT` | Per-account conservative cumulative history admission limits, defaults 50 MiB and 100,000 changes |
 | `VARYZ_CLOUD_SYNC_WAITERS` | Sync requests held open at once by devices waiting for another device's change (`GET /api/sync?wait=`, up to 25 s), default 8, at most 4 per account; past it a device is answered at once and polls. Keep it well under Uvicorn's `--limit-concurrency 32` |
+| `VARYZ_CLOUD_ADMIN_EMAILS` | Comma-separated verified account emails that can open `/admin`; empty means nobody, and everyone else gets a 404 |
+| `VARYZ_CLOUD_CREATORS_OPEN` | `true` to accept Creator Program applications from the start, default `false`; the admin page can open or close them later |
 | `PORT` | HTTP listen port inside the standalone image, defaults to 8080; Compose expects this default |
 
 Set secrets using the platform secret manager or an untracked environment file **outside the repository**. To load an external file locally, pass `--env-file C:/private/varyz-cloud.env` before `-f`. `deploy/cloud/.env.example` contains variable names, not credentials. Check the file's ACLs; rendered Compose config and container inspection can expose supplied secrets.

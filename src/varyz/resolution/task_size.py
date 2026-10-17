@@ -353,7 +353,7 @@ def sizer_from_config(cfg: Any) -> ChainSizer:
         else None
     )
     sizers: list[TaskSizer] = []
-    if settings.task_classifier == "model":
+    if settings.task_classifier == "model" and settings.inference_mode != "conversations":
         sizers.append(ModelSizer(
             settings.classifier_model,
             url=settings.classifier_url,
@@ -372,7 +372,7 @@ def gate_sizer_from_config(cfg: Any) -> ModelSizer | None:
     through; the embedding let 2 through and the lexicon 1, so they never skip it.
     """
     settings = cfg.workflows
-    if settings.task_classifier != "model":
+    if settings.task_classifier != "model" or settings.inference_mode == "conversations":
         return None
     return ModelSizer(
         settings.classifier_model,
