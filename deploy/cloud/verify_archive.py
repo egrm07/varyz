@@ -60,7 +60,12 @@ def main():
                 json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
             )
             assert listing.status_code == 200
-            assert len(listing.json()["result"]["tools"]) == 15
+            assert {tool["name"] for tool in listing.json()["result"]["tools"]} == {
+                "route_task", "start_task", "ask", "finish_check", "away",
+                "owner_questions", "answer_owner_question", "remember_owner_rule",
+                "remember_owner_workflow", "context", "search", "fetch", "timeline",
+                "compare", "session_history", "record_progress", "claim_work",
+            }
             assert (
                 client.post("/api/archive/sync", headers=plugin, json={"records": []}).status_code
                 == 403

@@ -10185,6 +10185,62 @@
       "digest": "0b8ebed643996a68",
       "entry_source": "ai_conversations",
       "reason": "Reviewed repository text copied into an imported agent review/handoff; the exact run already occurs in this public file at 3c1d80e644459b9e35578a06cad5309aa628a8e4. This accepts only this path and text digest, not the source conversation."
+    },
+    {
+      "path": "src/varyz/cloud/admin.py",
+      "kind": "archive_quotation",
+      "digest": "fb293944b9071696",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed SQL count of active subscription accounts in the admin dashboard. The match is parameter-free query syntax repeated in a generated agent review, not account data or private conversation prose."
+    },
+    {
+      "path": "src/varyz/cloud/admin.py",
+      "kind": "archive_quotation",
+      "digest": "bd50ffa038853739",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed SQL count of active subscription accounts in the admin dashboard. The match is parameter-free query syntax repeated in a generated agent review, not account data or private conversation prose."
+    },
+    {
+      "path": "src/varyz/cloud/admin.py",
+      "kind": "archive_quotation",
+      "digest": "860c429e18e16067",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed SQL count of active subscription accounts in the admin dashboard. The match is parameter-free query syntax repeated in a generated agent review, not account data or private conversation prose."
+    },
+    {
+      "path": "src/varyz/cloud/admin.py",
+      "kind": "archive_quotation",
+      "digest": "cd4ba9468b9da125",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed SQL count of active subscription accounts in the admin dashboard. The match is parameter-free query syntax repeated in a generated agent review, not account data or private conversation prose."
+    },
+    {
+      "path": "src/varyz/cloud/admin.py",
+      "kind": "archive_quotation",
+      "digest": "7f94ca8f75ecfb64",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed SQL count of active subscription accounts in the admin dashboard. The match is parameter-free query syntax repeated in a generated agent review, not account data or private conversation prose."
+    },
+    {
+      "path": "tests/test_setup_review.py",
+      "kind": "archive_quotation",
+      "digest": "2a5035b3b894a59c",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed test function identifier describing setup waiting for an open review. The match is a source-code identifier repeated in an imported handoff, not private conversation prose."
+    },
+    {
+      "path": "tests/test_setup_review.py",
+      "kind": "archive_quotation",
+      "digest": "3f39a5306f1a543c",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed test function identifier describing setup waiting for an open review. The match is a source-code identifier repeated in an imported handoff, not private conversation prose."
+    },
+    {
+      "path": "tests/test_setup_review.py",
+      "kind": "archive_quotation",
+      "digest": "d996d96d6fb6ce9a",
+      "entry_source": "ai_conversations",
+      "reason": "Reviewed test function identifier describing setup waiting for an open review. The match is a source-code identifier repeated in an imported handoff, not private conversation prose."
     }
   ]
 }
