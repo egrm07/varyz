@@ -165,14 +165,21 @@ def note_conversation(cfg: Any, conversation_id: str | None, *,
         lock.release()
 
 
-def news_allowed(cfg: Any, *, conversation_id: str | None = None,
-                 now: float | None = None) -> bool:
+def trial_over(cfg: Any, *, now: float | None = None) -> bool:
+    """Past the first 24 hours and the first 3 conversations: news and offers may start."""
     now = time.time() if now is None else now
     state = _read(cfg)
     first = state.get("first_seen")
-    if (not isinstance(first, int | float) or now - first < QUIET_SECONDS
-            or len(state.get("conversations") or {}) <= QUIET_CONVERSATIONS):
+    return (isinstance(first, int | float) and now - first >= QUIET_SECONDS
+            and len(state.get("conversations") or {}) > QUIET_CONVERSATIONS)
+
+
+def news_allowed(cfg: Any, *, conversation_id: str | None = None,
+                 now: float | None = None) -> bool:
+    now = time.time() if now is None else now
+    if not trial_over(cfg, now=now):
         return False
+    state = _read(cfg)
     if conversation_id:
         key = hashlib.sha256(conversation_id.encode()).hexdigest()[:24]
         return key not in (state.get("onboarding_conversations") or [])

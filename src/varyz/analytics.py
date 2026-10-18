@@ -18,28 +18,37 @@ from uuid import uuid4
 import httpx
 
 from varyz import __version__
-from varyz.analytics_schema import CONSENT_VERSION, METRICS, AggregateReport, OperatingSystem
+from varyz.analytics_schema import (
+    CONSENT_VERSION,
+    LEGACY_CONSENT,
+    METRICS,
+    AggregateReport,
+    OperatingSystem,
+)
 from varyz.config import Config
 
 ORIGIN = "https://cloud.varyzai.com"
+CONSENT_TITLE = "Join the Varyz network"
 CONSENT_MESSAGE = (
-    "Hi, I'm Egor, the solo developer behind Varyz. Anonymous usage counts "
-    "would really help me find problems and make Varyz better. "
-    "I never receive or see your messages, questions, answers or learned rules through "
-    "these reports."
+    "How many times have you corrected your AI agent this week? The Varyz network pools "
+    "anonymized corrections from everyone who uses Varyz, so your agents learn common "
+    "mistakes before making them with you. Repeat yourself less, redo less, spend fewer "
+    "tokens."
 )
 CONSENT_COUNTS = (
-    "Only counts are sent: answer outcomes, repeated questions, rule reviews, setup "
-    "results, failures and response-time ranges, grouped by day, app version and "
-    "operating system. No names, project names, file paths, account details or permanent "
-    "user ID are included."
+    "Questions your agents asked Varyz and the answers they got, how you "
+    "corrected them, the rules you kept or rejected, and daily usage counts. Before "
+    "anything leaves this computer, Varyz replaces names, emails, links, file paths, "
+    "numbers and project names with placeholders, and drops any example that holds a "
+    "password or key or that Varyz kept from an agent. Your chats, files and archive "
+    "never leave."
 )
 CONSENT_PRIVACY = (
-    "My server sees your network address during delivery and uses it for temporary "
-    "rate limits, so delivery isn't fully anonymous. Sharing is optional and off by "
-    "default, needs no Cloud account, and can be turned off in setup or with "
-    "varyz analytics consent off. Reports are kept for 30 days. Varyz works the same "
-    "if you say no."
+    "Anonymized examples are stored on Varyz's server and may be licensed to AI companies "
+    "to improve their models; that is how the network is funded. Cleaning is automatic and "
+    "can miss something. Only examples created after you opt in are sent. Sharing is "
+    "off until you choose it and needs no account. Turn it off anytime with varyz data off "
+    "and what you shared is deleted from the server. Varyz works the same if you say no."
 )
 CONSENT_COPY = "\n\n".join((CONSENT_MESSAGE, CONSENT_COUNTS, CONSENT_PRIVACY))
 TABLES = {
@@ -53,6 +62,7 @@ CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS counters(day TEXT,metric TEXT,value INTEGER NOT NULL,
  PRIMARY KEY(day,metric));
 CREATE TABLE IF NOT EXISTS pending(id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS contributions(id TEXT PRIMARY KEY,payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY,at TEXT NOT NULL,action TEXT NOT NULL);
 CREATE TRIGGER IF NOT EXISTS analytics_audit_no_update BEFORE UPDATE ON audit
  BEGIN SELECT RAISE(ABORT,'analytics audit is append-only'); END;
@@ -95,12 +105,17 @@ def _audit(db: sqlite3.Connection, action: str) -> None:
     db.execute("INSERT INTO audit(at,action) VALUES(?,?)", (datetime.now(UTC).isoformat(), action))
 
 
+def counts_allowed(db: sqlite3.Connection) -> bool:
+    return _get(db, "consent") in {CONSENT_VERSION, LEGACY_CONSENT}
+
+
 def status(cfg: Config) -> dict[str, Any]:
     if not state_path(cfg).exists():
         return {"consent": False, "paused": False, "pending_reports": 0, "endpoint": ORIGIN}
     with connection(cfg) as db:
         return {
             "consent": _get(db, "consent") == CONSENT_VERSION,
+            "counts": counts_allowed(db),
             "paused": _get(db, "paused") == "1",
             "endpoint": ORIGIN,
             "pending_reports": db.execute("SELECT COUNT(*) FROM pending").fetchone()[0],
@@ -114,17 +129,62 @@ def status(cfg: Config) -> dict[str, Any]:
 
 
 def consent(cfg: Config, enabled: bool) -> None:
-    """A new opt-in starts from now. Off discards every unsent count and batch."""
+    """One switch for every kind of sharing. A new opt-in starts from now.
+
+    Off discards every unsent count and contribution, and keeps only the key
+    needed to ask the server to delete what this installation already shared.
+    """
     with connection(cfg) as db:
         db.execute("BEGIN IMMEDIATE")
         if enabled and _get(db, "consent") == CONSENT_VERSION:
             return
+        erase = [_get(db, "contributor_key"), *_get(db, "erase_keys").split()]
         db.execute("DELETE FROM counters")
         db.execute("DELETE FROM pending")
+        db.execute("DELETE FROM contributions")
         db.execute("DELETE FROM state")
+        if keys := " ".join(dict.fromkeys(k for k in erase if k)):
+            _put(db, "erase_keys", keys)
         _put(db, "consent", CONSENT_VERSION if enabled else "")
         _put(db, "since", datetime.now(UTC).isoformat())
         _audit(db, "consent_on" if enabled else "consent_off")
+
+
+OFFER_GAP = timedelta(days=30)
+OFFER_LIMIT = 2  # shown once, then offered again at most once
+
+
+def _offer_due(db: sqlite3.Connection, now: datetime) -> bool:
+    """Read from the append-only audit, which turning sharing on or off never clears."""
+    rows = db.execute(
+        "SELECT at,action FROM audit WHERE action IN ('consent_on','consent_off','offer_shown')"
+        " ORDER BY seq"
+    ).fetchall()
+    if _get(db, "consent") == CONSENT_VERSION or any(r["action"] == "consent_on" for r in rows):
+        return False  # Sharing, or turned it off after sharing: never asked again.
+    shown = sum(r["action"] == "offer_shown" for r in rows)
+    # A no given before any popup (terminal setup, varyz data off) counts as the first offer.
+    asked = shown + (bool(rows) and rows[0]["action"] == "consent_off")
+    last = max((datetime.fromisoformat(r["at"]) for r in rows), default=None)
+    return asked < OFFER_LIMIT and (last is None or now - last >= OFFER_GAP)
+
+
+def claim_offer(cfg: Config, *, now: datetime | None = None) -> bool:
+    """Whether rules review shows the network popup now; showing it is recorded at once.
+
+    Only after the trial window (onboarding.trial_over), and 30 days after a no.
+    """
+    from varyz import onboarding
+
+    now = now or datetime.now(UTC)
+    if not onboarding.trial_over(cfg, now=now.timestamp()):
+        return False
+    with connection(cfg) as db:
+        db.execute("BEGIN IMMEDIATE")
+        if not _offer_due(db, now):
+            return False
+        db.execute("INSERT INTO audit(at,action) VALUES(?,?)", (now.isoformat(), "offer_shown"))
+        return True
 
 
 def pause(cfg: Config, paused: bool) -> None:
@@ -150,7 +210,7 @@ def record(cfg: Config, metric: str) -> None:
         return
     with contextlib.suppress(Exception), connection(cfg, timeout=0.05) as db:
         db.execute("BEGIN IMMEDIATE")
-        if _get(db, "consent") == CONSENT_VERSION:
+        if counts_allowed(db):
             _add(db, metric)
 
 
@@ -262,6 +322,7 @@ def _prepare(db: sqlite3.Connection, cfg: Config) -> None:
         counters = dict(db.execute("SELECT metric,value FROM counters WHERE day=?", (row[0],)))
         report = AggregateReport(
             report_id=str(uuid4()),
+            consent_version=cast(Any, _get(db, "consent")),
             day=row[0],
             version=__version__,
             os=cast(
@@ -285,7 +346,7 @@ def sync(
     with connection(cfg) as db:
         # Held until sending ends: off/pause waits, then guarantees no later send.
         db.execute("BEGIN IMMEDIATE")
-        if _get(db, "consent") != CONSENT_VERSION:
+        if not counts_allowed(db):
             return {"status": "off", "sent": 0}
         if _get(db, "paused") == "1":
             return {"status": "paused", "sent": 0}
@@ -351,6 +412,12 @@ def tick(cfg: Config) -> None:
     def work() -> None:
         try:
             sync(cfg)
+        except Exception:
+            record(cfg, "collection_failed")
+        try:
+            from varyz import contribute
+
+            contribute.sync(cfg)
         except Exception:
             record(cfg, "collection_failed")
         finally:

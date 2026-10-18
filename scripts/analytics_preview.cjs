@@ -1,7 +1,11 @@
-// Actual setup UI and consent interactions; intercepted runs never start setup.
+// The real rules review page and its Varyz network popup, at one viewport.
+// argv: url, out dir, playwright path, viewport name, width, height.
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.argv[4]);
+
+const [url, out, , name, widthText, heightText] = process.argv.slice(2);
+const width = Number(widthText), height = Number(heightText);
 
 (async () => {
   const browser = await chromium.launch({
@@ -10,111 +14,110 @@ const { chromium } = require(process.argv[4]);
     args: ['--no-sandbox', '--disable-crash-reporter', '--disable-breakpad'],
   });
   try {
-    for (const [name, width, height] of [['desktop', 1440, 900], ['mobile', 390, 844]]) {
-      const page = await browser.newPage({ viewport: { width, height } });
-      const runs = [];
-      const errors = [];
-      page.on('pageerror', error => errors.push(error.message));
-      await page.route('**/api/run', route => {
-        runs.push(route.request().postDataJSON());
-        return route.fulfill({ status: 202, json: { started: true } });
-      });
-      async function ready() {
-        await page.goto(process.argv[2]);
-        await page.locator('#go:not([disabled])').waitFor();
-        await page.evaluate(() => document.fonts.ready);
-        assert.equal(await page.locator('#analytics-dialog').isVisible(), false);
-      }
-      await ready();
-      const geometry = await page.evaluate(() => ({
-        width: innerWidth, content: document.documentElement.scrollWidth,
-      }));
-      if (geometry.width !== width || geometry.content > width) {
-        throw new Error('Setup geometry failed: ' + JSON.stringify(geometry));
-      }
-      assert.match(await page.locator('#analytics-status').innerText(), /sharing is off/);
-      await page.screenshot({ path: path.join(process.argv[3], `top-${name}.png`) });
-      await page.locator('#go').click();
-      assert.equal(runs.length, 0, 'Opening consent must not submit setup');
-      assert.equal(await page.locator('#analytics-title').evaluate(el => el === document.activeElement), true);
-      assert.match(await page.locator('#analytics-message').innerText(), /solo developer/);
-      assert.match(await page.locator('#analytics-message').innerText(), /never receive or see your messages/);
-      assert.match(await page.locator('#analytics-privacy').innerText(), /isn't fully anonymous/);
-      const modal = await page.locator('#analytics-dialog').evaluate(el => ({
-        left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right,
-        top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom,
-        width: el.clientWidth, content: el.scrollWidth,
-      }));
-      assert.ok(modal.left >= 0 && modal.right <= width && modal.top >= 0 && modal.bottom <= height);
-      assert.equal(modal.width, modal.content, 'No horizontal scrolling inside dialog');
-      await page.screenshot({ path: path.join(process.argv[3], `consent-${name}.png`) });
-      const decline = await page.locator('#analytics-decline').boundingBox();
-      const share = await page.locator('#analytics-share').boundingBox();
-      assert.ok(decline.y + decline.height <= modal.bottom && share.y + share.height <= modal.bottom,
-        'Both choices must be visible without scrolling');
-      await page.locator('#analytics-details summary').click();
-      await page.locator('#analytics-counts').waitFor();
-      assert.match(await page.locator('#analytics-counts').innerText(), /No names/);
-      await page.screenshot({ path: path.join(process.argv[3], `details-${name}.png`) });
-      await page.locator('#analytics-details summary').click();
-      await page.locator('#analytics-title').focus();
-      await page.keyboard.press('Tab');
-      assert.equal(await page.locator('#analytics-details summary').evaluate(el => el === document.activeElement), true);
-      await page.keyboard.press('Tab');
-      assert.equal(await page.locator('#analytics-decline').evaluate(el => el === document.activeElement), true);
-      await page.keyboard.press('Tab');
-      assert.equal(await page.locator('#analytics-share').evaluate(el => el === document.activeElement), true);
-      await page.keyboard.press('Tab');
-      assert.equal(await page.evaluate(() => document.getElementById('analytics-dialog').contains(document.activeElement)), true);
-      await page.keyboard.press('Escape');
-      assert.equal(runs.length, 0, 'Dismissal must not submit or grant consent');
-      assert.equal(await page.locator('#go').evaluate(el => el === document.activeElement), true);
-      await page.locator('#go').click();
-      await page.locator('#analytics-decline').click();
-      await page.waitForFunction(() => document.getElementById('go').disabled);
-      await page.locator('#analytics-status').filter({ hasText: 'sharing is off.' }).waitFor();
-      assert.equal(runs.at(-1).analytics, false);
+    const page = await browser.newPage({ viewport: { width, height } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const focused = selector => page.locator(selector).evaluate(el => el === document.activeElement);
+    const dialog = page.locator('#analytics-dialog');
 
-      await ready();
-      await page.locator('#go').click();
-      await page.locator('#analytics-share').click();
-      await page.locator('#analytics-status').filter({ hasText: 'sharing is on.' }).waitFor();
-      assert.equal(runs.at(-1).analytics, true);
-      assert.equal(runs.length, 2);
-
-      // Existing consent is disclosed; Escape keeps it and No thanks revokes it.
-      await page.route('**/api/plan', async route => {
-        const response = await route.fetch();
-        const plan = await response.json();
-        plan.analytics.sharing = true;
-        await route.fulfill({ response, json: plan });
-      });
-      await ready();
-      await page.locator('#go').click();
-      assert.match(await page.locator('#analytics-current').innerText(), /currently on/);
-      await page.keyboard.press('Escape');
-      assert.equal(runs.length, 2);
-      assert.match(await page.locator('#analytics-status').innerText(), /sharing is on/);
-      await page.locator('#go').click();
-      await page.locator('#analytics-decline').click();
-      await page.locator('#analytics-status').filter({ hasText: 'sharing is off.' }).waitFor();
-      assert.equal(runs.at(-1).analytics, false);
-
-      // Failed submission stays retryable, without accidentally changing consent.
-      await page.unroute('**/api/run');
-      await page.route('**/api/run', route => route.fulfill({ status: 500, json: { error: 'fixture failure' } }));
-      await ready();
-      await page.locator('#go').click();
-      await page.locator('#analytics-share').click();
-      await page.locator('#error:not([hidden])').waitFor();
-      assert.equal(await page.locator('#go').isEnabled(), true);
-      await page.locator('#go').click();
-      assert.equal(await page.locator('#analytics-dialog').isVisible(), true);
-      await page.keyboard.press('Escape');
-      assert.deepEqual(errors, []);
-      console.log(name, JSON.stringify({ ...geometry, modal, interactionChecks: 8 }));
-      await page.close();
+    async function openPending() {
+      await page.goto(url);
+      await page.locator('#statuses [aria-label^="Pending,"]').click();
+      await page.locator('#keep-all:not([disabled])').waitFor();
     }
+
+    async function reviewAndSave() {
+      await openPending();
+      await page.evaluate(() => document.fonts.ready);
+      assert.equal(await dialog.isVisible(), false, 'Nothing is offered before a saved review');
+      await page.locator('#keep-all').click();
+      await page.locator('#notice').filter({ hasText: 'saved' }).waitFor();
+    }
+
+    // 1. The first saved review after the trial window: the real server offers once.
+    await openPending();
+    await page.evaluate(() => document.fonts.ready);
+    const geometry = await page.evaluate(() => ({
+      width: innerWidth, content: document.documentElement.scrollWidth,
+    }));
+    assert.ok(geometry.width === width && geometry.content <= width, JSON.stringify(geometry));
+    await page.screenshot({ path: path.join(out, `review-${name}.png`) });
+    const offered = page.waitForResponse('**/api/network/offer');
+    await page.locator('#keep-all').click();
+    const offer = (await (await offered).json()).offer;
+    assert.ok(offer, 'The first saved review offers the network');
+    await dialog.waitFor();
+    assert.equal(await focused('#analytics-title'), true, 'Focus starts on the title');
+    assert.match(await page.locator('#analytics-title').innerText(), /Join the Varyz network/);
+    assert.match(await page.locator('#analytics-message').innerText(), /^How many times have you corrected your AI agent this week\?\s+The Varyz network/);
+    assert.equal(await page.locator('#analytics-message .question').innerText(),
+      'How many times have you corrected your AI agent this week?', 'The question leads on its own line');
+    assert.equal(await dialog.evaluate(el => getComputedStyle(el).animationName), 'network-in', 'The popup animates in');
+    await page.waitForTimeout(300);
+    assert.match(await page.locator('#analytics-notice').innerText(), /licensed to AI companies/);
+    assert.match(await page.locator('#analytics-privacy').textContent(), /can miss something/);
+    assert.match(await page.locator('#analytics-current').innerText(), /currently off/);
+    assert.equal(await page.locator('#analytics-dialog button').count(), 2, 'Only the x and one share button');
+    assert.equal(await page.locator('#analytics-dialog').getAttribute('aria-labelledby'), 'analytics-title');
+    const modal = await dialog.evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+               width: el.clientWidth, content: el.scrollWidth };
+    });
+    assert.ok(modal.left >= 0 && modal.right <= width && modal.top >= 0 && modal.bottom <= height,
+      'The dialog fits the viewport: ' + JSON.stringify(modal));
+    assert.equal(modal.width, modal.content, 'No horizontal scrolling inside the dialog');
+    const close = await page.locator('#analytics-close').boundingBox();
+    const share = await page.locator('#analytics-share').boundingBox();
+    assert.ok(close.x + close.width <= modal.right && close.y <= modal.top + 24, 'The x sits top right');
+    assert.ok(share.y + share.height <= modal.bottom, 'The share button shows without scrolling');
+    await page.screenshot({ path: path.join(out, `consent-${name}.png`) });
+    await page.locator('#analytics-details summary').click();
+    assert.match(await page.locator('#analytics-counts').innerText(), /placeholders/);
+    await page.screenshot({ path: path.join(out, `details-${name}.png`) });
+    await page.locator('#analytics-details summary').click();
+    // The focus trap: x, summary, share, then back to the x, both ways.
+    await page.locator('#analytics-close').focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await focused('#analytics-details summary'), true);
+    await page.keyboard.press('Tab');
+    assert.equal(await focused('#analytics-share'), true);
+    await page.keyboard.press('Tab');
+    assert.equal(await focused('#analytics-close'), true);
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await focused('#analytics-share'), true);
+    // Escape means no.
+    const escaped = page.waitForRequest('**/api/network/answer');
+    await page.keyboard.press('Escape');
+    assert.deepEqual((await escaped).postDataJSON(), { share: false });
+    await page.locator('#notice').filter({ hasText: 'Sharing stays off' }).waitFor();
+    assert.equal(await dialog.isVisible(), false);
+    assert.equal(await focused('#close'), true, 'Focus returns to the page');
+    await page.screenshot({ path: path.join(out, `declined-${name}.png`) });
+
+    // 2. Saving again in the same review: the server does not offer twice.
+    await reviewAndSave();
+    await page.waitForTimeout(300);
+    assert.equal(await dialog.isVisible(), false, 'Shown once');
+
+    // 3. With an offer due again (as 30 days after a no): the x means no.
+    await page.route('**/api/network/offer', route => route.fulfill({ json: { offer } }));
+    await reviewAndSave();
+    await dialog.waitFor();
+    const closed = page.waitForRequest('**/api/network/answer');
+    await page.locator('#analytics-close').click();
+    assert.deepEqual((await closed).postDataJSON(), { share: false });
+    await page.locator('#notice').filter({ hasText: 'Sharing stays off' }).waitFor();
+
+    // 4. Share turns it on.
+    await reviewAndSave();
+    await dialog.waitFor();
+    await page.locator('#analytics-share').click();
+    await page.locator('#notice').filter({ hasText: 'Sharing is on' }).waitFor();
+    await page.screenshot({ path: path.join(out, `shared-${name}.png`) });
+
+    assert.deepEqual(errors, []);
+    console.log(name, JSON.stringify({ ...geometry, modal, interactionChecks: 12 }));
   } finally {
     await browser.close();
   }

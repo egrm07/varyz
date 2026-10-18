@@ -84,6 +84,8 @@ def machine(tmp_path, monkeypatch):
     def sync(_cfg, ids, on_progress=None, *, step=None, on_read=None):
         assert step == 4
         synced.append(ids)
+        if on_read is not None:
+            on_read()
         if on_progress is not None:
             on_progress("indexing")
         return [cid for cid in ids if cid in failing]

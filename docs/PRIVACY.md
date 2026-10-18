@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: 17 October 2026
+Last updated: 18 October 2026
 
 This is the privacy notice for the Varyz website (varyzai.com) and for the Varyz software it
 distributes. It is the canonical copy: the website's privacy page is generated from this file
@@ -65,15 +65,37 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
 
 ## The software
 
-- Varyz runs on your own computer and needs no account. Optional improvement analytics
-  are off by default. Setup asks whether to send aggregate usage and reliability counts
-  to Egor Menshikov, Varyz's creator. Reports include UTC day, app version and OS family;
-  they exclude messages, questions, answers, rules, names, projects, paths and account
-  details, and have no permanent user identifier. The receiving server sees the network
-  address during delivery and uses temporary hashed rate limits. Disable sharing in setup
-  or with `varyz analytics consent off`; unsent data is discarded. Received reports expire
-  after 30 days; encrypted backups can retain expired records until backup rotation.
-  See `ANALYTICS.md` for exact counters and controls.
+- Varyz runs on your own computer and needs no account. Sharing with the Varyz network is
+  off by default and governed by one choice: a single popup, `varyz data on` or
+  `varyz data off`. Setup starts with sharing off and does not show the popup. It appears
+  when you first save a rules review after your first 3 conversations and 24 hours with
+  Varyz. Closing the popup means no; after a no it is offered again at most once, no
+  sooner than 30 days later. If you opt in, Varyz sends two things to
+  Egor Menshikov, Varyz's creator, at cloud.varyzai.com. The first is daily usage and
+  reliability counts (UTC day, app version and OS family, no content); received count
+  reports expire after 30 days.
+- The second is anonymized examples created after you opt in: questions your agents asked
+  Varyz and the answers they got, whether you adopted, overrode or corrected them and the
+  correction, how long an answer took, and the rules you confirmed, revised or rejected.
+  Vision notes, chats, files, connected sources and the archive itself are never sent.
+- Before an example leaves your computer, Varyz replaces names of people it knows,
+  project names, emails, links, file paths, phone and other long numbers, network
+  addresses and handles with placeholders. It drops any example that holds a password,
+  key or token, or that Varyz withheld from an agent. Cleaning is automatic and can miss
+  something, so treat shared examples as pseudonymous, not guaranteed anonymous.
+  `varyz data preview` shows the exact records the next upload would hold.
+- Examples are linked only to a random contributor key that your installation creates;
+  the server stores a hash of that key, not an account, name or device. The server sees
+  your network address during delivery and uses it for temporary hashed rate limits.
+  Examples are kept until you delete them. Anonymized examples may be licensed to AI
+  companies to improve their models; that is how the network is funded. We do not sell
+  your account details, and we do not use shared examples for advertising.
+- Turning sharing off (`varyz data off`) stops all
+  sending, discards anything unsent and asks the server to delete every example your
+  installation shared, retrying until it succeeds. Copies already included in a dataset
+  delivered to a licensee before your deletion cannot be recalled by us. Encrypted backups
+  can retain deleted records until backup rotation. See `ANALYTICS.md` for exact fields
+  and controls.
 - What you teach it (your answers, rules and preferences) and anything it indexes is stored
   in files on your own disk. We do not receive a copy unless you choose to sync or publish
   it, as described below.
@@ -103,7 +125,7 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
 - Varyz Cloud has a deployed account service with live Paddle billing. Local Varyz remains usable without an account. The processing below applies to the deployed Cloud service. Public release checks for installers, directory listings and retention remain separate from payment availability.
 - Cloud stores your account email, a salted password hash, subscription status and identifiers, selected confirmed rules, explicit answers and stated workflows, pending questions, authorized connections and synchronization history. Raw passwords and connection credentials are not stored in plaintext.
 - Connecting an account does not itself upload preferences. You explicitly select what to sync. Your local archive, documents, transcripts, source snippets and candidate preferences are not part of that synchronization.
-- Connected tools receive relevant cloud preferences and task context when you authorize them. Your cloud preferences are private to your account; we do not sell them or use them for advertising. Your chosen AI provider's own terms apply to data its agent receives.
+- Connected tools receive relevant cloud preferences and task context when you authorize them. Your cloud preferences are private to your account; we do not sell them or use them for advertising. Only examples you choose to share through the Varyz network, described under The software, may be licensed. Your chosen AI provider's own terms apply to data its agent receives.
 - The cloud sign-in pages use essential session, form-security and authorization cookies.
   The optional public website tracker does not run on these account pages.
 - Hetzner hosts the Cloud service in Nuremberg, Germany, including account data,
@@ -175,7 +197,7 @@ service cannot guarantee that every AI host follows those instructions.
 
 We use account, authentication and subscription information to provide the service you request and administer your contract (GDPR Article 6(1)(b)). Necessary security logging, rate limits and abuse prevention support our legitimate interests in keeping accounts and the service safe (Article 6(1)(f)); we limit their scope and retention as described above. Records that we must retain for tax, accounting or other legal obligations are processed on that legal basis (Article 6(1)(c)), rather than optional synchronization consent.
 
-Optional improvement analytics and the optional synchronization of selected preferences or separately approved history rely on your informed choice and consent (Article 6(1)(a)). You can withdraw that permission through the relevant consent, project revocation or connection controls. Withdrawal does not invalidate earlier lawful processing. Disconnecting a tool stops its future access but does not itself delete previously synchronized records or copies already delivered to another provider. Use the account or project deletion controls to request removal of active Cloud copies.
+Optional Varyz network sharing (usage counts and anonymized examples) and the optional synchronization of selected preferences or separately approved history rely on your informed choice and consent (Article 6(1)(a)). You can withdraw that permission through the relevant consent, project revocation or connection controls. Withdrawal does not invalidate earlier lawful processing. Disconnecting a tool stops its future access but does not itself delete previously synchronized records or copies already delivered to another provider. Use the account or project deletion controls to request removal of active Cloud copies.
 
 Your connected AI provider processes the information it receives under its own terms and privacy notice. It may be outside the EEA. Read that provider's notice before connecting it; a German Cloud server does not mean that every recipient or backup stays in Germany. The suppliers and transfer information described above apply to their respective functions. Contact us for information about the safeguards applicable to a transfer and how to obtain a copy where available.
 

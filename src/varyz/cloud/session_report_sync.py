@@ -49,7 +49,14 @@ class ReportSync:
         self.config = config
         self.path = journal_path(config)
 
+    def _has_progress(self) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_progress'"
+        ).fetchone() is not None
+
     def projects(self):
+        if not self._has_progress():
+            return {}
         from varyz.cloud.project_selection import confirmed_scopes
 
         counts = {project_name(p): 0 for p in read_journal(self.path)["projects"]}
@@ -63,6 +70,8 @@ class ReportSync:
         return counts
 
     def plan(self, journal=None):
+        if not self._has_progress():
+            return {"changes": [], "blocked": 0}
         from varyz.config import load_config
         from varyz.pipeline.sensitivity import SensitivityGate
         from varyz.session_progress import HistoryQuery, history

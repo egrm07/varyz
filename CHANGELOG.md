@@ -9,6 +9,29 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Varyz network.** One opt-in popup, **Join the Varyz network**, now governs everything
+  Varyz sends. Its single **Share anonymized data** button shares usage counts plus
+  anonymized examples (agent questions and answers, corrections, answered escalations and
+  kept or rejected rules) created after opt-in. The small x, or Escape, means no.
+  Setup starts with sharing off; the popup appears on the first saved rules review after
+  the first 3 conversations and 24 hours, and after a no is offered again at most once,
+  30 days later.
+- Examples are scrubbed on your computer: people, projects, emails, links, paths, numbers
+  and handles become placeholders, and anything holding a credential or withheld text is
+  dropped. `varyz data preview` shows the exact records before anything is sent.
+- `varyz data status | preview | on | off`. Turning sharing off deletes everything your
+  installation shared from the server, retrying until the server confirms.
+- Cloud receiver `/api/contributions`, off by default behind `VARYZ_CONTRIBUTIONS_ENABLED`,
+  with owner-only summary and export. Deletion works even while receipt is off.
+
+### Changed
+
+- Consent version `network-v1`. Earlier counts-only consent keeps sending counts and never
+  sends examples. Anonymized examples may be licensed to AI companies; the privacy notice
+  says so.
+
 ## [0.1.0] - 2026-10-18
 
 ### Fixed
@@ -216,6 +239,26 @@ All notable changes to Varyz are recorded here. The format follows
   supported targets versus 11/26 before, including 10/10 general preferences versus
   0/10. Local-model comparison failed on truncated output; real-archive improvement
   is unmeasured. See `reports/rule_mining_thoroughness_2026-10-17.md`.
+
+- Rules review has a Keep all button in its bottom bar (2026-10-17). It saves
+  the shown suggestions together, preserves edited wording, blocks duplicate
+  submissions and leaves refused suggestions available to retry.
+
+- Setup learning shows an animated activity indicator and elapsed time during
+  preparation, reader startup and quiet reading/merge batches (2026-10-17).
+  Feedback appears immediately after approval and stops when learning pauses,
+  finishes or needs user action. Reduced-motion settings are respected.
+  Once learning finishes, a Review preferences button beside Close setup opens
+  the review page directly; closing setup leaves an open review usable.
+
+- Preference mining retains observations across read batches and processes every
+  bounded merge batch (2026-10-17). Standing preferences and workflows can use
+  explicit single-message evidence; global prohibitions retain their scope and
+  exceptions. Temporary requests and unsupported observations stay out of review.
+  Two fresh controlled evaluation windows recovered 19/24 useful scoped rules
+  versus 8/24 before, with all 19 revised outputs supported; see
+  `reports/rule_mining_trial2_2026-10-17.md` for the failed first trial, remaining
+  misses and limits of this measurement.
 
 - Cloud session reports deployed (2026-10-08): production at cloud.varyzai.com now
   serves `/api/reports/*` and the read-only `session_history` tool. The candidate

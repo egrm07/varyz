@@ -39,7 +39,7 @@ The Dockerfile installs package source plus the `cloud` optional dependencies on
 
 Set secrets using the platform secret manager or an untracked environment file **outside the repository**. To load an external file locally, pass `--env-file C:/private/varyz-cloud.env` before `-f`. `deploy/cloud/.env.example` contains variable names, not credentials. Check the file's ACLs; rendered Compose config and container inspection can expose supplied secrets.
 
-## Optional improvement analytics
+## Optional analytics and Varyz network contributions
 
 Set `VARYZ_ANALYTICS_ENABLED=true` and a random `VARYZ_ANALYTICS_ADMIN_TOKEN` in the
 root-only external environment to enable aggregate receipt. `/api/analytics` accepts
@@ -47,6 +47,12 @@ strict reports without accounts or billing; `/api/analytics/summary` requires th
 token as a Bearer header. Store that token in the owner's OS credential store under
 `varyz-cloud` / `VARYZ_ANALYTICS_ADMIN_TOKEN` for `varyz analytics report`. Consent is
 separate, default-off local setup state. See `docs/ANALYTICS.md` for retention and limits.
+
+`VARYZ_CONTRIBUTIONS_ENABLED=true` additionally accepts anonymized Varyz network examples
+at `/api/contributions` (default false). Deletion through `DELETE /api/contributions`
+works whether or not receipt is enabled. The same owner token protects
+`/api/contributions/summary` and `/api/contributions/export`. Examples are kept until the
+contributor deletes them and may be licensed to AI companies, as the privacy notice says.
 
 ## Persistence and backups
 

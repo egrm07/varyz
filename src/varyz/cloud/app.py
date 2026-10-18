@@ -322,6 +322,7 @@ class Settings:
     shared_varyz_plugin_url: str = ""
     analytics_enabled: bool = False
     analytics_admin_token: str = ""
+    contributions_enabled: bool = False
     database: str = "varyz-cloud.sqlite3"
     public_url: str = "http://127.0.0.1:8787"
     paddle_secret: str = ""
@@ -371,6 +372,9 @@ class Settings:
             shared_varyz_accounts=tuple(filter(
                 None, os.getenv("SHARED_VARYZ_ACCOUNTS", "").split(","))),
             analytics_enabled=os.getenv("VARYZ_ANALYTICS_ENABLED", "false").lower() == "true",
+            contributions_enabled=(
+                os.getenv("VARYZ_CONTRIBUTIONS_ENABLED", "false").lower() == "true"
+            ),
             archive_limit=int(os.getenv("VARYZ_CLOUD_ARCHIVE_LIMIT_BYTES", str(100 * 1024 * 1024))),
             archive_embedding_cache=os.getenv("VARYZ_CLOUD_ARCHIVE_EMBEDDING_CACHE", ""),
             archive_encryption_key=os.getenv("VARYZ_CLOUD_ARCHIVE_ENCRYPTION_KEY", ""),
@@ -586,6 +590,9 @@ def create_app(settings=None):
     from .analytics import register_analytics
 
     register_analytics(app, settings, store)
+    from .contributions import register_contributions
+
+    register_contributions(app, settings, store)
 
     @app.exception_handler(QuotaExceeded)
     async def capacity_exceeded(request, error):

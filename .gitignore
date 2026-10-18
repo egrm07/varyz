@@ -126,3 +126,8 @@ docs/RELEASE_CHECKLIST.md
 docs/SHIPPING.md
 website/
 scripts/site/
+
+# Local build logs and Cloud sync state
+.build-cache-*.log
+config.cloud-reports.json
+config.cloud-reports.lock

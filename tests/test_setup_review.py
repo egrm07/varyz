@@ -44,8 +44,8 @@ def test_review_uses_setup_identity_and_survives_closing_setup(server, monkeypat
         loaded.append(path)
         return config
 
-    def session(actual_client, caller, device):
-        identities.append((actual_client, caller, device))
+    def session(actual_client, caller, device, cfg):
+        identities.append((actual_client, caller, device, cfg))
         return SimpleNamespace(
             token="fixture-review-key",
             kept=0,
@@ -63,7 +63,7 @@ def test_review_uses_setup_identity_and_survives_closing_setup(server, monkeypat
     duplicate = _request(server, "POST", "/api/review", token=token, body={})
     assert json.loads(duplicate[2])["url"] == url
     assert loaded == [server.session.config_path]
-    assert identities == [(client, owner, "fixture-device")]
+    assert identities == [(client, owner, "fixture-device", config)]
     with httpx.Client(trust_env=False) as http:
         response = http.get(url)
         assert response.status_code == 200 and "text/html" in response.headers["content-type"]

@@ -155,23 +155,16 @@ class SetupSession(SetupRun):
     # -- what the page reads ------------------------------------------------------
 
     def plan(self) -> dict[str, Any]:
-        from varyz.analytics import (
-            CONSENT_COPY,
-            CONSENT_COUNTS,
-            CONSENT_MESSAGE,
-            CONSENT_PRIVACY,
-            status,
-        )
+        from varyz.analytics import status
         from varyz.config import ConfigError, load_config
 
+        # Setup never asks about sharing: the Varyz network popup waits for the
+        # owner's first rules review after the trial window (review_web.html).
         sharing = False
         with contextlib.suppress(ConfigError):
             sharing = bool(status(load_config(self.config_path))["consent"])
         return {
-            "analytics": {
-                "sharing": sharing, "description": CONSENT_COPY,
-                "message": CONSENT_MESSAGE, "counts": CONSENT_COUNTS, "privacy": CONSENT_PRIVACY,
-            },
+            "analytics": {"sharing": sharing},
             "config": str(self.config_path),
             "exists": self.config_path.exists(),
             "ai": self.ai_plan,
@@ -670,7 +663,7 @@ class SetupServer(ThreadingHTTPServer):
             cfg = _cfg(self.session.config_path)
             review = ReviewServer(ReviewSession(
                 _resolution_client(cfg), _local_owner_caller(cfg, "owner_knowledge"),
-                cfg.resolution.device_id,
+                cfg.resolution.device_id, cfg,
             ))
             thread = threading.Thread(target=review.serve_forever,
                                       kwargs={"poll_interval": 0.25}, daemon=True,

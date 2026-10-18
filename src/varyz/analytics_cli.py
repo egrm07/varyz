@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from varyz import analytics
+from varyz import analytics, contribute
 from varyz.config import load_config
 
 app = typer.Typer(
@@ -35,12 +35,50 @@ def consent(
 ) -> None:
     if choice not in {"on", "off"}:
         raise typer.BadParameter("choose on or off")
-    if choice == "on":
-        typer.echo(analytics.CONSENT_COPY)
-        if not typer.confirm("Share these optional counts?", default=False):
-            raise typer.Exit(0)
-    analytics.consent(load_config(config), choice == "on")
+    _set_sharing(choice == "on", config)
     show(analytics.status(load_config(config)))
+
+
+def _set_sharing(enabled: bool, config: Path | None) -> None:
+    cfg = load_config(config)
+    if enabled:
+        typer.echo(f"{analytics.CONSENT_TITLE}\n\n{analytics.CONSENT_COPY}")
+        if not typer.confirm("Share anonymized data?", default=False):
+            raise typer.Exit(0)
+    analytics.consent(cfg, enabled)
+    if not enabled:
+        contribute.erase(cfg)
+
+
+data_app = typer.Typer(
+    help="One switch for everything Varyz sends: usage counts and network contributions."
+)
+
+
+@data_app.command("status")
+def data_status(config: ConfigOpt = None) -> None:
+    show(contribute.status(load_config(config)))
+
+
+@data_app.command("preview")
+def data_preview(
+    limit: int = typer.Option(20, "--limit", min=1, max=200), config: ConfigOpt = None
+) -> None:
+    """Show the anonymized examples the next upload would hold. Sends nothing."""
+    show(contribute.preview(load_config(config), limit))
+
+
+@data_app.command("on")
+def data_on(config: ConfigOpt = None) -> None:
+    _set_sharing(True, config)
+    show(contribute.status(load_config(config)))
+
+
+@data_app.command("off")
+def data_off(config: ConfigOpt = None) -> None:
+    """Stop sharing and delete what this computer shared from the server."""
+    _set_sharing(False, config)
+    show(contribute.status(load_config(config)))
 
 
 @app.command("pause")

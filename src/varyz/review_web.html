@@ -137,6 +137,54 @@ button:disabled { opacity: 0.45; cursor: default; }
 .notice { color: var(--muted); font-size: 14px; margin-top: 12px; }
 .bar-inner { max-width: 980px; }
 [hidden] { display: none !important; }
+
+/* The one choice about data Varyz sends, offered once after the owner's first
+   saved review (when analytics.claim_offer says it is due). The native dialog
+   keeps keyboard focus here and makes the page behind it inert. Closing it,
+   with the x or Escape, means no. */
+#analytics-dialog { position: fixed; width: min(620px, calc(100% - 32px)); max-height: calc(100dvh - 32px);
+  padding: clamp(24px, 4vw, 40px); border: 1px solid var(--line); border-radius: 8px;
+  background: var(--night); color: var(--ink); overflow-y: auto; }
+#analytics-dialog::backdrop { background: rgba(0, 0, 0, 0.78); }
+#analytics-dialog[open] { animation: network-in 220ms cubic-bezier(.2, .8, .2, 1); }
+#analytics-dialog[open]::backdrop { animation: network-fade 220ms ease-out; }
+@keyframes network-in { from { opacity: 0; transform: translateY(12px) scale(.97); } }
+@keyframes network-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #analytics-dialog[open], #analytics-dialog[open]::backdrop { animation: none; }
+}
+#analytics-dialog .label { font-family: var(--sans); font-weight: 400; letter-spacing: .14em;
+  text-transform: uppercase; line-height: 1.2; color: var(--signal); margin: 0 44px 16px 0;
+  font-size: 13px; }
+#analytics-dialog #analytics-close { position: absolute; top: 12px; right: 12px; width: 36px;
+  height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent;
+  color: var(--dim); font: 400 22px/1 var(--sans); cursor: pointer; }
+#analytics-dialog #analytics-close:hover { color: var(--ink); }
+#analytics-dialog #analytics-close:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+#analytics-notice { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0; }
+#analytics-title { font: 400 clamp(32px, 5vw, 42px)/1.1 var(--display); margin: 0 0 22px;
+  text-wrap: balance; }
+#analytics-title:focus { outline: none; }
+#analytics-message { font-size: 18px; line-height: 1.5; }
+#analytics-message .question { display: block; margin-bottom: 12px; font: 400 clamp(22px, 3vw, 26px)/1.25 var(--serif);
+  color: var(--ink); text-wrap: balance; }
+#analytics-dialog .privacy-text { color: var(--muted); font-size: 15px; line-height: 1.5;
+  margin: 0 0 16px; text-wrap: pretty; }
+#analytics-signature { color: var(--signal); font-family: var(--serif); margin: 16px 0 24px; }
+#analytics-dialog .hint { color: var(--dim); font-size: 15px; line-height: 1.4; }
+#analytics-dialog .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  margin-top: 24px; }
+#analytics-dialog #analytics-share { min-height: 44px; padding: 0.7em 1.25em; font-size: 16px; }
+#analytics-dialog details { margin: 16px 0; }
+#analytics-dialog summary { color: var(--signal); cursor: pointer; font-size: 15px; }
+#analytics-dialog summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+#analytics-dialog details .privacy-text { margin-top: 12px; }
+@media (max-width: 560px) {
+  #analytics-message { font-size: 16px; }
+  #analytics-signature { font-size: 16px; margin-bottom: 16px; }
+  #analytics-dialog .actions { display: grid; grid-template-columns: 1fr; }
+  #analytics-dialog .actions button { width: 100%; }
+}
 @media (max-width: 560px) {
   main { padding: 28px 16px 170px; }
   .row { flex-direction: column; }
@@ -179,6 +227,23 @@ button:disabled { opacity: 0.45; cursor: default; }
     <button id="close">Done</button>
   </div>
 </div>
+<dialog id="analytics-dialog" aria-labelledby="analytics-title" aria-describedby="analytics-message">
+  <button id="analytics-close" type="button" aria-label="Close without sharing">&times;</button>
+  <p class="label">Varyz network</p>
+  <h2 id="analytics-title" tabindex="-1" autofocus>Join the Varyz network</h2>
+  <p id="analytics-message"></p>
+  <p id="analytics-signature">Egor Menshikov · Creator of Varyz</p>
+  <p id="analytics-notice">Anonymized examples may be licensed to AI companies to improve their models. Turn it off anytime and what you shared is deleted.</p>
+  <details id="analytics-details">
+    <summary>What gets shared</summary>
+    <p class="privacy-text" id="analytics-counts"></p>
+    <p class="privacy-text" id="analytics-privacy"></p>
+  </details>
+  <p class="hint" id="analytics-current">Sharing is currently off.</p>
+  <div class="actions">
+    <button class="primary" id="analytics-share" type="button">Share anonymized data</button>
+  </div>
+</dialog>
 <script>
 "use strict";
 const TOKEN = {{TOKEN}};
@@ -533,6 +598,7 @@ async function saveDecisions(decisions) {
     showError(failed.length ? `${failed.length} not saved: ${failed[0]}` : "");
     $("notice").textContent = result.done.length ? `${result.done.length} change${result.done.length === 1 ? "" : "s"} saved. The status counts are updated.` : "";
     await load();
+    if (result.done.length) offerNetwork();
   } catch (error) {
     showError(error.message);
     paint();
@@ -555,6 +621,59 @@ $("keep-all").addEventListener("click", () => {
   for (const item of shown) choices.set(item.id, "keep");
   saveDecisions(shown.map(item => ({id: item.id, action: "keep", ...(edits.get(item.id) || {})})));
 });
+
+// The Varyz network popup: asked once the owner has saved a review, and only
+// when the server says it is due (after the trial window, 30 days after a no).
+let networkAsked = false;
+let networkAnswered = false;
+async function offerNetwork() {
+  if (networkAsked) return;
+  networkAsked = true;
+  const { offer } = await api("/api/network/offer", {}).catch(() => ({ offer: null }));
+  if (!offer) return;
+  $("analytics-title").textContent = offer.title;
+  // The pitch opens with a question; it gets its own line so it lands first.
+  const cut = offer.message.indexOf("? ") + 1;
+  $("analytics-message").replaceChildren(
+    ...(cut ? [el("strong", {class: "question"}, offer.message.slice(0, cut))] : []),
+    offer.message.slice(cut).trim());
+  $("analytics-counts").textContent = offer.counts;
+  $("analytics-privacy").textContent = offer.privacy;
+  $("analytics-details").open = false;
+  $("analytics-dialog").showModal();
+}
+
+async function answerNetwork(share) {
+  if (networkAnswered) return;
+  networkAnswered = true;
+  $("analytics-dialog").close();
+  try {
+    const { sharing } = await api("/api/network/answer", { share });
+    $("notice").textContent = sharing
+      ? "Sharing is on. Turn it off anytime with varyz data off."
+      : "Sharing stays off. Turn it on anytime with varyz data on.";
+  } catch (error) {
+    showError(`Your sharing choice was not saved: ${error.message}`);
+  }
+}
+
+// The x is the only way to say no, so closing the popup any way declines.
+$("analytics-close").addEventListener("click", () => answerNetwork(false));
+$("analytics-share").addEventListener("click", () => answerNetwork(true));
+$("analytics-dialog").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  answerNetwork(false);
+});
+$("analytics-dialog").addEventListener("keydown", (event) => {
+  if (event.key !== "Tab") return;
+  const first = $("analytics-close"), last = $("analytics-share");
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault(); last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault(); first.focus();
+  }
+});
+$("analytics-dialog").addEventListener("close", () => $("close").focus());
 
 $("close").addEventListener("click", async () => {
   if (saving) return;

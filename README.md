@@ -739,18 +739,28 @@ After editing `scripts/install.ps1` or `scripts/install.sh`, regenerate their
 double-click launchers and local website copies with `python scripts/sync_installers.py`.
 The installer tests compare these copies with their source scripts byte for byte.
 
-## Optional improvement analytics (2026-10-04)
+## The Varyz network (opt-in, 2026-10-18)
 
-Browser setup asks in its own optional popup, with a personal note from Varyz's solo
-developer, **No thanks** and **Share anonymous counts**. Terminal setup asks separately.
-Sharing is off by default; `setup --yes` does not enable it. Reports exclude personal
-content and permanent user identifiers, need no Cloud account and can be stopped at
-any time. See `docs/ANALYTICS.md` for counters, retention and limitations.
+One popup, **Join the Varyz network**, governs everything Varyz sends. Its one button,
+**Share anonymized data**, shares daily usage counts and anonymized examples of how you
+correct your agents (questions, answers, corrections and kept or rejected rules) created
+after you opt in. The small x, or Escape, means no. Setup starts with sharing off and does
+not show it: the popup appears when you first save a rules review after your first 3
+conversations and 24 hours with Varyz, and after a no it is offered again at most once,
+30 days later. Terminal setup asks the same question with a default-no prompt, and
+`setup --yes` never enables it.
+
+Examples are scrubbed on your computer first: people, projects, emails, links, paths,
+numbers and handles become placeholders, and anything holding a credential or withheld
+text is dropped. Cleaning can miss something. Anonymized examples may be licensed to AI
+companies to improve their models; that is how the network is funded. Your chats, files
+and archive never leave. Turning sharing off deletes what you shared from the server.
+See `docs/ANALYTICS.md` and `docs/PRIVACY.md`.
 
 ```powershell
-varyz analytics status
-varyz analytics sync --dry-run
-varyz analytics consent off
+varyz data status
+varyz data preview
+varyz data off
 varyz analytics doctor
 ```
 

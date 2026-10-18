@@ -24,6 +24,7 @@ from rich.table import Column, Table
 from varyz import LEGAL_NOTICE, __version__
 from varyz import connectors as connector_registry
 from varyz.analytics_cli import app as analytics_app
+from varyz.analytics_cli import data_app
 from varyz.cloud.archive_cli import app as archive_cloud_app
 from varyz.cloud.cli import app as cloud_app
 from varyz.config import Config, ConfigError, find_config_file, load_config
@@ -114,6 +115,7 @@ app.add_typer(news_app, name="news")
 app.add_typer(cloud_app, name="cloud")
 cloud_app.add_typer(archive_cloud_app, name="archive")
 app.add_typer(analytics_app, name="analytics")
+app.add_typer(data_app, name="data")
 
 plugin_app = typer.Typer(help="Local plugin adapters: serve, hook and migrate an existing grant.")
 app.add_typer(plugin_app, name="plugin")
@@ -1210,14 +1212,12 @@ def setup(
                 sources.append(cid)
     console.print()
 
-    from varyz.analytics import CONSENT_COPY
+    from varyz.analytics import CONSENT_COPY, CONSENT_TITLE
 
     if not yes:
-        console.print(CONSENT_COPY, markup=False)
+        console.print(f"{CONSENT_TITLE}\n\n{CONSENT_COPY}", markup=False)
         try:
-            run.analytics_choice = typer.confirm(
-                "Share these optional counts with Varyz's creator?", default=False,
-            )
+            run.analytics_choice = typer.confirm("Share anonymized data?", default=False)
         except (typer.Abort, EOFError):
             console.print("No analytics choice given; existing sharing settings are kept.")
     result = run.execute(tuple(agents), tuple(sources))
@@ -2286,7 +2286,7 @@ def rules_review(
     client = _resolution_client(cfg)
     caller = _local_owner_caller(cfg, "owner_knowledge")
     device_id = cfg.resolution.device_id
-    session = ReviewSession(client, caller, device_id)
+    session = ReviewSession(client, caller, device_id, cfg)
     items = sorted(
         _rules_call(session.pending),
         key=lambda item: (not is_trial(item),

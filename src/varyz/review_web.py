@@ -202,10 +202,12 @@ def _view(item: dict[str, Any]) -> dict[str, Any]:
 class ReviewSession:
     """The candidates, and the owner's decisions on them, through the daemon."""
 
-    def __init__(self, client: Any, caller: Any, device_id: str) -> None:
+    def __init__(self, client: Any, caller: Any, device_id: str, cfg: Any = None) -> None:
         self.client = client
         self.caller = caller
         self.device_id = device_id
+        self.cfg = cfg
+        self.offered = False
         self.token = secrets.token_urlsafe(24)
         self.kept = 0
         self.dropped = 0
@@ -306,6 +308,30 @@ class ReviewSession:
                     continue
                 done.append(str(item["id"]))
             return {"done": done, "errors": errors}
+
+
+    def network_offer(self) -> dict[str, str] | None:
+        """The Varyz network popup, once a save has shown what reviewing is worth.
+
+        At most once per review, and only when analytics.claim_offer says it is due.
+        """
+        from varyz import analytics
+
+        with self._lock:
+            if self.cfg is None or self.offered or not analytics.claim_offer(self.cfg):
+                return None
+            self.offered = True
+        return {"title": analytics.CONSENT_TITLE, "message": analytics.CONSENT_MESSAGE,
+                "counts": analytics.CONSENT_COUNTS, "privacy": analytics.CONSENT_PRIVACY}
+
+    def network_answer(self, share: bool) -> bool:
+        """The owner's answer to this review's popup. The x and Escape send no."""
+        from varyz import analytics
+
+        if self.cfg is None or not self.offered:
+            raise PermissionError("no network offer was shown in this review")
+        analytics.consent(self.cfg, share)
+        return bool(analytics.status(self.cfg)["consent"])
 
 
 def _edits(decision: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
@@ -476,6 +502,24 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/close":
             self._json({"closed": True})
             self.server.closed.set()
+            return
+        if path == "/api/network/offer":
+            try:
+                offer = self.server.session.network_offer()
+            except Exception:
+                offer = None  # The offer never gets in the way of review.
+            self._json({"offer": offer})
+            return
+        if path == "/api/network/answer":
+            answer = self._body()
+            share = answer.get("share") if isinstance(answer, dict) else None
+            if not isinstance(share, bool):
+                self._text(HTTPStatus.BAD_REQUEST, "expected {\"share\": true|false}")
+                return
+            try:
+                self._json({"sharing": self.server.session.network_answer(share)})
+            except PermissionError as exc:
+                self._text(HTTPStatus.CONFLICT, str(exc))
             return
         if path != "/api/decide":
             self._text(HTTPStatus.NOT_FOUND, "not found")

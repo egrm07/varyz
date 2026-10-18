@@ -6,7 +6,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-CONSENT_VERSION: Literal["aggregate-v1"] = "aggregate-v1"
+# One opt-in covers counts and network contributions. Counts-only consent from
+# earlier releases still covers counts, never contributions.
+CONSENT_VERSION: Literal["network-v1"] = "network-v1"
+LEGACY_CONSENT: Literal["aggregate-v1"] = "aggregate-v1"
 OperatingSystem = Literal["Windows", "Darwin", "Linux", "Other"]
 
 METRICS = frozenset(
@@ -54,7 +57,7 @@ METRICS = frozenset(
 class AggregateReport(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     schema_version: Literal[1] = 1
-    consent_version: Literal["aggregate-v1"] = CONSENT_VERSION
+    consent_version: Literal["aggregate-v1", "network-v1"] = CONSENT_VERSION
     sample_kind: Literal["usage", "probe"] = "usage"
     report_id: str
     day: str

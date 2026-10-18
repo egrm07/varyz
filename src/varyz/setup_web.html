@@ -175,26 +175,7 @@ td.state.connected { color: var(--signal); }
 .privacy-actions { margin-top: 0.9em; }
 .privacy-actions code { overflow-wrap: anywhere; }
 
-/* A separate, optional choice before setup starts. The native dialog keeps
-   keyboard focus here and makes the page behind it inert. */
-#analytics-dialog { width: min(620px, calc(100% - 32px)); max-height: calc(100dvh - 32px);
-  padding: clamp(24px, 4vw, 40px); border: 1px solid var(--line); border-radius: 8px;
-  background: var(--night); color: var(--ink); overflow-y: auto; }
-#analytics-dialog::backdrop { background: rgba(0, 0, 0, 0.78); }
-#analytics-dialog .label { color: var(--signal); margin: 0 0 16px; font-size: 13px; }
-#analytics-title { font: 400 clamp(32px, 5vw, 42px)/1.1 var(--display); margin: 0 0 22px;
-  text-wrap: balance; }
-#analytics-title:focus { outline: none; }
-#analytics-message { font-size: 18px; line-height: 1.5; }
-#analytics-dialog .privacy-text { font-size: 15px; line-height: 1.5; margin-bottom: 16px; }
-#analytics-signature { color: var(--signal); font-family: var(--serif); margin: 16px 0 24px; }
-#analytics-dialog .actions { gap: 12px; margin-top: 24px; }
-#analytics-dialog button { font-size: 16px; }
-#analytics-dialog details { margin: 16px 0; }
-#analytics-dialog summary { color: var(--signal); cursor: pointer; font-size: 15px; }
-#analytics-dialog summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
-#analytics-dialog details .privacy-text { margin-top: 12px; }
-#analytics-status, #downloads { flex-basis: 100%; }
+#downloads { flex-basis: 100%; }
 
 /* The offer to read the owner's past chats, asked while the downloads run. */
 .extract { margin-top: calc(var(--gap) * 1.3); padding-top: calc(var(--gap) * 0.9);
@@ -236,10 +217,6 @@ td.state.connected { color: var(--signal); }
   .costs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8em; }
   .costs dt { font-size: 28px; }
   .costs dd { font-size: 13px; }
-  #analytics-message { font-size: 16px; }
-  #analytics-signature { font-size: 16px; margin-bottom: 16px; }
-  #analytics-dialog .actions { display: grid; grid-template-columns: 1fr; }
-  #analytics-dialog button { width: 100%; }
 }
 
 footer { margin-top: auto; padding-top: calc(var(--gap) * 1.6); }
@@ -334,7 +311,6 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
     <button id="pause" class="quiet" hidden>Pause download</button>
     <button id="resume" hidden>Resume</button>
     <span class="hint" id="hint"></span>
-    <span class="hint" id="analytics-status" hidden></span>
     <span class="hint" id="downloads" hidden></span>
     <div class="bar" id="wait-bar" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div>
   </div>
@@ -406,22 +382,6 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
     <div class="row"><span class="stat" id="footer-stat">Your archive stays on this machine</span><span class="site">varyzai.com</span></div>
   </footer>
 </main>
-<dialog id="analytics-dialog" aria-labelledby="analytics-title" aria-describedby="analytics-message">
-  <p class="label">Optional</p>
-  <h2 id="analytics-title" tabindex="-1" autofocus>Help me improve Varyz?</h2>
-  <p id="analytics-message"></p>
-  <p id="analytics-signature">Egor Menshikov · Creator of Varyz</p>
-  <details id="analytics-details">
-    <summary>What gets shared</summary>
-    <p class="privacy-text" id="analytics-counts"></p>
-  </details>
-  <p class="privacy-text" id="analytics-privacy"></p>
-  <p class="hint" id="analytics-current"></p>
-  <div class="actions">
-    <button id="analytics-decline" class="quiet" type="button">No thanks</button>
-    <button id="analytics-share" class="quiet" type="button">Share usage counts</button>
-  </div>
-</dialog>
 <script>
 "use strict";
 const TOKEN = {{TOKEN}};
@@ -433,8 +393,6 @@ const DOWNLOADING = "Downloading ";
 let polling = null;
 // A completed page stops progress polling but its review link still needs the server.
 const keepAlive = setInterval(() => { api("/api/ping").catch(() => {}); }, 20000);
-let analyticsSharing = false;
-let analyticsAvailable = false;
 let setupStarting = false;
 let inferenceMode = "conversations";
 // The last state polled, for what the result shows about the reading.
@@ -491,7 +449,6 @@ function choice(name, value, label, what, checked, enabled) {
 }
 
 function renderPlan(plan) {
-  analyticsAvailable = Boolean(plan.analytics);
   if (!plan.ai) throw new Error("Update Varyz to load both AI choices, then reopen setup.");
   const ai = plan.ai;
   // A recommendation is not permission to send chats to cloud AI.
@@ -509,16 +466,6 @@ function renderPlan(plan) {
     return el("li", {}, el("label", {class: "choice"}, input, label));
   }));
   renderAIMode();
-  analyticsSharing = Boolean(plan.analytics?.sharing);
-  $("analytics-message").textContent = "I’m Egor, Varyz’s developer. Usage counts help me find problems.";
-  $("analytics-counts").textContent = [plan.analytics?.counts, plan.analytics?.privacy].filter(Boolean).join(" ");
-  $("analytics-privacy").textContent = "No chats or preferences are shared. Optional; you can turn it off later.";
-  $("analytics-status").textContent = analyticsSharing
-    ? "Optional sharing is on. You can turn it off before setup starts."
-    : "Optional sharing is off. You'll choose before setup starts.";
-  $("analytics-current").textContent = analyticsSharing
-    ? "Sharing is currently on."
-    : "Sharing is currently off.";
   $("config-path").textContent = plan.config;
   $("footer-stat").textContent = "Your archive stays on this device";
   const agents = $("agents");
@@ -628,7 +575,6 @@ function renderState(state) {
   $("setup-heading").textContent = "Setting up";
   renderDownloads(state.finished || state.paused ? null : state.downloads);
   renderExtract(state.extract);
-  if ($("analytics-dialog").open) $("analytics-dialog").close();
   // After a reload the ticks show what the run was given, not the defaults.
   for (const [name, key] of [["agent", "agents"], ["source", "sources"]]) {
     for (const input of document.querySelectorAll(`input[name="${name}"]`)) {
@@ -1048,13 +994,9 @@ async function poll() {
   }
 }
 
-$("go").addEventListener("click", () => {
-  if (!setupStarting) {
-    if (!analyticsAvailable) { startSetup(false); return; }
-    $("analytics-details").open = false;
-    $("analytics-dialog").showModal();
-  }
-});
+// Sharing is not asked here: it starts off, and the Varyz network popup waits
+// for the owner's first rules review after the trial window (review_web.html).
+$("go").addEventListener("click", () => startSetup());
 
 $("ai-continue").addEventListener("click", () => {
   showChoiceStep(2);
@@ -1071,17 +1013,16 @@ $("sources-continue").addEventListener("click", () => {
   $("go").focus();
 });
 
-async function startSetup(sharing) {
+async function startSetup() {
   if (setupStarting) return;
   setupStarting = true;
-  $("analytics-dialog").close();
   showError("");
   const picked = (name) => [...document.querySelectorAll(`input[name="${name}"]:checked`)].map((i) => i.value);
   const controls = [...document.querySelectorAll(".choice input, .link input, .link button, #go")];
   const disabled = controls.map((control) => control.disabled);
   lockChoices();
   try {
-    await api("/api/run", { agents: picked("agent"), sources: picked("source"), analytics: sharing,
+    await api("/api/run", { agents: picked("agent"), sources: picked("source"),
       inference_mode: inferenceMode,
       cloud_conversations: inferenceMode === "conversations" });
   } catch (error) {
@@ -1091,27 +1032,10 @@ async function startSetup(sharing) {
     $("go").focus();
     return;
   }
-  analyticsSharing = sharing;
-  $("analytics-status").textContent = sharing ? "Optional sharing is on." : "Optional sharing is off.";
   polling = setInterval(poll, 700);
   poll();
 }
 
-$("analytics-decline").addEventListener("click", () => startSetup(false));
-$("analytics-share").addEventListener("click", () => startSetup(true));
-$("analytics-dialog").addEventListener("keydown", (event) => {
-  if (event.key !== "Tab") return;
-  const first = $("analytics-details").querySelector("summary"), last = $("analytics-share");
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault(); last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault(); first.focus();
-  }
-});
-// Escape dismisses the popup without submitting setup or changing consent.
-$("analytics-dialog").addEventListener("close", () => {
-  if (!setupStarting) $("go").focus();
-});
 
 $("pause").addEventListener("click", async () => {
   showError("");

@@ -66,6 +66,13 @@ permanent user identifiers are excluded. Browser setup collects consent in a sep
 optional dialog before starting the run; terminal setup asks with a default-no prompt.
 See `docs/ANALYTICS.md` for boundaries and limits.
 
+The Varyz network (2026-10-18) extends that one consent (`network-v1`) to anonymized
+examples. `contribute.py` reads the archive read-only, scrubs text locally and fail-closed
+against `contribution_schema.py`, and queues records in the analytics state database; the
+same daemon tick uploads them. `cloud/contributions.py` stores them keyed by the hash of a
+random contributor key, which also deletes them. Receipt is off unless
+`VARYZ_CONTRIBUTIONS_ENABLED` is set.
+
 Varyz is a local owner-context resolution service. Its product boundary is one call:
 
 ```text

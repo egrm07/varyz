@@ -1,6 +1,7 @@
 # Optional improvement analytics
 
-> Design 2026-10-04. Sharing is off until explicitly selected during setup.
+> Design 2026-10-04, Varyz network added 2026-10-18. Sharing is off until explicitly
+> selected in the one Varyz network popup.
 
 **Varyz sends bounded aggregate counts to its creator, Egor Menshikov, only with consent.**
 The receiver is `https://cloud.varyzai.com/api/analytics`; no Cloud account or subscription
@@ -46,19 +47,64 @@ fabricated and must not be treated as authenticated experiments.
 | `varyz analytics feedback ID corrected --reason wrong_scope` | Explicit outcome for that local resolution ledger ID |
 | `varyz analytics report` | Creator-only server summary using OS credential-store token |
 
-Archive commands accept `--config`. Browser setup opens a separate optional popup when
-the user clicks **Set up Varyz**, before setup starts. Egor's personal note says he is
-the solo developer, counts would help improve Varyz, and no message content reaches him
-through these reports. The network-address caveat stays visible; **What gets shared**
-expands the counter categories and fields.
+Archive commands accept `--config`.
 
-**No thanks** starts setup with sharing off; **Share anonymous counts** starts it with
-explicit consent. Both choices receive the same button styling. Escape closes the popup
-without starting setup or changing consent. Reruns disclose existing consent and allow
-revocation with **No thanks**. Failed start requests leave the page retryable. Terminal
-setup shows the same disclosure and asks separately with a default-no confirmation.
-`setup --yes` never grants analytics consent. Missing optional terminal input preserves
-existing settings.
+### The Varyz network popup
+
+One popup governs everything Varyz sends: these counts and the anonymized examples
+described under **Network contributions** below. Setup does not show it: browser setup
+starts with sharing off and asks nothing. The popup appears in rules review
+(`varyz rules review`, or **Review preferences** after setup), right after the owner's first
+saved review once the trial window is over: more than 3 conversations and at least
+24 hours since Varyz first saw one, the same window that holds back news. It is titled
+**Join the Varyz network**,
+explains that pooled, anonymized examples help everyone's agents repeat fewer mistakes
+and waste fewer tokens, and always shows a short notice that anonymized examples may be
+licensed to AI companies and that turning sharing off deletes what was shared.
+**What gets shared** expands the fields and the scrubbing rules.
+
+There is one button, **Share anonymized data**, which turns sharing on. The small x in
+the top right corner, and Escape, record no: closing means no. The popup is shown once.
+After a no it waits at least 30 days and is offered again at most once, so it is shown at
+most twice per installation; a no given earlier (terminal setup or `varyz data off`)
+counts as the first offer. Anyone who has ever turned sharing on is never shown it again;
+they use `varyz data on` and `varyz data off`. Each showing is recorded in the
+append-only analytics audit as `offer_shown`, which turning sharing on or off never
+clears. Terminal setup shows the same text and asks **Share anonymized data?** with a
+default-no confirmation. `setup --yes` never grants consent. Missing optional terminal
+input preserves existing settings.
+
+Consent is versioned. `network-v1` covers counts and contributions. Installations that
+agreed to the older counts-only text (`aggregate-v1`) keep sending counts and never send
+contributions until they agree to the new text.
+
+## Network contributions
+
+| Command | Effect |
+|---|---|
+| `varyz data status` | Consent, pending examples, last upload/error, deletions still owed |
+| `varyz data preview --limit 20` | The exact scrubbed records the next upload would hold; sends and changes nothing |
+| `varyz data on` | Same disclosure and default-no confirmation as setup |
+| `varyz data off` | Stop all sending, discard unsent data and delete shared examples from the server |
+
+With `network-v1` consent, the daemon also builds examples from archive rows created after
+opt-in and within the last 30 days: corrections (the agent's question, Varyz's answer,
+adopted/overridden/corrected and the owner's correction), answered escalations (tiers
+tried, urgency, seconds to answer), confirmed or revised rules, and rules rejected in
+review. Only `rule` principles are used; vision notes never leave.
+
+Scrubbing is local and fail-closed. Emails, links, file paths, IP addresses, phone-like
+numbers, handles and long hex or ULID identifiers become placeholders, then known project
+names become `[project]` and known people, aliases and the OS username become `[person]`.
+An example is dropped if a credential is found before or after scrubbing, if Varyz
+withheld anything from that answer, or if it fails the strict schema. Cleaning can miss
+something, which the popup says.
+
+Each installation creates a random contributor key; the receiver stores only its SHA-256.
+Uploads run every six hours (one hour after a failure), at most 200 records per batch with
+three retries. Turning sharing off keeps the key in a local erase list and retries
+`DELETE /api/contributions` until the server confirms. Examples are kept on the server
+until deleted; copies already delivered to a licensee cannot be recalled.
 
 ## Persistence and delivery
 
@@ -91,11 +137,21 @@ same payload. Owner totals group by day/version/OS and report count, never user 
 Reports expire after 30 days, cleaned on receipt/report access. Existing encrypted
 backups may retain expired rows until their thirty-day backup rotation completes.
 
+`VARYZ_CONTRIBUTIONS_ENABLED=true` enables receipt of network contributions (default
+false). `DELETE /api/contributions` works even while receipt is off, so deletion is always
+honoured. The contributor key must be 32 to 128 URL-safe characters; the same hashed rate
+limit applies. Capacity is 2,000,000 records, 50,000 per contributor; retried records are
+stored once and never overwritten. The owner token also protects
+`GET /api/contributions/summary` and `GET /api/contributions/export?kind=&after=&limit=`,
+which pages records without contributor IDs.
+
 ## Verification
 
 Offline tests cover consent, history/content exclusion, preview rollback, revocation,
 retry deduplication, outcome distinctions, schema/rate limits, owner authentication and
-end-to-end delivery. Setup/server regression suites and visual review are required.
+end-to-end delivery. Setup/server regression suites and visual review are required:
+`scripts/analytics_preview.py` drives the real review page and popup at 1440x900 and
+390x844 and saves screenshots to `.tmp/analytics-preview`.
 Live receipt and authenticated reporting must be separately verified before claiming
 that the creator can receive data.
 
