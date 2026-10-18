@@ -62,7 +62,10 @@ def data_status(config: ConfigOpt = None) -> None:
 
 @data_app.command("preview")
 def data_preview(
-    limit: int = typer.Option(20, "--limit", min=1, max=200), config: ConfigOpt = None
+    limit: int = typer.Option(
+        20, "--limit", min=1, max=200, help="Maximum number of anonymized examples to preview"
+    ),
+    config: ConfigOpt = None,
 ) -> None:
     """Show the anonymized examples the next upload would hold. Sends nothing."""
     show(contribute.preview(load_config(config), limit))
