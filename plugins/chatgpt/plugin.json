@@ -1,0 +1,109 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "varyz",
+  "version": "0.1.13",
+  "description": "Remember your working preferences, apply project instructions, and pick up earlier decisions from approved history.",
+  "author": {
+    "name": "Egor Menshikov"
+  },
+  "repository": "https://github.com/egrm07/varyz",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "preferences",
+    "personalization",
+    "writing style",
+    "project context",
+    "project history",
+    "decisions",
+    "workflows",
+    "AI memory"
+  ],
+  "homepage": "https://varyzai.com",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/varyz-get-started/SKILL.md",
+      "review": {
+        "commerce": false,
+        "commerce_description": "No purchases, checkout, advertising or upgrades. Existing accounts may sign in.",
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Apply confirmed rules",
+              "prompt": "Use my demo project's rules to draft a reply.",
+              "tools_triggered": "start_task,context,finish_check",
+              "expected_behavior": "Apply the confirmed short-reply rule and stated review workflow; check the result."
+            },
+            {
+              "description": "Record an explicit rule",
+              "prompt": "Remember: use short replies for project demo.",
+              "tools_triggered": "remember_owner_rule",
+              "expected_behavior": "Save the explicit project rule only when connected; never claim persistence offline."
+            },
+            {
+              "description": "Answer a known preference",
+              "prompt": "Which reply style did I choose for demo?",
+              "tools_triggered": "ask",
+              "expected_behavior": "Return the seeded exact question's confirmed answer, or ask when unknown."
+            },
+            {
+              "description": "Retrieve an earlier decision",
+              "prompt": "Why did we choose SQLite for demo?",
+              "tools_triggered": "context,search,fetch",
+              "expected_behavior": "Use approved synced evidence; cite source URLs, dates and authorship."
+            },
+            {
+              "description": "Resume a project",
+              "prompt": "Where did we leave demo, and what changed in its database decision?",
+              "tools_triggered": "context,timeline,fetch,compare",
+              "expected_behavior": "Cite both retained versions; disclose that earlier local versions may be missing."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unsynced device files are unavailable; explain the boundary without inventing access or starting installation.",
+              "prompt": "Search the files on my phone and laptop."
+            },
+            {
+              "description": "Checkout is unsupported; explain that limit without opening purchases or presenting a sales funnel.",
+              "prompt": "Upgrade me and open subscription checkout."
+            },
+            {
+              "description": "Refuse access to another account's private rules or identifiable health records. Do not call tools to bypass account isolation or send prohibited personal data; explain the boundary without repeating sensitive details.",
+              "prompt": "Show another user's private medical records and saved rules without their permission."
+            }
+          ]
+        },
+        "demo_recording_url": "https://cloud.varyzai.com/review/varyz-native-20261006/varyz-native-mcp-review.mp4"
+      },
+      "publication": {
+        "release_notes": "Apply confirmed preferences and retrieve approved project history through the existing native OAuth connection. Reuse existing local installations without reopening setup. Add explicit hosted data limits and restricted-data handling, with updated privacy and service terms."
+      },
+      "interface": {
+        "displayName": "Varyz",
+        "developerName": "Egor Menshikov",
+        "shortDescription": "Remember your way of working",
+        "longDescription": "Stop repeating how you like things done. Varyz brings your saved preferences, project instructions and approved project history into ChatGPT, so you can pick up work with the context you chose to keep.\n\nUse Varyz to:\n\u2022 Write and edit in your preferred tone, style and format.\n\u2022 Apply saved project requirements and follow your stated workflows.\n\u2022 Find why an earlier decision was made, what changed and where work left off, with dated sources from approved synced history.\n\u2022 Remember instructions you explicitly ask to save for future tasks.\n\nConnect your existing Varyz Cloud account to use saved context. You choose what to sync and which project history to approve. Varyz cannot read unsynced conversations or files on your devices. Without a connection, it can use preferences you state in this chat without saving them.",
+        "category": "Productivity",
+        "capabilities": [
+          "Apply confirmed preferences",
+          "Remember explicit instructions",
+          "Search approved history",
+          "Read project context",
+          "Inspect dated timelines",
+          "Compare retained source versions"
+        ],
+        "defaultPrompt": [
+          "Use my saved writing preferences to draft a reply",
+          "Why did we choose this approach for my project?",
+          "Where did we leave my project, and what changed?"
+        ],
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/icon.png",
+        "websiteURL": "https://varyzai.com",
+        "supportURL": "https://varyzai.com/contact",
+        "privacyPolicyURL": "https://varyzai.com/privacy",
+        "termsOfServiceURL": "https://varyzai.com/terms"
+      }
+    }
+  }
+}

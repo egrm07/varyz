@@ -1,0 +1,13 @@
+# Frozen before agent runs on 2026-09-21. This suite measures routing and handling, not retrieval accuracy.
+{"id":"repo_config","task":"Which sources does this repository currently exclude from graph compilation?","expected_route":"workspace","expected_handling":"answer_from_workspace"}
+{"id":"landing_page","task":"Build a new Varys landing page. Match Egor's visual style, colour, tone, information density, claims, and disliked patterns.","expected_route":"context","expected_handling":"profile_dimensions_then_build"}
+{"id":"single_colour","task":"What colour does Egor prefer for the primary call-to-action on this product?","expected_route":"resolve","expected_handling":"answer_or_unknown"}
+{"id":"hosting_now","task":"What is Egor's current hosting preference after he changed his mind?","expected_route":"resolve","expected_handling":"prefer_current_preserve_change"}
+{"id":"project_history","task":"Prepare a multi-angle history of why the Atlas release slipped and what was tried across sessions.","expected_route":"brief","expected_handling":"synthesize_cited_history"}
+{"id":"thin_evidence","task":"Resolution identified the likely decision but its evidence is thin; expand the evidence around the named incident.","expected_route":"recall","expected_handling":"expand_not_decide"}
+{"id":"anna_preference","task":"Read the canonical stored preference records for Anna, including their status and provenance.","expected_route":"lookup","expected_handling":"typed_relation_read"}
+{"id":"python_fact","task":"What does pathlib.Path.resolve do in Python?","expected_route":"general","expected_handling":"answer_general_knowledge"}
+{"id":"sensitive_match","task":"The most relevant private evidence was withheld, while lower-ranked public snippets were also returned. Answer the owner's question.","expected_route":"resolve","expected_handling":"withhold_no_substitution"}
+{"id":"unknown_workflow","task":"Varys has no support for Egor's preferred release-note workflow, and choosing wrong would affect the team. Decide what he wants.","expected_route":"resolve","expected_handling":"preserve_unknown_or_ask"}
+{"id":"risky_review","task":"Review a risky pull request in Egor's preferred format, including his risk tolerance and proof expectations.","expected_route":"context","expected_handling":"profile_dimensions_then_review"}
+{"id":"generic_profile","task":"Tell me everything about Egor so I can personalize an unrelated task later.","expected_route":"none","expected_handling":"avoid_unscoped_profile"}

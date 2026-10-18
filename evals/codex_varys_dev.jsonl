@@ -1,0 +1,9 @@
+# Public-project development cases for Codex routing evaluation. No held-out
+# cases are defined yet; this set is for deciding whether a narrow skill is
+# worth keeping, not for making a replicated product claim.
+{"id":"fork","question":"Why was memoir forked into the Varys project?","expect_groups":[["independent","separate"],["life data","memoir data"]]}
+{"id":"incident","question":"What did indexing the projects folder accidentally ingest, and how broad was the problem?","expect_groups":[["34,898","34898","97%"],["vault","whatsapp","browser"],["rglob"]]}
+{"id":"spend_gate","question":"What guard stops an AdAstra marketing run before it spends money?","expect_groups":[["pre-run gate","run gate"],["step 0","before"],["probe","provider"],["stop","halt","block"]]}
+{"id":"prompt_v8","question":"Why was Varys's semantic extractor prompt changed from v7 to v8?","expect_groups":[["whatsapp"],["few-shot","example"],["privacy","public repository","de-ident"]]}
+{"id":"idempotency","question":"How does Varys sync avoid creating duplicate entries when run twice?","expect_groups":[["source"],["external_id","external id"],["cursor"],["transaction"]]}
+{"id":"unknown","question":"What did Egor eat for breakfast on 12 March 2021?","expect_none":true}

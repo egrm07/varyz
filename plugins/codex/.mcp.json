@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "varyz": {
+      "command": "node",
+      "cwd": ".",
+      "args": [
+        "./runtime/launcher.mjs",
+        "codex"
+      ]
+    }
+  }
+}

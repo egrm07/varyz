@@ -1,0 +1,13 @@
+{"_about": "Fresh replication set for the subject-phrase rule in resolution/domains.py. Written 2026-09-26 after the rule was built on v1 and before it was run on these. Labels are what the owner would mean; do not edit them to fit results."}
+{"task": "Put together a marketing homepage for the memoir command-line tool", "domains": ["website"]}
+{"task": "Draft release notes for the new pip package", "domains": ["docs"]}
+{"task": "Create an HTML changelog page about the Android app's latest version", "domains": ["website", "docs"]}
+{"task": "Refactor the Python script and update its landing page", "domains": ["python-tool", "website"]}
+{"task": "Set up a waitlist page for the Claude API wrapper", "domains": ["website"]}
+{"task": "Write a guide for configuring the cron watchdog", "domains": ["docs"]}
+{"task": "Add pytest coverage for the Gmail connector", "domains": ["python-tool"]}
+{"task": "Build a portfolio site showcasing my iOS and Android apps", "domains": ["website"]}
+{"task": "Make a Vite front-end for the FastAPI service", "domains": ["website"]}
+{"task": "Deploy the static site for the tallyho CLI to production", "domains": ["website", "release"]}
+{"task": "Tune the prompts for the chatbot", "domains": ["ai-integration"]}
+{"task": "Write a blog post about our eval benchmarks", "domains": ["website"]}

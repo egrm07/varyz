@@ -1,0 +1,328 @@
+{
+ "version": 1,
+ "labels_written": "2026-09-25",
+ "role": "held-out: written with the dev set before any run; never tuned on",
+ "definition": "work: the agent is expected to change files, systems or state (make, edit, delete, run, launch, or carry on with work). question: the agent is expected only to reply in chat (answer, explain, advise, report status, check and tell, brainstorm). A request phrased as a question is work; a statement that only gives information is a question. Labels are authored, not from any owner archive.",
+ "items": [
+  {
+   "prompt": "make the footer links open in a new tab",
+   "label": "work"
+  },
+  {
+   "prompt": "add a search box to the docs site",
+   "label": "work"
+  },
+  {
+   "prompt": "the invoice pdf has the wrong vat number, correct it",
+   "label": "work"
+  },
+  {
+   "prompt": "could you split the monolith config into per-env files",
+   "label": "work"
+  },
+  {
+   "prompt": "write unit tests for the date parser",
+   "label": "work"
+  },
+  {
+   "prompt": "the modal doesnt close when you press escape",
+   "label": "work"
+  },
+  {
+   "prompt": "turn the onboarding into three short steps instead of one long page",
+   "label": "work"
+  },
+  {
+   "prompt": "remove the beta badge from the header",
+   "label": "work"
+  },
+  {
+   "prompt": "can we get push notifications working on ios",
+   "label": "work"
+  },
+  {
+   "prompt": "set the default currency to euro",
+   "label": "work"
+  },
+  {
+   "prompt": "generate the app icons for android",
+   "label": "work"
+  },
+  {
+   "prompt": "migrate the notes table to the new schema",
+   "label": "work"
+  },
+  {
+   "prompt": "keep going with the refactor",
+   "label": "work"
+  },
+  {
+   "prompt": "reorder the sidebar so settings is last",
+   "label": "work"
+  },
+  {
+   "prompt": "the api returns 500 when the name has an emoji",
+   "label": "work"
+  },
+  {
+   "prompt": "write a blog post announcing the open source release",
+   "label": "work"
+  },
+  {
+   "prompt": "rerun the benchmark with the new model and save the report",
+   "label": "work"
+  },
+  {
+   "prompt": "drop the telegram connector, we are not using it",
+   "label": "work"
+  },
+  {
+   "prompt": "i'd like the export to include attachments too",
+   "label": "work"
+  },
+  {
+   "prompt": "please clean up the temp files the last run left behind",
+   "label": "work"
+  },
+  {
+   "prompt": "hook the waitlist form up to the mailing list",
+   "label": "work"
+  },
+  {
+   "prompt": "the colours in dark mode are washed out, fix the contrast",
+   "label": "work"
+  },
+  {
+   "prompt": "build a small cli that lists pending approvals",
+   "label": "work"
+  },
+  {
+   "prompt": "change the copy on the cta to start free",
+   "label": "work"
+  },
+  {
+   "prompt": "create a launch checklist in the docs folder",
+   "label": "work"
+  },
+  {
+   "prompt": "lets go with plan b then, set it up",
+   "label": "work"
+  },
+  {
+   "prompt": "the tests take too long, parallelise them",
+   "label": "work"
+  },
+  {
+   "prompt": "cancel the overnight run and restart it with half the batch size",
+   "label": "work"
+  },
+  {
+   "prompt": "ship the fix to staging",
+   "label": "work"
+  },
+  {
+   "prompt": "convert the icons to svg",
+   "label": "work"
+  },
+  {
+   "prompt": "you can delete the backup now",
+   "label": "work"
+  },
+  {
+   "prompt": "the date shows in us format, it should be day first",
+   "label": "work"
+  },
+  {
+   "prompt": "upgrade torch to the cu128 build",
+   "label": "work"
+  },
+  {
+   "prompt": "add a kill switch file that pauses the scheduler",
+   "label": "work"
+  },
+  {
+   "prompt": "do the same for the settings page",
+   "label": "work"
+  },
+  {
+   "prompt": "implement the retry queue we planned",
+   "label": "work"
+  },
+  {
+   "prompt": "make the chart animate in on scroll",
+   "label": "work"
+  },
+  {
+   "prompt": "pin the dependency versions in the lockfile",
+   "label": "work"
+  },
+  {
+   "prompt": "record a short demo gif for the readme",
+   "label": "work"
+  },
+  {
+   "prompt": "yes do it",
+   "label": "work"
+  },
+  {
+   "prompt": "what is the difference between the two sync modes",
+   "label": "question"
+  },
+  {
+   "prompt": "why is the vram usage so high right now",
+   "label": "question"
+  },
+  {
+   "prompt": "how many users signed up this week",
+   "label": "question"
+  },
+  {
+   "prompt": "which font pairs well with inter",
+   "label": "question"
+  },
+  {
+   "prompt": "should the card show the date",
+   "label": "question"
+  },
+  {
+   "prompt": "where does the app store the tokens",
+   "label": "question"
+  },
+  {
+   "prompt": "is it safe to delete the old venv",
+   "label": "question"
+  },
+  {
+   "prompt": "explain the error in the last log",
+   "label": "question"
+  },
+  {
+   "prompt": "what would you charge for the pro tier",
+   "label": "question"
+  },
+  {
+   "prompt": "how are we doing on the launch",
+   "label": "question"
+  },
+  {
+   "prompt": "tell me which tests are flaky",
+   "label": "question"
+  },
+  {
+   "prompt": "do we have any tests for the importer",
+   "label": "question"
+  },
+  {
+   "prompt": "check if the domain is still available and let me know",
+   "label": "question"
+  },
+  {
+   "prompt": "can you tell me what the daemon is doing",
+   "label": "question"
+  },
+  {
+   "prompt": "what happened while i was away",
+   "label": "question"
+  },
+  {
+   "prompt": "give me a few taglines for the landing page",
+   "label": "question"
+  },
+  {
+   "prompt": "is this approach overkill",
+   "label": "question"
+  },
+  {
+   "prompt": "which of the three designs is strongest in your view",
+   "label": "question"
+  },
+  {
+   "prompt": "how long until the gpu is free",
+   "label": "question"
+  },
+  {
+   "prompt": "would it be better to cache embeddings on disk",
+   "label": "question"
+  },
+  {
+   "prompt": "i am not sure the blue fits the brand",
+   "label": "question"
+  },
+  {
+   "prompt": "are the calendar events imported yet",
+   "label": "question"
+  },
+  {
+   "prompt": "what does the doctor command check",
+   "label": "question"
+  },
+  {
+   "prompt": "how much ram does the daemon take idle",
+   "label": "question"
+  },
+  {
+   "prompt": "list the ideas we discussed for b2b",
+   "label": "question"
+  },
+  {
+   "prompt": "could this work without a server",
+   "label": "question"
+  },
+  {
+   "prompt": "what are the risks of open sourcing it now",
+   "label": "question"
+  },
+  {
+   "prompt": "so did the fix actually work",
+   "label": "question"
+  },
+  {
+   "prompt": "remind me what we decided about telemetry",
+   "label": "question"
+  },
+  {
+   "prompt": "any thoughts on the new logo",
+   "label": "question"
+  },
+  {
+   "prompt": "what should i run to update it",
+   "label": "question"
+  },
+  {
+   "prompt": "how accurate is the classifier now",
+   "label": "question"
+  },
+  {
+   "prompt": "is it worth adding a local model",
+   "label": "question"
+  },
+  {
+   "prompt": "which projects use the old config format",
+   "label": "question"
+  },
+  {
+   "prompt": "why did you pick sqlite",
+   "label": "question"
+  },
+  {
+   "prompt": "what is your honest opinion of the landing page",
+   "label": "question"
+  },
+  {
+   "prompt": "how do i give claude bash permission",
+   "label": "question"
+  },
+  {
+   "prompt": "is the nightly job still running",
+   "label": "question"
+  },
+  {
+   "prompt": "what will you do after this",
+   "label": "question"
+  },
+  {
+   "prompt": "how would a recruiter see this project",
+   "label": "question"
+  }
+ ]
+}

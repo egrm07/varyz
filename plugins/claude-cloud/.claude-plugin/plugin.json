@@ -1,0 +1,11 @@
+{
+  "name": "varyz-cloud",
+  "version": "0.1.7",
+  "description": "Apply confirmed preferences and search approved project history.",
+  "author": {
+    "name": "Egor Menshikov"
+  },
+  "repository": "https://github.com/egrm07/varyz",
+  "license": "AGPL-3.0-only",
+  "displayName": "Varyz"
+}

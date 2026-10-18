@@ -1,0 +1,275 @@
+{
+ "version": 1,
+ "labels_written": "2026-09-25",
+ "role": "dev: few-shot examples and centroids come only from this set",
+ "definition": "redo: the task remakes or substantially reworks something already made at this step (start over, a different direction, a replacement version, rethinking it). not: making it for the first time, continuing it, or a small change to what is there. Labels are authored, not from any owner archive.",
+ "workflows": {
+  "website": [
+   "colour",
+   "logo",
+   "page content"
+  ],
+  "product": [
+   "vision",
+   "design",
+   "monetization"
+  ],
+  "app": [
+   "data model",
+   "API",
+   "screens"
+  ],
+  "video": [
+   "script",
+   "storyboard",
+   "edit"
+  ],
+  "docs": [
+   "outline",
+   "draft",
+   "publish"
+  ]
+ },
+ "items": [
+  {
+   "workflow": "website",
+   "task": "redo the logo, the current one feels generic",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "lets start the landing page over with a simpler layout",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "the colours dont work together, pick a whole new palette",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "rebuild the page content around the new vision",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "throw away the hero and do it from scratch",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "the logo needs a completely different direction",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "rewrite all the page copy, its too salesy",
+   "label": "redo"
+  },
+  {
+   "workflow": "website",
+   "task": "make the logo",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "fix the typo in the footer",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "choose the colours for the site",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "nudge the logo a few pixels left",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "write the page content for the about section",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "check the colours again on mobile",
+   "label": "not"
+  },
+  {
+   "workflow": "website",
+   "task": "make the link colour a bit darker",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "rethink the vision, it no longer matches what we built",
+   "label": "redo"
+  },
+  {
+   "workflow": "product",
+   "task": "redesign the whole onboarding flow",
+   "label": "redo"
+  },
+  {
+   "workflow": "product",
+   "task": "scrap the monetization plan and start over",
+   "label": "redo"
+  },
+  {
+   "workflow": "product",
+   "task": "the design doesnt fit the new direction, rework it",
+   "label": "redo"
+  },
+  {
+   "workflow": "product",
+   "task": "write the vision",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "add a line about teams to the vision",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "sketch the first design of the settings screen",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "change the monthly price to 12",
+   "label": "not"
+  },
+  {
+   "workflow": "product",
+   "task": "run the pricing numbers again with the new costs",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "redo the data model, the relations are wrong throughout",
+   "label": "redo"
+  },
+  {
+   "workflow": "app",
+   "task": "rewrite the api in fastapi instead",
+   "label": "redo"
+  },
+  {
+   "workflow": "app",
+   "task": "the screens need another pass from the top, they feel dated",
+   "label": "redo"
+  },
+  {
+   "workflow": "app",
+   "task": "replace the whole data model with an event log",
+   "label": "redo"
+  },
+  {
+   "workflow": "app",
+   "task": "design the data model",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "add a created_at column",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "build the login screen",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "rename the users endpoint",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "run the api tests again",
+   "label": "not"
+  },
+  {
+   "workflow": "app",
+   "task": "continue with the screens",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "rewrite the script, the story doesnt land",
+   "label": "redo"
+  },
+  {
+   "workflow": "video",
+   "task": "redo the storyboard with fewer scenes",
+   "label": "redo"
+  },
+  {
+   "workflow": "video",
+   "task": "re-edit the whole thing to be half as long",
+   "label": "redo"
+  },
+  {
+   "workflow": "video",
+   "task": "write the script for the teaser",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "trim two seconds from the intro",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "storyboard the second half",
+   "label": "not"
+  },
+  {
+   "workflow": "video",
+   "task": "export the edit again at 1080p",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "restructure the outline from scratch",
+   "label": "redo"
+  },
+  {
+   "workflow": "docs",
+   "task": "the draft is off, write it again from a user's view",
+   "label": "redo"
+  },
+  {
+   "workflow": "docs",
+   "task": "overhaul the publish setup, the current one is a mess",
+   "label": "redo"
+  },
+  {
+   "workflow": "docs",
+   "task": "outline the api guide",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "fix the broken link in the draft",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "publish the draft",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "add a faq to the draft",
+   "label": "not"
+  },
+  {
+   "workflow": "docs",
+   "task": "read the draft again and fix typos",
+   "label": "not"
+  }
+ ]
+}

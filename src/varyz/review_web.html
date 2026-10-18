@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<title>Your rules · Varyz</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -10 66 50'%3E%3Cpath fill='%23ffc23d' d='{{MARK_PATH_URL}}'/%3E%3C/svg%3E">
+<style>
+/* The Taste Card's palette and type, filled in when the page is served. One
+   weight throughout: the owner reads thin type. */
+@font-face { font-family: "Varyz Card Serif"; font-weight: 400; font-style: normal;
+  src: url("/fonts/VaryzCardSerif-Regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Varyz Card Serif"; font-weight: 400; font-style: italic;
+  src: url("/fonts/VaryzCardSerif-Italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Varyz Card Sans"; font-weight: 400; font-style: normal;
+  src: url("/fonts/VaryzCardSans-Regular.ttf") format("truetype"); font-display: swap; }
+/* The display face of varyzai.com and Cloud, for titles only; it has no italic. */
+@font-face { font-family: "Marcellus"; font-weight: 400; font-style: normal;
+  src: url("/fonts/marcellus-400.woff2") format("woff2"); font-display: swap; }
+
+:root {
+  --night: {{NIGHT}};
+  --ink: {{INK}};
+  --muted: {{MUTED}};
+  --dim: {{DIM}};
+  --signal: {{SIGNAL}};
+  --line: {{LINE}};
+  --serif: "Varyz Card Serif", {{SERIF_STACK}};
+  --sans: "Varyz Card Sans", {{SANS_STACK}};
+  --display: "Marcellus", var(--serif);
+  --glass: rgba(255, 255, 255, 0.045);
+  --glass-edge: rgba(255, 255, 255, 0.09);
+  --margin: clamp(16px, 5vw, 56px);
+  --gap: clamp(28px, 3.7vw, 40px);
+}
+* { box-sizing: border-box; }
+html { background: var(--night); }
+body { margin: 0; min-height: 100vh; background: var(--night); color: var(--ink);
+  font-family: var(--sans); font-weight: 400; font-size: 17px; line-height: 1.35;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+main { max-width: 1140px; margin: 0 auto; padding: var(--margin) var(--margin) 140px; }
+.brand { display: flex; align-items: baseline; gap: 0.3em; font-family: var(--display);
+  font-size: clamp(24px, 3vw, 32px); line-height: 1; }
+.brand svg { width: 1.1em; height: auto; fill: var(--signal); align-self: center;
+  transform: translateY(-0.06em); overflow: visible; }
+h1 { font-family: var(--display); font-weight: 400; margin: var(--gap) 0 0;
+  font-size: clamp(40px, 5vw, 60px); line-height: 1.04; letter-spacing: -0.03em; }
+.lede { font-family: var(--serif); font-style: italic; color: var(--muted); margin: 0.35em 0 0;
+  font-size: clamp(18px, 2.3vw, 24px); }
+
+section.project { margin-top: var(--gap); }
+.project-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 0.5em 1em; border-bottom: 1px solid var(--line); padding-bottom: 0.45em; }
+.project-head h2 { font-family: var(--display); font-weight: 400; margin: 0;
+  font-size: clamp(26px, 3.4vw, 36px); line-height: 1.1; }
+.project-sub { flex-basis: 100%; order: 3; color: var(--muted); font-size: 14px; }
+.bulk { display: flex; gap: 0.5em; }
+h3 { font-weight: 400; color: var(--dim); font-size: 13px; letter-spacing: 0.08em;
+  text-transform: uppercase; margin: 1.6em 0 0.6em; }
+
+.item { background: var(--glass); border: 1px solid var(--glass-edge); border-radius: 14px;
+  padding: 14px 16px; margin-top: 10px; backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px); transition: border-color 0.15s, opacity 0.15s; }
+.item[data-choice="keep"] { border-color: var(--signal); }
+.item[data-choice="drop"] { opacity: 0.42; }
+.item[data-choice="drop"] .statement { text-decoration: line-through; text-decoration-color: var(--dim); }
+.row { display: flex; gap: 12px; align-items: flex-start; }
+.statement { flex: 1; min-width: 0; font-size: 18px; line-height: 1.35; cursor: text; }
+.edited { color: var(--signal); }
+.editor { display: grid; gap: 10px; margin-top: 4px; }
+.editor label { display: grid; gap: 4px; color: var(--dim); font-size: 13px; letter-spacing: 0.04em; }
+.editor textarea, .editor input { font: inherit; font-size: 17px; color: var(--ink); width: 100%;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-edge); border-radius: 10px;
+  padding: 8px 10px; resize: vertical; }
+.editor textarea:focus, .editor input:focus { outline: 1px solid var(--signal); outline-offset: 0;
+  border-color: transparent; }
+.editor .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.steps { margin: 0.35em 0 0; padding-left: 1.3em; color: var(--muted); }
+.answer { margin-top: 0.3em; font-size: 18px; line-height: 1.35; }
+.why { margin-top: 0.3em; color: var(--muted); font-size: 15px; }
+.correction { margin-top: 0.3em; color: var(--muted); font-size: 15px; }
+.meta { color: var(--dim); font-size: 14px; margin-top: 6px; }
+.meta button { font-size: 14px; }
+.quotes { list-style: none; padding: 0; margin: 8px 0 0; }
+.quotes li { font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 16px;
+  padding-left: 12px; border-left: 1px solid var(--line); margin-top: 6px; overflow-wrap: anywhere; }
+.quotes .when { font-family: var(--sans); font-style: normal; color: var(--dim); font-size: 13px;
+  margin-left: 0.5em; }
+
+.choice { display: flex; gap: 6px; flex-shrink: 0; }
+button { font-family: var(--sans); font-weight: 400; font-size: 15px; color: var(--ink);
+  background: transparent; border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px 13px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible { outline: 1px solid var(--signal); outline-offset: 2px; }
+button.on { background: var(--signal); border-color: var(--signal); color: var(--night); }
+button.drop.on { background: var(--dim); border-color: var(--dim); color: var(--night); }
+button.edit.open { border-color: var(--ink); background: rgba(255, 255, 255, 0.08); }
+button.link { border: 0; padding: 0; color: var(--dim); text-decoration: underline;
+  text-underline-offset: 3px; }
+button.primary { background: var(--signal); border-color: var(--signal); color: var(--night);
+  padding: 9px 20px; font-size: 16px; font-weight: 500; }
+button:disabled { opacity: 0.45; cursor: default; }
+
+.bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px var(--margin);
+  background: rgba(14, 14, 16, 0.72); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  border-top: 1px solid var(--glass-edge); }
+.bar-inner { max-width: 880px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 10px 16px; }
+.count { color: var(--muted); flex: 1; min-width: 12em; }
+.error { color: #ff7a66; }
+.empty { font-family: var(--serif); font-style: italic; color: var(--muted);
+  font-size: clamp(20px, 2.6vw, 28px); margin-top: calc(var(--gap) * 1.5); }
+.statuses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 32px 0 22px; }
+.status-tab { text-align: left; border-radius: 14px; padding: 16px; background: var(--glass); }
+.status-tab[aria-selected="true"] { border-color: var(--signal); background: rgba(255,194,61,.07); }
+.status-tab .number { display: block; font-family: var(--serif); font-size: 32px; margin: 5px 0; }
+.status-tab .hint { display: block; font-size: 12px; color: var(--muted); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.toolbar label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.toolbar .search { flex: 1; min-width: 180px; }
+.toolbar input, .toolbar select { width: 100%; padding: 11px 12px; border-radius: 10px;
+  border: 1px solid var(--line); color: var(--ink); background: var(--night); font: inherit; font-size: 15px; }
+.toolbar select { max-width: 260px; }
+.toolbar input:focus, .toolbar select:focus { outline: 1px solid var(--signal); }
+.view-head { margin-top: 28px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.view-head h2 { font-family: var(--display); font-weight: 400; font-size: 28px; margin: 0 0 6px; }
+.view-head p { color: var(--muted); font-size: 15px; margin: 0; }
+.badge { display: inline-block; font-size: 12px; padding: 3px 9px; border: 1px solid var(--line);
+  border-radius: 6px; margin: 0 0 10px; color: var(--muted); }
+.badge[data-status="live"] { color: #b4d9bd; border-color: #52735b; }
+.badge[data-status="trial"] { color: var(--signal); border-color: #806a36; }
+.badge[data-status="pending"] { color: #bcc8ed; border-color: #576481; }
+.statement, .meta { overflow-wrap: anywhere; }
+.notice { color: var(--muted); font-size: 14px; margin-top: 12px; }
+.bar-inner { max-width: 980px; }
+[hidden] { display: none !important; }
+
+/* The one choice about data Varyz sends, offered once after the owner's first
+   saved review (when analytics.claim_offer says it is due). The native dialog
+   keeps keyboard focus here and makes the page behind it inert. Closing it,
+   with the x or Escape, means no. */
+#analytics-dialog { position: fixed; width: min(620px, calc(100% - 32px)); max-height: calc(100dvh - 32px);
+  padding: clamp(24px, 4vw, 40px); border: 1px solid var(--line); border-radius: 8px;
+  background: var(--night); color: var(--ink); overflow-y: auto; }
+#analytics-dialog::backdrop { background: rgba(0, 0, 0, 0.78); }
+#analytics-dialog[open] { animation: network-in 220ms cubic-bezier(.2, .8, .2, 1); }
+#analytics-dialog[open]::backdrop { animation: network-fade 220ms ease-out; }
+@keyframes network-in { from { opacity: 0; transform: translateY(12px) scale(.97); } }
+@keyframes network-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #analytics-dialog[open], #analytics-dialog[open]::backdrop { animation: none; }
+}
+#analytics-dialog .label { font-family: var(--sans); font-weight: 400; letter-spacing: .14em;
+  text-transform: uppercase; line-height: 1.2; color: var(--signal); margin: 0 44px 16px 0;
+  font-size: 13px; }
+#analytics-dialog #analytics-close { position: absolute; top: 12px; right: 12px; width: 36px;
+  height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent;
+  color: var(--dim); font: 400 22px/1 var(--sans); cursor: pointer; }
+#analytics-dialog #analytics-close:hover { color: var(--ink); }
+#analytics-dialog #analytics-close:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+#analytics-notice { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0; }
+#analytics-title { font: 400 clamp(32px, 5vw, 42px)/1.1 var(--display); margin: 0 0 22px;
+  text-wrap: balance; }
+#analytics-title:focus { outline: none; }
+#analytics-message { font-size: 18px; line-height: 1.5; }
+#analytics-message .question { display: block; margin-bottom: 12px; font: 400 clamp(22px, 3vw, 26px)/1.25 var(--serif);
+  color: var(--ink); text-wrap: balance; }
+#analytics-dialog .privacy-text { color: var(--muted); font-size: 15px; line-height: 1.5;
+  margin: 0 0 16px; text-wrap: pretty; }
+#analytics-signature { color: var(--signal); font-family: var(--serif); margin: 16px 0 24px; }
+#analytics-dialog .hint { color: var(--dim); font-size: 15px; line-height: 1.4; }
+#analytics-dialog .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  margin-top: 24px; }
+#analytics-dialog #analytics-share { min-height: 44px; padding: 0.7em 1.25em; font-size: 16px; }
+#analytics-dialog details { margin: 16px 0; }
+#analytics-dialog summary { color: var(--signal); cursor: pointer; font-size: 15px; }
+#analytics-dialog summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+#analytics-dialog details .privacy-text { margin-top: 12px; }
+@media (max-width: 560px) {
+  #analytics-message { font-size: 16px; }
+  #analytics-signature { font-size: 16px; margin-bottom: 16px; }
+  #analytics-dialog .actions { display: grid; grid-template-columns: 1fr; }
+  #analytics-dialog .actions button { width: 100%; }
+}
+@media (max-width: 560px) {
+  main { padding: 28px 16px 170px; }
+  .row { flex-direction: column; }
+  .bar { padding: 12px 16px; }
+  .bar .count { flex-basis: 100%; min-width: 0; }
+  .statuses { grid-template-columns: repeat(2, 1fr); }
+  .status-tab { padding: 12px; }
+  .toolbar label:not(.search) { flex: 1; min-width: 130px; }
+  .toolbar .search { flex-basis: 100%; }
+  .choice { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header class="brand">
+    <svg viewBox="0 -8 62 42" aria-hidden="true"><path d="{{MARK_PATH}}"/></svg>
+    <span>Varyz</span>
+  </header>
+  <h1>Your rules</h1>
+  <p class="lede">See what agents follow, what is on trial, and what still needs your review.</p>
+  <div class="statuses" id="statuses" role="tablist" aria-label="Rule status"></div>
+  <div class="toolbar">
+    <label class="search">Search rules<input id="search" type="search" placeholder="Find wording, a project, or a source"></label>
+    <label>Applies to<select id="scope"><option value="all">All scopes</option></select></label>
+    <label>Kind<select id="kind"><option value="all">All kinds</option></select></label>
+    <button id="refresh" type="button">Refresh</button>
+  </div>
+  <div class="view-head" id="view-head"></div>
+  <p class="notice" id="notice" role="status" aria-live="polite"></p>
+  <p class="error" id="error" role="alert" hidden></p>
+  <div id="projects"></div>
+  <p class="empty" id="empty" hidden></p>
+</main>
+<div class="bar">
+  <div class="bar-inner">
+    <span class="count" id="count" aria-live="polite"></span>
+    <button class="primary" id="keep-all" disabled>Keep all</button>
+    <button class="primary" id="save" disabled>Save changes</button>
+    <button id="close">Done</button>
+  </div>
+</div>
+<dialog id="analytics-dialog" aria-labelledby="analytics-title" aria-describedby="analytics-message">
+  <button id="analytics-close" type="button" aria-label="Close without sharing">&times;</button>
+  <p class="label">Varyz network</p>
+  <h2 id="analytics-title" tabindex="-1" autofocus>Join the Varyz network</h2>
+  <p id="analytics-message"></p>
+  <p id="analytics-signature">Egor Menshikov · Creator of Varyz</p>
+  <p id="analytics-notice">Anonymized examples may be licensed to AI companies to improve their models. Turn it off anytime and what you shared is deleted.</p>
+  <details id="analytics-details">
+    <summary>What gets shared</summary>
+    <p class="privacy-text" id="analytics-counts"></p>
+    <p class="privacy-text" id="analytics-privacy"></p>
+  </details>
+  <p class="hint" id="analytics-current">Sharing is currently off.</p>
+  <div class="actions">
+    <button class="primary" id="analytics-share" type="button">Share anonymized data</button>
+  </div>
+</dialog>
+<script>
+"use strict";
+const TOKEN = {{TOKEN}};
+const HEADERS = { "X-Varyz-Review": TOKEN };
+const $ = (id) => document.getElementById(id);
+const SLOTS = [
+  ["vision", "Vision"], ["never", "Never"], ["decision", "Decided"],
+  ["rule", "Rules"], ["done", "Done means"], ["workflow", "Workflows"],
+];
+// What an item applies to, as the page groups it: all the owner's work with
+// agents, their taste in everything they build, or one project.
+const WORK = "All your work";
+const PRODUCTS = "Everything you build";
+const GROUPS = {
+  trial: ["Spot-check: already in effect", "Rules varyz put into effect on trial. Keep the right ones; a dropped one stops at once"],
+  work: ["Working with you", "Every task, whatever is being built"],
+  products: ["What you build", "Every project"],
+};
+const choices = new Map();  // id -> "keep" | "drop"
+const edits = new Map();  // id -> { statement, scope, applies_to, name, steps, question, answer } as the owner changed them
+const open = new Set();  // ids whose editor is showing
+let items = [];
+let activeStatus = "live";
+let saving = false;
+const STATUSES = {
+  live: ["Live", "Confirmed · followed now", "These rules are in effect. Agents follow them when their scope and kind of work match the task. Trial rules are listed separately."],
+  trial: ["On trial", "Provisional · followed now", "Agents already follow these rules, but you have not confirmed them for good. Confirm one to make it live, or withdraw it to stop it."],
+  pending: ["Pending", "Suggestions · not followed", "These suggestions are not in effect. Keep or edit the right ones, drop the rest, then save your changes."],
+  withdrawn: ["Withdrawn", "Stopped · not followed", "Withdrawn rules and dropped suggestions stay here for reference. Agents no longer follow them."],
+};
+function visibleItems() {
+  const query = $("search").value.trim().toLocaleLowerCase();
+  return items.filter(item => item.status === activeStatus
+    && ($("scope").value === "all" || item.scope === $("scope").value)
+    && ($("kind").value === "all" || item.slot === $("kind").value)
+    && (!query || [item.statement, item.scope, item.source, item.file, item.why,
+      item.decision?.question, item.decision?.answer, item.workflow?.name,
+      ...(item.workflow?.steps || [])].join(" ").toLocaleLowerCase().includes(query)));
+}
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (key === "class") node.className = value;
+    else if (value === true) node.setAttribute(key, "");
+    else if (value !== false && value != null) node.setAttribute(key, value);
+  }
+  for (const child of children) if (child != null) node.append(child);
+  return node;
+}
+
+function showError(message) {
+  $("error").textContent = message || "";
+  $("error").hidden = !message;
+}
+
+async function api(path, body) {
+  const init = body === undefined
+    ? { headers: HEADERS }
+    : { method: "POST", headers: { ...HEADERS, "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const response = await fetch(path, init);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `${response.status} ${response.statusText}`);
+  return data;
+}
+
+// Where an item applies, as the owner reads and types it.
+function placeName(scope, appliesTo) {
+  if (scope !== "*") return scope;
+  return appliesTo === "products" ? PRODUCTS : WORK;
+}
+function placeOf(name) {
+  const value = name.trim().replace(/\s+/g, " ");
+  const folded = value.toLowerCase();
+  if (folded === PRODUCTS.toLowerCase()) return { scope: "*", applies_to: "products" };
+  if (!value || folded === WORK.toLowerCase()) return { scope: "*", applies_to: "work" };
+  return { scope: value, applies_to: "project" };
+}
+
+// The item as the owner has it now: the candidate with their edits over it.
+function current(item) {
+  const edit = edits.get(item.id) || {};
+  return {
+    statement: edit.statement ?? item.statement,
+    scope: edit.scope ?? item.scope,
+    applies_to: edit.applies_to ?? item.applies_to,
+    name: edit.name ?? (item.workflow ? item.workflow.name : ""),
+    steps: edit.steps ?? (item.workflow ? item.workflow.steps : []),
+    question: edit.question ?? (item.decision ? item.decision.question : ""),
+    answer: edit.answer ?? (item.decision ? item.decision.answer : ""),
+  };
+}
+
+function setEdit(item, field, value, repaint = true) {
+  const edit = { ...(edits.get(item.id) || {}) };
+  const original = { statement: item.statement, scope: item.scope, applies_to: item.applies_to,
+    name: item.workflow ? item.workflow.name : "", steps: item.workflow ? item.workflow.steps : [],
+    question: item.decision ? item.decision.question : "",
+    answer: item.decision ? item.decision.answer : "" }[field];
+  if (JSON.stringify(value) === JSON.stringify(original)) delete edit[field]; else edit[field] = value;
+  if (Object.keys(edit).length) edits.set(item.id, edit); else edits.delete(item.id);
+  if (edits.has(item.id)) choices.set(item.id, "keep");
+  if (repaint) paint();
+}
+
+function setChoice(id, value) {
+  if (choices.get(id) === value) choices.delete(id); else choices.set(id, value);
+  paint();
+}
+
+function keepAllItems() {
+  return visibleItems().filter(item => item.status === "pending");
+}
+
+function paint() {
+  const remaining = keepAllItems();
+  $("keep-all").disabled = saving || remaining.length === 0;
+  $("keep-all").title = `Keep and save all ${remaining.length} shown suggestions`;
+
+  for (const node of document.querySelectorAll(".item")) {
+    const value = choices.get(node.dataset.id) || "";
+    node.dataset.choice = value;
+    node.querySelector("button.keep")?.classList.toggle("on", value === "keep");
+    node.querySelector("button.drop")?.classList.toggle("on", value === "drop");
+  }
+  const kept = [...choices.values()].filter((v) => v === "keep").length;
+  const dropped = choices.size - kept;
+  $("count").textContent = choices.size
+    ? `${choices.size} unsaved change${choices.size === 1 ? "" : "s"} across all views · ${kept} to keep or update, ${dropped} to stop or drop`
+    : "Changes take effect only when you save.";
+  $("save").disabled = choices.size === 0 || saving;
+  for (const control of document.querySelectorAll(".item button, .item input, .item textarea, .bulk button")) control.disabled = saving;
+  for (const item of items) {
+    const node = document.querySelector(`.item[data-id="${CSS.escape(item.id)}"]`);
+    if (node) node.querySelector(".statement").textContent = headline(item);
+    const answer = node && node.querySelector(".answer");
+    if (answer) answer.textContent = current(item).answer;
+    const mark = node && node.querySelector(".edited");
+    if (mark) {
+      const now = current(item);
+      mark.hidden = !edits.has(item.id);
+      const moved = now.scope !== item.scope || now.applies_to !== item.applies_to;
+      mark.textContent = moved ? `edited · moves to ${placeName(now.scope, now.applies_to)}` : "edited";
+    }
+  }
+}
+
+function headline(item) {
+  const now = current(item);
+  if (item.decision) return now.question;
+  return item.workflow ? now.name : now.statement;
+}
+
+function editorNode(item) {
+  const now = current(item);
+  const fields = [];
+  if (item.workflow) {
+    const name = el("input", { type: "text", value: now.name, maxlength: "80" });
+    name.addEventListener("input", () => setEdit(item, "name", name.value.replace(/\s+/g, " ").trim()));
+    const steps = el("textarea", { rows: String(Math.max(3, now.steps.length + 1)) });
+    steps.value = now.steps.join("\n");
+    steps.addEventListener("input", () => setEdit(item, "steps",
+      steps.value.split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean)));
+    fields.push(el("label", {}, "Kind of work", name), el("label", {}, "Steps, one a line", steps));
+  } else if (item.decision) {
+    const question = el("input", { type: "text", value: now.question, maxlength: "300" });
+    question.addEventListener("input", () => setEdit(item, "question", question.value.replace(/\s+/g, " ").trim()));
+    const answer = el("textarea", { rows: "2", maxlength: "500" });
+    answer.value = now.answer;
+    answer.addEventListener("input", () => setEdit(item, "answer", answer.value.replace(/\s+/g, " ").trim()));
+    fields.push(el("label", {}, "Question", question), el("label", {}, "Your answer", answer));
+  } else {
+    const wording = el("textarea", { rows: "3", maxlength: "500" });
+    wording.value = now.statement;
+    wording.addEventListener("input", () => setEdit(item, "statement", wording.value.replace(/\s+/g, " ").trim()));
+    fields.push(el("label", {}, "Wording", wording));
+  }
+  const scope = el("input", { type: "text", list: "projects-list",
+    value: placeName(now.scope, now.applies_to) });
+  scope.addEventListener("input", () => {
+    const place = placeOf(scope.value);
+    setEdit(item, "scope", place.scope, false);
+    setEdit(item, "applies_to", place.applies_to);
+  });
+  fields.push(el("label", {}, item.slot === "vision" || item.slot === "never"
+    ? "Project" : "Applies to", scope));
+  const close = el("button", { type: "button" }, "Done editing");
+  const undo = el("button", { class: "link", type: "button" }, "undo my changes");
+  close.addEventListener("click", () => { open.delete(item.id); render(); });
+  undo.addEventListener("click", () => { edits.delete(item.id); choices.delete(item.id); open.delete(item.id); render(); });
+  return el("div", { class: "editor" }, ...fields, el("div", { class: "actions" }, close, undo));
+}
+
+function itemNode(item) {
+  const editing = open.has(item.id);
+  const statement = el("div", { class: "statement", title: "Click to edit", hidden: editing },
+    headline(item));
+  const body = el("div", { style: "flex:1;min-width:0" }, statement);
+  body.prepend(el("span", { class: "badge", "data-status": item.status }, STATUSES[item.status][0]));
+  if (item.workflow && !editing) {
+    body.append(el("ol", { class: "steps" }, ...current(item).steps.map((step) => el("li", {}, step))));
+  }
+  if (item.decision && !editing) body.append(el("div", { class: "answer" }, current(item).answer));
+  if (item.correction && !editing) {
+    body.append(el("div", { class: "correction" },
+      `An agent ${item.correction.agent_did}; you wanted ${item.correction.wanted}.`));
+  }
+  if (item.why && !editing) body.append(el("div", { class: "why" }, `Because: ${item.why}`));
+  if (editing) body.append(editorNode(item));
+  const quotes = el("ul", { class: "quotes", hidden: true },
+    ...item.quotes.map((q) => el("li", {}, `“${q.quote}”`,
+      q.occurred ? el("span", { class: "when" }, q.occurred) : null)));
+  const meta = el("div", { class: "meta" });
+  const parts = [];
+  if (item.trial) {
+    parts.push(`on trial since ${item.trial.since}`);
+    if (item.trial.signals.length) parts.push(item.trial.signals.join(", "));
+    if (item.scope !== "*") parts.push(item.scope);
+  }
+  if (item.domain) parts.push(item.domain.replace(/-/g, " "));
+  if (item.messages) parts.push(`${item.messages} message${item.messages === 1 ? "" : "s"}`);
+  if (item.corrections) parts.push(`${item.corrections} correction${item.corrections === 1 ? "" : "s"}`);
+  if (item.lifted_from.length) parts.push(`learned in ${item.lifted_from.join(", ")}`);
+  if (item.file) parts.push(item.file);
+  else if (item.source) parts.push(`Source: ${item.source}`);
+  if (item.confirmation === "promoted") parts.push("Confirmed automatically after trial");
+  else if (item.confirmation === "kept") parts.push("Confirmed by you after trial");
+  if (item.created_at && !item.trial) parts.push(`Added ${item.created_at}`);
+  if (item.status === "withdrawn") {
+    parts.push(`Stopped ${item.withdrawn_at}`);
+    if (item.withdrawn_reason) parts.push(item.withdrawn_reason);
+  }
+  meta.append(parts.join(" · "));
+  const links = [];
+  if (!editing && item.status !== "withdrawn") statement.addEventListener("click", () => { open.add(item.id); render(); });
+  if (item.quotes.length) {
+    const toggle = el("button", { class: "link", type: "button" }, "your words");
+    toggle.addEventListener("click", () => { quotes.hidden = !quotes.hidden; });
+    links.push(toggle);
+  }
+  for (const link of links) meta.append(meta.textContent ? " · " : "", link);
+  meta.append(" ", el("span", { class: "edited", hidden: true }, "edited"));
+  body.append(meta, quotes);
+  if (item.status === "withdrawn") return el("div", { class: "item", "data-id": item.id }, body);
+  const keep = el("button", { class: "keep", type: "button", hidden: item.status === "live" }, item.status === "trial" ? "Confirm" : "Keep");
+  const drop = el("button", { class: "drop", type: "button" }, item.status === "pending" ? "Drop" : "Withdraw");
+  const edit = el("button", { class: `edit${editing ? " open" : ""}`, type: "button",
+    "aria-expanded": editing ? "true" : "false" }, "Edit");
+  keep.addEventListener("click", () => setChoice(item.id, "keep"));
+  drop.addEventListener("click", () => setChoice(item.id, "drop"));
+  edit.addEventListener("click", () => {
+    if (editing) open.delete(item.id); else open.add(item.id);
+    render();
+  });
+  return el("div", { class: "item", "data-id": item.id }, el("div", { class: "row" }, body,
+    el("div", { class: "choice" }, keep, edit, drop)));
+}
+
+function render() {
+  const filtered = visibleItems();
+  $("statuses").replaceChildren(...Object.entries(STATUSES).map(([status, [title, hint]]) => {
+    const count = items.filter(item => item.status === status).length;
+    const button = el("button", { class: "status-tab", type: "button", role: "tab",
+      "aria-selected": String(activeStatus === status), "aria-controls": "projects",
+      "aria-label": `${title}, ${count} rules`, tabindex: activeStatus === status ? "0" : "-1" },
+      title, el("span", { class: "number" }, String(count)), el("span", { class: "hint" }, hint));
+    button.addEventListener("click", () => { activeStatus = status; render(); });
+    button.addEventListener("keydown", event => {
+      const keys = Object.keys(STATUSES);
+      let next = keys.indexOf(status);
+      if (event.key === "ArrowRight") next = (next + 1) % keys.length;
+      else if (event.key === "ArrowLeft") next = (next + keys.length - 1) % keys.length;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = keys.length - 1;
+      else return;
+      event.preventDefault(); activeStatus = keys[next]; render();
+      document.querySelector('.status-tab[aria-selected="true"]').focus();
+    });
+    return button;
+  }));
+  $("view-head").replaceChildren(el("h2", {}, `${STATUSES[activeStatus][0]} · ${filtered.length}`), el("p", {}, STATUSES[activeStatus][2]));
+  const groups = new Map();
+  for (const item of filtered) {
+    const key = item.applies_to === "project" ? `project:${item.scope}` : item.applies_to;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  const sections = [];
+  for (const [key, group] of groups) {
+    const [title, sub] = GROUPS[key] || [group[0].scope, "This project only"];
+    const keepAll = el("button", { type: "button" }, "Keep all");
+    const dropAll = el("button", { type: "button" }, "Drop all");
+    keepAll.addEventListener("click", () => { for (const i of group) choices.set(i.id, "keep"); paint(); });
+    dropAll.addEventListener("click", () => { for (const i of group) choices.set(i.id, "drop"); paint(); });
+    const section = el("section", { class: "project" },
+      el("div", { class: "project-head" }, el("h2", {}, title),
+        ["pending", "trial"].includes(activeStatus) ? el("div", { class: "bulk" }, keepAll, dropAll) : null,
+        el("div", { class: "project-sub" }, sub)));
+    if (activeStatus === "trial") { keepAll.textContent = "Confirm shown"; dropAll.textContent = "Withdraw shown"; }
+    else { keepAll.textContent = "Keep shown"; dropAll.textContent = "Drop shown"; }
+    for (const [slot, title] of SLOTS) {
+      const inSlot = group.filter((item) => item.slot === slot);
+      if (!inSlot.length) continue;
+      section.append(el("h3", {}, title), ...inSlot.map(itemNode));
+    }
+    sections.push(section);
+  }
+  const projects = new Set(items.filter((item) => item.scope !== "*").map((item) => item.scope));
+  sections.push(el("datalist", { id: "projects-list" },
+    ...[WORK, PRODUCTS, ...[...projects].sort()].map((name) => el("option", { value: name }))));
+  const focused = document.activeElement && document.activeElement.closest(".editor") ? null : window.scrollY;
+  $("projects").replaceChildren(...sections);
+  if (focused !== null) window.scrollTo(0, focused);
+  $("empty").hidden = filtered.length > 0;
+  const filteredOut = items.some(item => item.status === activeStatus);
+  $("empty").textContent = filteredOut ? "No rules match these filters." : {
+    live: "No confirmed rules yet. Review pending suggestions to add your rules.",
+    trial: "No rules are currently on trial.", pending: "Nothing waiting for your review.",
+    withdrawn: "No withdrawn rules or dropped suggestions.",
+  }[activeStatus];
+  paint();
+}
+
+async function load() {
+  try {
+    const data = await api("/api/items");
+    items = data.items;
+    const scopeValue = $("scope").value;
+    $("scope").replaceChildren(el("option", { value: "all" }, "All scopes"),
+      el("option", { value: "*" }, "All projects"),
+      ...[...new Set(items.filter(item => item.scope !== "*").map(item => item.scope))].sort()
+        .map(scope => el("option", { value: scope }, scope)));
+    if ([...$("scope").options].some(option => option.value === scopeValue)) $("scope").value = scopeValue;
+    for (const map of [choices, edits]) {
+      for (const id of [...map.keys()]) if (!items.some((i) => i.id === id)) map.delete(id);
+    }
+    for (const id of [...open]) if (!items.some((i) => i.id === id)) open.delete(id);
+    render();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function saveDecisions(decisions) {
+  if (saving) return;
+  saving = true; paint();
+  try {
+    const result = await api("/api/decide", { decisions });
+    for (const id of result.done) choices.delete(id);
+    for (const id of result.done) { edits.delete(id); open.delete(id); }
+    const failed = Object.values(result.errors || {});
+    showError(failed.length ? `${failed.length} not saved: ${failed[0]}` : "");
+    $("notice").textContent = result.done.length ? `${result.done.length} change${result.done.length === 1 ? "" : "s"} saved. The status counts are updated.` : "";
+    await load();
+    if (result.done.length) offerNetwork();
+  } catch (error) {
+    showError(error.message);
+    paint();
+  } finally {
+    saving = false; paint();
+  }
+}
+
+$("save").addEventListener("click", () => {
+  const decisions = [...choices].map(([id, action]) => (
+    action === "keep" ? { id, action, ...(edits.get(id) || {}) } : { id, action }
+  ));
+  saveDecisions(decisions);
+});
+
+$("keep-all").addEventListener("click", () => {
+  if (saving) return;
+  const shown = keepAllItems();
+  if (!shown.length) return;
+  for (const item of shown) choices.set(item.id, "keep");
+  saveDecisions(shown.map(item => ({id: item.id, action: "keep", ...(edits.get(item.id) || {})})));
+});
+
+// The Varyz network popup: asked once the owner has saved a review, and only
+// when the server says it is due (after the trial window, 30 days after a no).
+let networkAsked = false;
+let networkAnswered = false;
+async function offerNetwork() {
+  if (networkAsked) return;
+  networkAsked = true;
+  const { offer } = await api("/api/network/offer", {}).catch(() => ({ offer: null }));
+  if (!offer) return;
+  $("analytics-title").textContent = offer.title;
+  // The pitch opens with a question; it gets its own line so it lands first.
+  const cut = offer.message.indexOf("? ") + 1;
+  $("analytics-message").replaceChildren(
+    ...(cut ? [el("strong", {class: "question"}, offer.message.slice(0, cut))] : []),
+    offer.message.slice(cut).trim());
+  $("analytics-counts").textContent = offer.counts;
+  $("analytics-privacy").textContent = offer.privacy;
+  $("analytics-details").open = false;
+  $("analytics-dialog").showModal();
+}
+
+async function answerNetwork(share) {
+  if (networkAnswered) return;
+  networkAnswered = true;
+  $("analytics-dialog").close();
+  try {
+    const { sharing } = await api("/api/network/answer", { share });
+    $("notice").textContent = sharing
+      ? "Sharing is on. Turn it off anytime with varyz data off."
+      : "Sharing stays off. Turn it on anytime with varyz data on.";
+  } catch (error) {
+    showError(`Your sharing choice was not saved: ${error.message}`);
+  }
+}
+
+// The x is the only way to say no, so closing the popup any way declines.
+$("analytics-close").addEventListener("click", () => answerNetwork(false));
+$("analytics-share").addEventListener("click", () => answerNetwork(true));
+$("analytics-dialog").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  answerNetwork(false);
+});
+$("analytics-dialog").addEventListener("keydown", (event) => {
+  if (event.key !== "Tab") return;
+  const first = $("analytics-close"), last = $("analytics-share");
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault(); last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault(); first.focus();
+  }
+});
+$("analytics-dialog").addEventListener("close", () => $("close").focus());
+
+$("close").addEventListener("click", async () => {
+  if (saving) return;
+  if (choices.size && !confirm("Leave without saving what you picked?")) return;
+  await api("/api/close", {}).catch(() => {});
+  document.body.replaceChildren(el("main", {}, el("p", { class: "empty" }, "Rules view closed. You can close this tab.")));
+});
+
+for (const [value, label] of SLOTS) $("kind").append(el("option", { value }, label));
+$("search").addEventListener("input", render);
+$("scope").addEventListener("change", render);
+$("kind").addEventListener("change", render);
+$("refresh").addEventListener("click", async () => {
+  if (saving) return;
+  showError("");
+  $("refresh").disabled = true;
+  try { await load(); } finally { $("refresh").disabled = false; }
+});
+
+// The server stops after a while without a word from the page; reading is not idle.
+setInterval(() => { api("/api/ping").catch(() => {}); }, 60_000);
+load();
+</script>
+</body>
+</html>

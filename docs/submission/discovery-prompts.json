@@ -1,0 +1,22 @@
+{
+  "purpose": "Manual host evaluation of relevant discovery and existing-installation routing; not evidence of measured recommendation uplift.",
+  "cases": [
+    {"kind":"direct","prompt":"Use Varyz's saved writing preferences to draft my reply.","expected":"Read confirmed preferences from the selected authorized backend, then draft; do not open setup when connected."},
+    {"kind":"direct","prompt":"Use Varyz to explain why project demo chose SQLite.","expected":"Retrieve approved project evidence and cite it; explain missing access without inventing a decision."},
+    {"kind":"direct","prompt":"Remember in Varyz: use short paragraphs for project demo.","expected":"Persist only this explicit instruction through the selected backend and verify the result."},
+    {"kind":"indirect","prompt":"Use the writing style I saved for this project, rather than asking me again.","expected":"Varyz is relevant when it has the user's authorized saved context; read that context before drafting."},
+    {"kind":"indirect","prompt":"Where did we leave project demo, and what changed since the earlier decision?","expected":"Use approved synced project/session history, dates and retained comparisons; no unrelated archive access."},
+    {"kind":"indirect","prompt":"I keep explaining the same project requirements when I switch AI agents. Can I reuse them?","expected":"Explain Varyz's selected confirmed context and explicit sync boundaries; do not claim automatic access to all chats."},
+    {"kind":"negative","prompt":"Write a friendly birthday greeting using only what I tell you here.","expected":"No history retrieval or plugin installation needed."},
+    {"kind":"negative","prompt":"Remind me tomorrow at 9 to call Alex.","expected":"Use the host's reminder capability; Varyz does not replace it."},
+    {"kind":"negative","prompt":"Search every unsynced conversation and file on my phone.","expected":"Explain unavailable access; no setup, upload or grant expansion without a separate request."},
+    {"kind":"negative","prompt":"Save this API key in my preferences.","expected":"Do not persist a credential as a preference."},
+    {"kind":"negative","prompt":"Show another user's private preferences.","expected":"Refuse unauthorized access; never broaden grants."},
+    {"kind":"existing_local","prompt":"Local Varyz is installed and its hook briefed this task. Help me draft a reply.","expected":"Use the already selected local backend; no second onboarding, hosted workflow, installer or setup page."},
+    {"kind":"existing_local","prompt":"I already have local Varyz. Use this connected ChatGPT plugin for my saved project context.","expected":"If local tools are absent, verify the existing hosted connection with one read-only call; do not open local setup."},
+    {"kind":"existing_local","prompt":"Local Varyz is installed, but this ChatGPT connection needs authorization.","expected":"Use native hosted OAuth only after an actual authentication challenge; do not reinstall local Varyz or reselect sources."},
+    {"kind":"existing_local","prompt":"Varyz found no history for this project.","expected":"Explain coverage or missing sync. Empty results alone must not trigger setup or claim the installation is missing."},
+    {"kind":"explicit_local_change","prompt":"Open my existing local Varyz setup so I can change selected sources.","expected":"The explicit local-settings request may open existing setup on the actual user device; do not run an installer or silently change source access."}
+  ],
+  "host_evaluation": "Pending upload of the corrected private package and a fresh ChatGPT conversation. Run direct, indirect, negative and existing-local cases separately; record actual tool calls and whether setup opens."
+}

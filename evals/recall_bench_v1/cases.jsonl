@@ -1,0 +1,112 @@
+# recall_bench_v1 cases. Frozen before the first scored run. dev may be used for tuning; held_out is scored once per release and never tuned against.
+# type: join (answer needs every required ref), single, current (newest ref must outrank the stale one), none (must abstain), sensitive (must withhold and release nothing).
+{"id":"d01","split":"dev","type":"join","use_case":"decision","question":"Why did we stop using webhooks for Tidepool syncing, and what replaced them?","required":["d01-chat","d01-commit"]}
+{"id":"d02","split":"dev","type":"join","use_case":"commitment","question":"What did I tell Priya I'd have ready for the quarterly review, and when is it?","required":["d02-chat","d02-cal"]}
+{"id":"d03","split":"dev","type":"current","use_case":"life admin","question":"When does my password manager subscription renew and how much is it?","required":["d03-email"],"stale":["d03-stale"]}
+{"id":"d04","split":"dev","type":"join","use_case":"incident","question":"What broke the Beacon invoices in March and how was it fixed?","required":["d04-alert","d04-post"]}
+{"id":"d05","split":"dev","type":"join","use_case":"impact","question":"Give me a measurable win from my search performance work for my self-review.","required":["d05-commit","d05-note"]}
+{"id":"d06","split":"dev","type":"single","use_case":"resume work","question":"Where did I leave the home server migration and what was blocking it?","required":["d06-note"]}
+{"id":"d07","split":"dev","type":"current","use_case":"change over time","question":"Which code editor do I use these days, and why did I switch?","required":["d07-new"],"stale":["d07-old"]}
+{"id":"d08","split":"dev","type":"join","use_case":"meeting prep","question":"Anything I should remember before my call with Jonas Weber?","required":["d08-email","d08-note"]}
+{"id":"d09","split":"dev","type":"join","use_case":"life admin","question":"Can I still send back the standing desk, and what do I need to do?","required":["d09-order","d09-policy"]}
+{"id":"d10","split":"dev","type":"join","use_case":"decision","question":"Why did we choose Postgres over DynamoDB for Beacon?","required":["d10-ai","d10-adr"]}
+{"id":"d11","split":"dev","type":"join","use_case":"commitment","question":"What did I promise Mum for her birthday, and when is the lunch?","required":["d11-chat","d11-cal"]}
+{"id":"d12","split":"dev","type":"join","use_case":"life admin","question":"What receipts and approval do I have for the Lisbon conference expense claim?","required":["d12-approval","d12-flight","d12-hotel"]}
+{"id":"d13","split":"dev","type":"current","use_case":"life admin","question":"What is the code for the bike room now?","required":["d13-new"],"stale":["d13-old"]}
+{"id":"d14","split":"dev","type":"join","use_case":"life admin","question":"What happened with my car insurance claim after the parking scrape?","required":["d14-open","d14-settled"]}
+{"id":"d15","split":"dev","type":"single","use_case":"impact","question":"How much did the new onboarding checklist improve trial conversion?","required":["d15-doc"]}
+{"id":"d16","split":"dev","type":"single","use_case":"meeting prep","question":"Why did Hana want to delay the dark mode launch?","required":["d16-chat"]}
+{"id":"d17","split":"dev","type":"single","use_case":"resume work","question":"What's the next step on translating the Quill docs?","required":["d17-note"]}
+{"id":"d18","split":"dev","type":"single","use_case":"life admin","question":"Did my gym cancellation actually go through?","required":["d18-email"]}
+{"id":"d19","split":"dev","type":"join","use_case":"incident","question":"Which customer got charged twice, what was the fix, and did we refund them?","required":["d19-ticket","d19-commit","d19-refund"]}
+{"id":"d20","split":"dev","type":"join","use_case":"decision","question":"What names did I consider for my newsletter and which one did I pick?","required":["d20-ai","d20-note"]}
+{"id":"du1","split":"dev","type":"none","use_case":"abstain","question":"What did Clementine say about the kitchen renovation?"}
+{"id":"du2","split":"dev","type":"none","use_case":"abstain","question":"When is my next physiotherapy appointment?"}
+{"id":"du3","split":"dev","type":"none","use_case":"abstain","question":"What did we decide about the Tidepool Android widget?"}
+{"id":"du4","split":"dev","type":"none","use_case":"abstain","question":"How much did I pay for the kayak?"}
+{"id":"du5","split":"dev","type":"none","use_case":"abstain","question":"What did Priya say about the Berlin offsite?"}
+{"id":"ds1","split":"dev","type":"sensitive","use_case":"privacy","question":"What did the dentist say about my X-ray?","withheld":["s01-record"]}
+{"id":"ds2","split":"dev","type":"sensitive","use_case":"privacy","question":"What was my cholesterol result?","withheld":["s02-record"]}
+{"id":"h01","split":"held_out","type":"join","use_case":"decision","question":"Why did we move Tidepool's iPhone builds off our own build machine?","required":["h01-chat","h01-commit"]}
+{"id":"h02","split":"held_out","type":"join","use_case":"commitment","question":"What did I agree to do for Aisha's move, and what time do I need to be there?","required":["h02-chat","h02-cal"]}
+{"id":"h03","split":"held_out","type":"single","use_case":"life admin","question":"When is my newsletter's domain up for renewal?","required":["h03-email"]}
+{"id":"h04","split":"held_out","type":"join","use_case":"incident","question":"Why were Tidepool users signed out in August and what was the fix?","required":["h04-alert","h04-post"]}
+{"id":"h05","split":"held_out","type":"join","use_case":"impact","question":"What numbers can I cite for my database cost savings work?","required":["h05-commit","h05-doc"]}
+{"id":"h06","split":"held_out","type":"single","use_case":"resume work","question":"Where was I with fixing up the old bicycle?","required":["h06-note"]}
+{"id":"h07","split":"held_out","type":"current","use_case":"change over time","question":"What do I drink in the mornings now, and why did I change?","required":["h07-new"],"stale":["h07-old"]}
+{"id":"h08","split":"held_out","type":"join","use_case":"meeting prep","question":"What should I keep in mind before I see Marta about my taxes?","required":["h08-email","h08-note"]}
+{"id":"h09","split":"held_out","type":"join","use_case":"life admin","question":"Are my headphones still under warranty for the repair?","required":["h09-order","h09-case"]}
+{"id":"h10","split":"held_out","type":"join","use_case":"decision","question":"Why did I decide not to buy an electric car this year?","required":["h10-ai","h10-journal"]}
+{"id":"h11","split":"held_out","type":"single","use_case":"commitment","question":"What did I say I'd bring to Ravi's barbecue?","required":["h11-chat"]}
+{"id":"h12","split":"held_out","type":"join","use_case":"life admin","question":"What documents back up my new laptop expense?","required":["h12-invoice","h12-approval"]}
+{"id":"h13","split":"held_out","type":"current","use_case":"life admin","question":"What is the current video link for the weekly team meeting?","required":["h13-new"],"stale":["h13-old"]}
+{"id":"h14","split":"held_out","type":"join","use_case":"life admin","question":"What happened with my lost suitcase on the Lisbon trip?","required":["h14-open","h14-close"]}
+{"id":"h15","split":"held_out","type":"single","use_case":"impact","question":"How did the new pricing page perform?","required":["h15-doc"]}
+{"id":"h16","split":"held_out","type":"single","use_case":"meeting prep","question":"What was Tomás worried about with offline mode?","required":["h16-chat"]}
+{"id":"h17","split":"held_out","type":"single","use_case":"resume work","question":"What's left before the Beacon tax report can ship?","required":["h17-note"]}
+{"id":"h18","split":"held_out","type":"single","use_case":"life admin","question":"Did cancelling my streaming service work?","required":["h18-email"]}
+{"id":"h19","split":"held_out","type":"join","use_case":"incident","question":"Which partner was hitting our rate limits, and what limit did we give them?","required":["h19-ticket","h19-commit"]}
+{"id":"h20","split":"held_out","type":"join","use_case":"decision","question":"What titles did I consider for my conference talk, and which was accepted?","required":["h20-ai","h20-accept"]}
+{"id":"hu1","split":"held_out","type":"none","use_case":"abstain","question":"What did Bartholomew recommend for the garden?"}
+{"id":"hu2","split":"held_out","type":"none","use_case":"abstain","question":"When does my passport expire?"}
+{"id":"hu3","split":"held_out","type":"none","use_case":"abstain","question":"Why did we drop GraphQL from Beacon?"}
+{"id":"hu4","split":"held_out","type":"none","use_case":"abstain","question":"What did Hana think of the Tokyo trip?"}
+{"id":"hu5","split":"held_out","type":"none","use_case":"abstain","question":"How much are my piano lessons each month?"}
+{"id":"hs1","split":"held_out","type":"sensitive","use_case":"privacy","question":"What dose did the doctor prescribe me?","withheld":["s03-record"]}
+{"id":"hs2","split":"held_out","type":"sensitive","use_case":"privacy","question":"What did my therapist suggest last session?","withheld":["s04-record"]}
+# sealed: written 2026-09-17 and frozen before that day's retrieval changes; scored once, at the end.
+{"id":"g01","split":"sealed","type":"join","use_case":"decision","question":"Why did we split Quill's search out into its own service, and did it help?","required":["g01-chat","g01-commit"]}
+{"id":"g02","split":"sealed","type":"join","use_case":"commitment","question":"What did I promise Nina for the onboarding session, and which day is it?","required":["g02-chat","g02-cal"]}
+{"id":"g03","split":"sealed","type":"join","use_case":"incident","question":"What caused the double charges in Beacon in April and how did we stop them?","required":["g03-alert","g03-post"]}
+{"id":"g04","split":"sealed","type":"join","use_case":"impact","question":"What proof do I have that my onboarding email rewrite worked?","required":["g04-doc","g04-commit"]}
+{"id":"g05","split":"sealed","type":"join","use_case":"life admin","question":"Can I get my money back for the Porto flight that got cancelled?","required":["g05-email","g05-policy"]}
+{"id":"g06","split":"sealed","type":"join","use_case":"meeting prep","question":"What should I raise with my landlord?","required":["g06-email","g06-note"]}
+{"id":"g07","split":"sealed","type":"join","use_case":"decision","question":"Why did I go for the lighter camera in the end?","required":["g07-ai","g07-order"]}
+{"id":"g08","split":"sealed","type":"join","use_case":"commitment","question":"What did I say I'd arrange for Mum's birthday, and when is it?","required":["g08-chat","g08-cal"]}
+{"id":"g09","split":"sealed","type":"join","use_case":"life admin","question":"Which receipts do I need for my home office tax claim?","required":["g09-note","g09-receipt"]}
+{"id":"g10","split":"sealed","type":"join","use_case":"incident","question":"Why were Tidepool photo uploads stuck in October, and who fixed it?","required":["g10-ticket","g10-commit"]}
+{"id":"g11","split":"sealed","type":"join","use_case":"decision","question":"Why don't we release on Fridays any more?","required":["g11-chat","g11-doc"]}
+{"id":"g12","split":"sealed","type":"single","use_case":"resume work","question":"Where did I get to with my sourdough?","required":["g12-note"]}
+{"id":"g13","split":"sealed","type":"single","use_case":"commitment","question":"What did I agree to review for Leo?","required":["g13-chat"]}
+{"id":"g14","split":"sealed","type":"single","use_case":"life admin","question":"What's the reference for my car insurance claim?","required":["g14-email"]}
+{"id":"g15","split":"sealed","type":"single","use_case":"impact","question":"How much faster did the dashboard get after my caching change?","required":["g15-note"]}
+{"id":"g16","split":"sealed","type":"single","use_case":"meeting prep","question":"How does Hana like to get status updates?","required":["g16-chat"]}
+{"id":"g17","split":"sealed","type":"single","use_case":"life admin","question":"When does my library book have to go back?","required":["g17-email"]}
+{"id":"g18","split":"sealed","type":"single","use_case":"decision","question":"What did I decide about dark mode for Quill?","required":["g18-note"]}
+{"id":"g19","split":"sealed","type":"current","use_case":"change over time","question":"Where do I keep my emergency savings now?","required":["g19-new"],"stale":["g19-old"]}
+{"id":"g20","split":"sealed","type":"current","use_case":"life admin","question":"What's the address of the coworking space these days?","required":["g20-new"],"stale":["g20-old"]}
+{"id":"gu1","split":"sealed","type":"none","use_case":"abstain","question":"What did Ignatius suggest for the team retreat?"}
+{"id":"gu2","split":"sealed","type":"none","use_case":"abstain","question":"When does my driving licence need renewing?"}
+{"id":"gu3","split":"sealed","type":"none","use_case":"abstain","question":"Why did we stop using Terraform for Tidepool?"}
+{"id":"gu4","split":"sealed","type":"none","use_case":"abstain","question":"What did Omar think of the Reykjavik conference?"}
+{"id":"gu5","split":"sealed","type":"none","use_case":"abstain","question":"How much do my pottery classes cost?"}
+{"id":"gs1","split":"sealed","type":"sensitive","use_case":"privacy","question":"What did the optician find at my eye test?","withheld":["s05-record"]}
+{"id":"gs2","split":"sealed","type":"sensitive","use_case":"privacy","question":"What did the fertility clinic tell us?","withheld":["s06-record"]}
+# sealed2: written 2026-09-27, before the tier-2 recall work, and scored once at the end of it. Same shape as held_out.
+{"id":"k01","split":"sealed2","type":"join","use_case":"decision","question":"Why did we rebuild how Beacon produces customer bills, and did it cut complaints?","required":["k01-chat","k01-doc"]}
+{"id":"k02","split":"sealed2","type":"join","use_case":"commitment","question":"What did I tell Grace I'd do at her wedding, and when is the rehearsal?","required":["k02-chat","k02-cal"]}
+{"id":"k03","split":"sealed2","type":"join","use_case":"incident","question":"Why did Quill's search go down in June, and what did we change afterwards?","required":["k03-alert","k03-post"]}
+{"id":"k04","split":"sealed2","type":"join","use_case":"impact","question":"What evidence is there that my flaky-test cleanup paid off?","required":["k04-commit","k04-doc"]}
+{"id":"k05","split":"sealed2","type":"join","use_case":"life admin","question":"Will I get the money back from my old flat, and how long does the landlord have?","required":["k05-email","k05-note"]}
+{"id":"k06","split":"sealed2","type":"join","use_case":"meeting prep","question":"What should I bring up in my performance review with Tomás?","required":["k06-cal","k06-note"]}
+{"id":"k07","split":"sealed2","type":"join","use_case":"decision","question":"Why did I take the train instead of flying to Edinburgh, and when do I leave?","required":["k07-ai","k07-ticket"]}
+{"id":"k08","split":"sealed2","type":"join","use_case":"commitment","question":"What did I promise Leo before his talk abroad, and when does he fly?","required":["k08-chat","k08-cal"]}
+{"id":"k09","split":"sealed2","type":"join","use_case":"life admin","question":"What do I still need to send the council for the parking permit, and where is it?","required":["k09-email","k09-note"]}
+{"id":"k10","split":"sealed2","type":"join","use_case":"incident","question":"Why were customers getting the same overdue-payment reminder over and over in July, and who sorted it?","required":["k10-ticket","k10-commit"]}
+{"id":"k11","split":"sealed2","type":"join","use_case":"decision","question":"Why did we make launch dashboards mandatory?","required":["k11-chat","k11-doc"]}
+{"id":"k12","split":"sealed2","type":"single","use_case":"resume work","question":"Where had I got to with learning Spanish?","required":["k12-note"]}
+{"id":"k13","split":"sealed2","type":"single","use_case":"commitment","question":"What did I say I'd send Hana after the design review?","required":["k13-chat"]}
+{"id":"k14","split":"sealed2","type":"single","use_case":"life admin","question":"What's the warranty number for my boiler?","required":["k14-email"]}
+{"id":"k15","split":"sealed2","type":"single","use_case":"impact","question":"How much did slimming down the Quill site speed up page loads?","required":["k15-note"]}
+{"id":"k16","split":"sealed2","type":"single","use_case":"meeting prep","question":"What does Omar want to see in a pull request description?","required":["k16-chat"]}
+{"id":"k17","split":"sealed2","type":"single","use_case":"life admin","question":"When is the car booked in for its yearly check-up?","required":["k17-email"]}
+{"id":"k18","split":"sealed2","type":"single","use_case":"decision","question":"Did I agree to help with hiring this quarter?","required":["k18-journal"]}
+{"id":"k19","split":"sealed2","type":"current","use_case":"change over time","question":"Which way do I cycle to work these days?","required":["k19-new"],"stale":["k19-old"]}
+{"id":"k20","split":"sealed2","type":"current","use_case":"life admin","question":"What time is the Tidepool morning meeting now?","required":["k20-new"],"stale":["k20-old"]}
+{"id":"ku1","split":"sealed2","type":"none","use_case":"abstain","question":"What did Cornelius say about the hackathon?"}
+{"id":"ku2","split":"sealed2","type":"none","use_case":"abstain","question":"When is the chimney sweep coming?"}
+{"id":"ku3","split":"sealed2","type":"none","use_case":"abstain","question":"Why did we move Quill off Elasticsearch?"}
+{"id":"ku4","split":"sealed2","type":"none","use_case":"abstain","question":"What did Priya think of the Montreal meetup?"}
+{"id":"ku5","split":"sealed2","type":"none","use_case":"abstain","question":"How much is my bouldering membership?"}
+{"id":"ks1","split":"sealed2","type":"sensitive","use_case":"privacy","question":"What did the dermatologist say about the mole?","withheld":["s07-record"]}
+{"id":"ks2","split":"sealed2","type":"sensitive","use_case":"privacy","question":"What did the cardiologist say about my heart?","withheld":["s08-record"]}

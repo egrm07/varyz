@@ -1,0 +1,40 @@
+Varyz — a local-first personal context engine
+Copyright (C) 2026 Egor Menshikov
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, version 3, together with the additional terms permitted by
+section 7 of that License and stated in the file LICENSE.additional-terms.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+What this means for attribution, stated plainly because people ask:
+
+  Anyone may use, modify, sell and redistribute Varyz.  What they may not do is
+  strip the copyright notice above.  It must survive in the source they ship,
+  modified files must say that they were changed and when, and a version run as
+  a network service must offer its users the corresponding source.
+
+  Beyond that, and unusually for a GPL licence, section 7(b) of the AGPL permits
+  one supplementary term, and this project uses it.  A single line —
+
+        Based on varyzai — Copyright (C) 2026 Egor Menshikov
+        Source: https://github.com/egrm07/varyz
+
+  — must be preserved and shown among the legal notices of anything built from
+  this work, including a modified version sold or hosted by somebody else.  That
+  is a requirement to preserve a notice, not to advertise: nobody is obliged to
+  put the name on their packaging or their marketing.
+
+  "Varyz" and "varyzai" are the project's names, and section 7(e) withholds any
+  trademark grant to them.  A fork is free to use the code and must choose its
+  own name.
+
+  The exact wording of both terms is in LICENSE.additional-terms.

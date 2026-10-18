@@ -1,0 +1,973 @@
+{
+  "Preview": {
+    "$defs": {
+      "SourceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "rule",
+              "answer",
+              "workflow"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[\\w.-]+$",
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "version"
+        ],
+        "title": "SourceRef",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "project": {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Project",
+        "type": "string"
+      },
+      "label": {
+        "maxLength": 80,
+        "minLength": 1,
+        "title": "Label",
+        "type": "string"
+      },
+      "selection": {
+        "items": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "maxItems": 500,
+        "title": "Selection",
+        "type": "array"
+      },
+      "expected_publication_revision": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Expected Publication Revision"
+      }
+    },
+    "required": [
+      "project",
+      "label",
+      "selection"
+    ],
+    "title": "Preview",
+    "type": "object"
+  },
+  "Publish": {
+    "additionalProperties": false,
+    "properties": {
+      "preview_id": {
+        "maxLength": 128,
+        "minLength": 16,
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "title": "Preview Id",
+        "type": "string"
+      },
+      "invited_email": {
+        "maxLength": 254,
+        "minLength": 3,
+        "title": "Invited Email",
+        "type": "string"
+      },
+      "source_fingerprint": {
+        "pattern": "^[a-f0-9]{64}$",
+        "title": "Source Fingerprint",
+        "type": "string"
+      },
+      "level": {
+        "default": "consult",
+        "enum": [
+          "consult",
+          "contribute",
+          "decide"
+        ],
+        "title": "Level",
+        "type": "string"
+      },
+      "fill_gaps": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Fill Gaps"
+      }
+    },
+    "required": [
+      "preview_id",
+      "invited_email",
+      "source_fingerprint"
+    ],
+    "title": "Publish",
+    "type": "object"
+  },
+  "Update": {
+    "additionalProperties": false,
+    "properties": {
+      "preview_id": {
+        "maxLength": 128,
+        "minLength": 16,
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "title": "Preview Id",
+        "type": "string"
+      },
+      "expected_publication_revision": {
+        "minimum": 0,
+        "title": "Expected Publication Revision",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "preview_id",
+      "expected_publication_revision"
+    ],
+    "title": "Update",
+    "type": "object"
+  },
+  "Invite": {
+    "additionalProperties": false,
+    "properties": {
+      "invited_email": {
+        "maxLength": 254,
+        "minLength": 3,
+        "title": "Invited Email",
+        "type": "string"
+      },
+      "level": {
+        "default": "consult",
+        "enum": [
+          "consult",
+          "contribute",
+          "decide"
+        ],
+        "title": "Level",
+        "type": "string"
+      },
+      "fill_gaps": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Fill Gaps"
+      }
+    },
+    "required": [
+      "invited_email"
+    ],
+    "title": "Invite",
+    "type": "object"
+  },
+  "State": {
+    "additionalProperties": false,
+    "properties": {
+      "status": {
+        "enum": [
+          "active",
+          "paused",
+          "deleted"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "expected_publication_revision": {
+        "minimum": 0,
+        "title": "Expected Publication Revision",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "status",
+      "expected_publication_revision"
+    ],
+    "title": "State",
+    "type": "object"
+  },
+  "MemberState": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_revision": {
+        "minimum": 0,
+        "title": "Expected Revision",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "expected_revision"
+    ],
+    "title": "MemberState",
+    "type": "object"
+  },
+  "Reply": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_thread_version": {
+        "minimum": 0,
+        "title": "Expected Thread Version",
+        "type": "integer"
+      },
+      "answer": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "title": "Answer",
+        "type": "string"
+      },
+      "remember_project": {
+        "default": false,
+        "title": "Remember Project",
+        "type": "boolean"
+      },
+      "publish_to_share": {
+        "default": false,
+        "title": "Publish To Share",
+        "type": "boolean"
+      },
+      "expected_publication_revision": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Expected Publication Revision"
+      }
+    },
+    "required": [
+      "expected_thread_version",
+      "answer"
+    ],
+    "title": "Reply",
+    "type": "object"
+  },
+  "Decline": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_thread_version": {
+        "minimum": 0,
+        "title": "Expected Thread Version",
+        "type": "integer"
+      },
+      "explanation": {
+        "default": "",
+        "maxLength": 4000,
+        "title": "Explanation",
+        "type": "string"
+      }
+    },
+    "required": [
+      "expected_thread_version"
+    ],
+    "title": "Decline",
+    "type": "object"
+  },
+  "Withdraw": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_thread_version": {
+        "minimum": 0,
+        "title": "Expected Thread Version",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "expected_thread_version"
+    ],
+    "title": "Withdraw",
+    "type": "object"
+  },
+  "tools": {
+    "shared_projects": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "title": "Projects",
+      "type": "object"
+    },
+    "shared_join": {
+      "additionalProperties": false,
+      "properties": {
+        "invite_id": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Invite Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invite_id"
+      ],
+      "title": "Join",
+      "type": "object"
+    },
+    "shared_brief": {
+      "additionalProperties": false,
+      "properties": {
+        "membership_id": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Membership Id",
+          "type": "string"
+        },
+        "conversation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "expected_binding_revision": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Binding Revision"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "required": [
+        "membership_id",
+        "conversation_id"
+      ],
+      "title": "Brief",
+      "type": "object"
+    },
+    "shared_ask": {
+      "$defs": {
+        "Question": {
+          "additionalProperties": false,
+          "properties": {
+            "question": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Question",
+              "type": "string"
+            },
+            "reason": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "question"
+          ],
+          "title": "Question",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "membership_id": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Membership Id",
+          "type": "string"
+        },
+        "conversation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "binding_revision": {
+          "minimum": 0,
+          "title": "Binding Revision",
+          "type": "integer"
+        },
+        "idempotency_key": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[!-~]+$",
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "requests": {
+          "items": {
+            "$ref": "#/$defs/Question"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Requests",
+          "type": "array"
+        }
+      },
+      "required": [
+        "membership_id",
+        "conversation_id",
+        "binding_revision",
+        "idempotency_key",
+        "requests"
+      ],
+      "title": "Ask",
+      "type": "object"
+    },
+    "shared_question_status": {
+      "additionalProperties": false,
+      "properties": {
+        "membership_id": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Membership Id",
+          "type": "string"
+        },
+        "conversation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "binding_revision": {
+          "minimum": 0,
+          "title": "Binding Revision",
+          "type": "integer"
+        },
+        "thread_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Thread Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "membership_id",
+        "conversation_id",
+        "binding_revision",
+        "thread_ids"
+      ],
+      "title": "QuestionStatus",
+      "type": "object"
+    },
+    "shared_finish": {
+      "$defs": {
+        "Disagreement": {
+          "additionalProperties": false,
+          "properties": {
+            "preference": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Preference",
+              "type": "string"
+            },
+            "suggestion": {
+              "maxLength": 1000,
+              "minLength": 1,
+              "title": "Suggestion",
+              "type": "string"
+            }
+          },
+          "required": [
+            "preference",
+            "suggestion"
+          ],
+          "title": "Disagreement",
+          "type": "object"
+        },
+        "Gap": {
+          "additionalProperties": false,
+          "properties": {
+            "question": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Question",
+              "type": "string"
+            },
+            "answer": {
+              "maxLength": 1000,
+              "minLength": 1,
+              "title": "Answer",
+              "type": "string"
+            }
+          },
+          "required": [
+            "question",
+            "answer"
+          ],
+          "title": "Gap",
+          "type": "object"
+        },
+        "Work": {
+          "additionalProperties": false,
+          "description": "A short work report. Code travels through git; this says where it is and how to run it.",
+          "properties": {
+            "summary": {
+              "maxLength": 800,
+              "minLength": 1,
+              "title": "Summary",
+              "type": "string"
+            },
+            "branch": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "pattern": "^[\\w./-]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Branch"
+            },
+            "commit": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-fA-F]{7,64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Commit"
+            },
+            "run": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Run"
+            },
+            "decisions": {
+              "default": [],
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 3,
+              "title": "Decisions",
+              "type": "array"
+            },
+            "open_questions": {
+              "default": [],
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 3,
+              "title": "Open Questions",
+              "type": "array"
+            },
+            "checks": {
+              "default": [],
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 3,
+              "title": "Checks",
+              "type": "array"
+            },
+            "open_work": {
+              "default": [],
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 6,
+              "title": "Open Work",
+              "type": "array"
+            },
+            "next_steps": {
+              "default": [],
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 3,
+              "title": "Next Steps",
+              "type": "array"
+            },
+            "next_milestone": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Next Milestone",
+              "type": "string"
+            },
+            "provisional": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/Gap"
+              },
+              "maxItems": 5,
+              "title": "Provisional",
+              "type": "array"
+            },
+            "disagreements": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/Disagreement"
+              },
+              "maxItems": 5,
+              "title": "Disagreements",
+              "type": "array"
+            },
+            "ran_branch": {
+              "default": false,
+              "title": "Ran Branch",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "title": "Work",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "membership_id": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Membership Id",
+          "type": "string"
+        },
+        "conversation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "binding_revision": {
+          "minimum": 0,
+          "title": "Binding Revision",
+          "type": "integer"
+        },
+        "work": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Work"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "membership_id",
+        "conversation_id",
+        "binding_revision"
+      ],
+      "title": "Finish",
+      "type": "object"
+    },
+    "shared_github": {
+      "additionalProperties": false,
+      "properties": {
+        "membership_id": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Membership Id",
+          "type": "string"
+        },
+        "conversation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "binding_revision": {
+          "minimum": 0,
+          "title": "Binding Revision",
+          "type": "integer"
+        },
+        "git_installed": {
+          "title": "Git Installed",
+          "type": "boolean"
+        },
+        "gh_installed": {
+          "title": "Gh Installed",
+          "type": "boolean"
+        },
+        "gh_signed_in": {
+          "default": false,
+          "title": "Gh Signed In",
+          "type": "boolean"
+        },
+        "github_username": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Github Username"
+        },
+        "has_access": {
+          "default": false,
+          "title": "Has Access",
+          "type": "boolean"
+        },
+        "cloned": {
+          "default": false,
+          "title": "Cloned",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "membership_id",
+        "conversation_id",
+        "binding_revision",
+        "git_installed",
+        "gh_installed"
+      ],
+      "title": "GitHub",
+      "type": "object"
+    },
+    "shared_answer": {
+      "additionalProperties": false,
+      "properties": {
+        "membership_id": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Membership Id",
+          "type": "string"
+        },
+        "conversation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Conversation Id",
+          "type": "string"
+        },
+        "binding_revision": {
+          "minimum": 0,
+          "title": "Binding Revision",
+          "type": "integer"
+        },
+        "question_id": {
+          "maxLength": 128,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Question Id",
+          "type": "string"
+        },
+        "answer": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Answer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "membership_id",
+        "conversation_id",
+        "binding_revision",
+        "question_id",
+        "answer"
+      ],
+      "title": "PartnerAnswer",
+      "type": "object"
+    },
+    "follow": {
+      "additionalProperties": false,
+      "description": "Follow a creator's public Varyz by username and choose whose standards a topic uses.",
+      "properties": {
+        "action": {
+          "default": "list",
+          "enum": [
+            "list",
+            "follow",
+            "unfollow",
+            "pick",
+            "standards"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "pattern": "^@?[A-Za-z0-9_]{3,30}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        },
+        "topic": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "minLength": 2,
+              "pattern": "^[\\w][\\w '&/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 500,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        }
+      },
+      "title": "Follow",
+      "type": "object"
+    },
+    "followed_brief": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Task",
+          "type": "string"
+        },
+        "topics": {
+          "default": [],
+          "items": {
+            "maxLength": 60,
+            "minLength": 2,
+            "pattern": "^[\\w][\\w '&/-]*$",
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Topics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "title": "FollowedBrief",
+      "type": "object"
+    },
+    "followed_ask": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "default": "",
+          "maxLength": 8000,
+          "title": "Task",
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "title": "Questions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "questions"
+      ],
+      "title": "FollowedAsk",
+      "type": "object"
+    }
+  }
+}

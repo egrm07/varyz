@@ -1,0 +1,87 @@
+{
+  "split": "development",
+  "cases": [
+    {
+      "id": "dev-deception-explicit",
+      "query": "find me when I lied to Sandra",
+      "relevant": ["d1", "d4"],
+      "entries": [
+        {"id": "d1", "body": "From: me\nChat: Sandra\n\nI lied to you about where I was last night. I was at Leo's."},
+        {"id": "d2", "body": "From: me\nChat: Sandra\n\nI think you haven't seen me so long you're hallucinating me around places."},
+        {"id": "d3", "body": "From: me\nChat: Zahar\n\nIt was you who lied and used my name."},
+        {"id": "d4", "body": "I told Sandra I was sick, but actually I went to the concert."},
+        {"id": "d5", "body": "Sandra recommended a good film for the weekend."}
+      ]
+    },
+    {
+      "id": "dev-deception-paraphrase",
+      "query": "show me when I wasn't honest with Marta",
+      "relevant": ["d6"],
+      "entries": [
+        {"id": "d6", "body": "From: me\nChat: Marta\n\nI made up an excuse about the train because I did not want to explain."},
+        {"id": "d7", "body": "From: Marta\nChat: Marta\n\nYou were honest with me and I appreciated it."},
+        {"id": "d8", "body": "Met Marta for coffee after work."}
+      ]
+    },
+    {
+      "id": "dev-target-as-actor",
+      "query": "when did Sandra lie to me",
+      "relevant": ["d9"],
+      "entries": [
+        {"id": "d9", "body": "From: me\nChat: Sandra\n\nYou told me you were home, but Sofia had just seen you downtown."},
+        {"id": "d10", "body": "From: me\nChat: Sandra\n\nThanks for telling me the truth."},
+        {"id": "d11", "body": "I lied to Lena about the same party."}
+      ]
+    },
+    {
+      "id": "dev-apology",
+      "query": "when did I apologize to Lena",
+      "relevant": ["d12"],
+      "entries": [
+        {"id": "d12", "body": "From: me\nChat: Lena\n\nI'm sorry I dismissed what you said yesterday. I regret that."},
+        {"id": "d13", "body": "From: Lena\nChat: Lena\n\nYou do not need to apologize for being busy."},
+        {"id": "d14", "body": "I apologized to Marta after missing her call."}
+      ]
+    },
+    {
+      "id": "dev-avoidance",
+      "query": "find when I ghosted Alex",
+      "relevant": ["d15"],
+      "entries": [
+        {"id": "d15", "body": "I kept ignoring Alex's messages for two weeks and never replied."},
+        {"id": "d16", "body": "Alex and I spoke every day that month."},
+        {"id": "d17", "body": "From: Alex\nChat: Alex\n\nSorry I disappeared for a while."}
+      ]
+    },
+    {
+      "id": "dev-promise",
+      "query": "show promises I broke to Noor",
+      "relevant": ["d18"],
+      "entries": [
+        {"id": "d18", "body": "I promised Noor I would come, then cancelled again at the last minute."},
+        {"id": "d19", "body": "From: Noor\nChat: Noor\n\nI promise I will call tomorrow."},
+        {"id": "d20", "body": "Noor came to dinner as planned."}
+      ]
+    },
+    {
+      "id": "dev-boundary",
+      "query": "when did I cross Maya's boundary",
+      "relevant": ["d21"],
+      "entries": [
+        {"id": "d21", "body": "Maya asked me not to share the photo, but I posted it anyway."},
+        {"id": "d22", "body": "I told Maya clearly where my own boundary was."},
+        {"id": "d23", "body": "From: Maya\nChat: Maya\n\nPlease do not worry about the photo."}
+      ]
+    },
+    {
+      "id": "dev-no-evidence",
+      "query": "find when I lied to Priya",
+      "relevant": [],
+      "entries": [
+        {"id": "d24", "body": "From: me\nChat: Priya\n\nThank you for being honest with me."},
+        {"id": "d25", "body": "Priya and I went running before breakfast."},
+        {"id": "d26", "body": "I lied to Sandra about the concert."}
+      ]
+    }
+  ]
+}

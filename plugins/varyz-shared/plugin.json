@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "varyz-shared",
+  "version": "0.1.1",
+  "description": "Consult explicitly shared project preferences and ask their owner questions.",
+  "author": {"name": "Egor Menshikov"},
+  "license": "AGPL-3.0-only",
+  "homepage": "https://varyzai.com",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Varyz Shared",
+        "developerName": "Egor Menshikov",
+        "shortDescription": "Consult shared preferences",
+        "longDescription": "Use projects an owner explicitly shared with your verified Varyz account. Select a collaboration for each task, read its published preferences, ask the owner about missing decisions, and retrieve your own replies. Guest access requires no subscription. Private records and history remain unavailable. The owner's published preferences do not grant spending, messaging or deployment permission.",
+        "category": "Productivity",
+        "capabilities": ["Read shared preferences", "Ask project owners", "Retrieve your own replies"],
+        "defaultPrompt": ["Use a shared project for this task", "Ask the project owner a question"],
+        "websiteURL": "https://varyzai.com",
+        "privacyPolicyURL": "https://varyzai.com/privacy",
+        "termsOfServiceURL": "https://varyzai.com/terms"
+      }
+    }
+  }
+}

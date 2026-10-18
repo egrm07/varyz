@@ -1,0 +1,380 @@
+{
+ "version": 1,
+ "labels_written": "2026-09-25",
+ "role": "held-out: written with the dev set before any run; never tuned on",
+ "definition": "new: the task makes something that is not there yet, or remakes a step wholesale (build, write, design, plan, redo from scratch). small: the task changes something already there without remaking it (a fix, a tweak, a wording, a colour, a bug). Labels are authored, not from any owner archive.",
+ "workflows": {
+  "website": [
+   "colour",
+   "logo",
+   "page content"
+  ],
+  "product": [
+   "vision",
+   "design",
+   "monetization"
+  ],
+  "app": [
+   "data model",
+   "API",
+   "screens"
+  ],
+  "video": [
+   "script",
+   "storyboard",
+   "edit"
+  ],
+  "docs": [
+   "outline",
+   "draft",
+   "publish"
+  ]
+ },
+ "items": [
+  {
+   "workflow": "website",
+   "task": "ok now the landing page please",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "time to build out the marketing site",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "can we get a pricing page going",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "i'd like a testimonials section with three quotes",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "put up a docs page that explains the api",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "we should have a careers page",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "next: the features page, three columns with icons",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "let's get the waitlist page live",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "throw together a simple 404 page",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "new landing page for the SAN7 launch",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "scrap the homepage and start it over",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "the whole about page needs rethinking, write it fresh",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "logo time - give me a few directions",
+   "label": "new"
+  },
+  {
+   "workflow": "website",
+   "task": "the hero feels cramped, give it more breathing room",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "can the nav be a little shorter",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "headline should say 'Thinks like you.' instead",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "logo's blurry on retina",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "move the waitlist form above the fold",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "the footer links point to the wrong url",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "use the navy from the palette for the buttons",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "kill the second testimonial",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "hover state on cards is missing",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "pricing cards aren't aligned on tablet",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "make the period in the wordmark the accent colour",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "the og image is showing the old tagline",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "shorten the hero subtitle",
+   "label": "small"
+  },
+  {
+   "workflow": "website",
+   "task": "there's a double space after 'you.'",
+   "label": "small"
+  },
+  {
+   "workflow": "product",
+   "task": "let's decide how persona makes money",
+   "label": "new"
+  },
+  {
+   "workflow": "product",
+   "task": "can you mock up the upgrade screen",
+   "label": "new"
+  },
+  {
+   "workflow": "product",
+   "task": "work out tiers for teams",
+   "label": "new"
+  },
+  {
+   "workflow": "product",
+   "task": "think through the free plan limits and write them up",
+   "label": "new"
+  },
+  {
+   "workflow": "product",
+   "task": "design the account settings area",
+   "label": "new"
+  },
+  {
+   "workflow": "product",
+   "task": "what should the lifetime deal look like? draft it",
+   "label": "new"
+  },
+  {
+   "workflow": "product",
+   "task": "lifetime should be 199 not 249",
+   "label": "small"
+  },
+  {
+   "workflow": "product",
+   "task": "the upgrade screen's price text is grey, make it white",
+   "label": "small"
+  },
+  {
+   "workflow": "product",
+   "task": "call it 'Plus' everywhere, not 'Premium'",
+   "label": "small"
+  },
+  {
+   "workflow": "product",
+   "task": "drop the monthly option from the paywall copy",
+   "label": "small"
+  },
+  {
+   "workflow": "product",
+   "task": "the vision doc says 2025, should be 2026",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "hook up an endpoint for deleting accounts",
+   "label": "new"
+  },
+  {
+   "workflow": "app",
+   "task": "we need a calendar view of trades",
+   "label": "new"
+  },
+  {
+   "workflow": "app",
+   "task": "build the reflection detail screen",
+   "label": "new"
+  },
+  {
+   "workflow": "app",
+   "task": "set up webhooks for revenuecat events",
+   "label": "new"
+  },
+  {
+   "workflow": "app",
+   "task": "add offline sync",
+   "label": "new"
+  },
+  {
+   "workflow": "app",
+   "task": "implement pagination for the trades api",
+   "label": "new"
+  },
+  {
+   "workflow": "app",
+   "task": "i want a widget for the home screen",
+   "label": "new"
+  },
+  {
+   "workflow": "app",
+   "task": "create the tags model and the screens to manage tags",
+   "label": "new"
+  },
+  {
+   "workflow": "app",
+   "task": "trades endpoint returns dates in local time, should be UTC",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "the save button stays disabled after editing",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "typo in the error message on login",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "bump the page size to 50",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "chart labels overlap on small phones",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "the empty state text is off-centre",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "handle the case where the price is null",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "tapping a tag twice crashes",
+   "label": "small"
+  },
+  {
+   "workflow": "app",
+   "task": "rename getTrades to listTrades",
+   "label": "small"
+  },
+  {
+   "workflow": "video",
+   "task": "shoot list and storyboard for the demo video",
+   "label": "new"
+  },
+  {
+   "workflow": "video",
+   "task": "put together a 15s cut for tiktok",
+   "label": "new"
+  },
+  {
+   "workflow": "video",
+   "task": "write a voiceover for the explainer",
+   "label": "new"
+  },
+  {
+   "workflow": "video",
+   "task": "the logo sting at the end is a frame late",
+   "label": "small"
+  },
+  {
+   "workflow": "video",
+   "task": "colour grade looks too warm in the second shot",
+   "label": "small"
+  },
+  {
+   "workflow": "video",
+   "task": "swap the track for something calmer",
+   "label": "small"
+  },
+  {
+   "workflow": "video",
+   "task": "fix the caption that says 'persnoa'",
+   "label": "small"
+  },
+  {
+   "workflow": "docs",
+   "task": "write up the release notes for 0.4",
+   "label": "new"
+  },
+  {
+   "workflow": "docs",
+   "task": "a getting started guide for the cli",
+   "label": "new"
+  },
+  {
+   "workflow": "docs",
+   "task": "draft the privacy policy page",
+   "label": "new"
+  },
+  {
+   "workflow": "docs",
+   "task": "the code sample in the quickstart is missing an import",
+   "label": "small"
+  },
+  {
+   "workflow": "docs",
+   "task": "reflow the changelog entry, lines are too long",
+   "label": "small"
+  },
+  {
+   "workflow": "docs",
+   "task": "readme badge is broken",
+   "label": "small"
+  },
+  {
+   "workflow": "docs",
+   "task": "link the architecture doc from the readme",
+   "label": "small"
+  }
+ ]
+}

@@ -1,0 +1,116 @@
+[
+  {
+    "case_id": "contextual-belief",
+    "messages": [
+      {"id": "contextual-belief-1", "sender": "Anna", "text": "Privacy should matter more than convenience, don't you think?"},
+      {"id": "contextual-belief-2", "sender": "me", "text": "I think so.", "target": true}
+    ],
+    "expected": [
+      {"target_id": "contextual-belief-2", "kind": "belief", "statement_terms": ["privacy", "convenience"]}
+    ]
+  },
+  {
+    "case_id": "transient-thoughts",
+    "messages": [
+      {"id": "transient-thoughts-1", "sender": "me", "text": "I think the server we used yesterday was different.", "target": true},
+      {"id": "transient-thoughts-2", "sender": "me", "text": "I think the settings box is too tall.", "target": true},
+      {"id": "transient-thoughts-3", "sender": "me", "text": "That's about where it ends I think 😭", "target": true}
+    ],
+    "expected": []
+  },
+  {
+    "case_id": "plan-not-belief",
+    "messages": [
+      {"id": "plan-not-belief-1", "sender": "me", "text": "I think I'll apply for the residency program next month.", "target": true},
+      {"id": "plan-not-belief-2", "sender": "me", "text": "I hope to move to Lisbon after graduation.", "target": true},
+      {"id": "plan-not-belief-3", "sender": "me", "text": "I want to build a company that makes private software.", "target": true}
+    ],
+    "expected": [
+      {"target_id": "plan-not-belief-1", "kind": "plan", "statement_terms": ["apply", "residency"]},
+      {"target_id": "plan-not-belief-2", "kind": "plan", "statement_terms": ["move", "lisbon"]},
+      {"target_id": "plan-not-belief-3", "kind": "plan", "statement_terms": ["build", "company"]}
+    ]
+  },
+  {
+    "case_id": "feelings-vs-opinions",
+    "messages": [
+      {"id": "feelings-vs-opinions-1", "sender": "me", "text": "I felt devastated when I heard the news.", "target": true},
+      {"id": "feelings-vs-opinions-2", "sender": "me", "text": "I feel that people deserve to control their own data.", "target": true},
+      {"id": "feelings-vs-opinions-3", "sender": "me", "text": "I feel anxious about starting university.", "target": true}
+    ],
+    "expected": [
+      {"target_id": "feelings-vs-opinions-1", "kind": "feeling", "statement_terms": ["devastated", "news"]},
+      {"target_id": "feelings-vs-opinions-2", "kind": "belief", "statement_terms": ["people", "data"]},
+      {"target_id": "feelings-vs-opinions-3", "kind": "feeling", "statement_terms": ["anxious", "university"]}
+    ]
+  },
+  {
+    "case_id": "commitments",
+    "messages": [
+      {"id": "commitments-1", "sender": "me", "text": "I've decided to leave my job and study medicine.", "target": true},
+      {"id": "commitments-2", "sender": "me", "text": "I promise I'll visit you every month while you're recovering.", "target": true},
+      {"id": "commitments-3", "sender": "me", "text": "I promise to repay the loan by December.", "target": true}
+    ],
+    "expected": [
+      {"target_id": "commitments-1", "kind": "decision", "statement_terms": ["leave", "job"]},
+      {"target_id": "commitments-2", "kind": "promise", "statement_terms": ["visit", "month"]},
+      {"target_id": "commitments-3", "kind": "promise", "statement_terms": ["repay", "loan"]}
+    ]
+  },
+  {
+    "case_id": "requests",
+    "messages": [
+      {"id": "requests-1", "sender": "me", "text": "Please don't share the diagnosis with anyone until I tell my family.", "target": true},
+      {"id": "requests-2", "sender": "me", "text": "Can you grab milk on the way home?", "target": true}
+    ],
+    "expected": [
+      {"target_id": "requests-1", "kind": "request", "statement_terms": ["diagnosis", "family"]}
+    ]
+  },
+  {
+    "case_id": "durable-beliefs",
+    "messages": [
+      {"id": "durable-beliefs-1", "sender": "me", "text": "We believe performance is a constant social act, not something switched on only in public.", "target": true},
+      {"id": "durable-beliefs-2", "sender": "me", "text": "I prefer honest disagreement to polite silence.", "target": true},
+      {"id": "durable-beliefs-3", "sender": "me", "text": "I believe I'm someone who does better work with long uninterrupted mornings.", "target": true}
+    ],
+    "expected": [
+      {"target_id": "durable-beliefs-1", "kind": "belief", "statement_terms": ["performance", "social"]},
+      {"target_id": "durable-beliefs-2", "kind": "belief", "statement_terms": ["honest", "disagreement"]},
+      {"target_id": "durable-beliefs-3", "kind": "belief", "statement_terms": ["work", "mornings"]}
+    ]
+  },
+  {
+    "case_id": "speculation-and-retrospection",
+    "messages": [
+      {"id": "speculation-and-retrospection-1", "sender": "me", "text": "I think it's because I ate five eggs last night.", "target": true},
+      {"id": "speculation-and-retrospection-2", "sender": "me", "text": "I think that was somewhat manipulative on my part.", "target": true}
+    ],
+    "expected": []
+  },
+  {
+    "case_id": "quoted-instructions",
+    "messages": [
+      {"id": "quoted-instructions-1", "sender": "me", "text": "The assistant wrote: \"I believe the user wants a larger button.\" Please fix its output.", "target": true}
+    ],
+    "expected": []
+  },
+  {
+    "case_id": "ambiguous-affirmation",
+    "messages": [
+      {"id": "ambiguous-affirmation-1", "sender": "Anna", "text": "Do you think remote work is healthier?"},
+      {"id": "ambiguous-affirmation-2", "sender": "Anna", "text": "And do you think it is cheaper?"},
+      {"id": "ambiguous-affirmation-3", "sender": "me", "text": "I think so.", "target": true}
+    ],
+    "expected": []
+  },
+  {
+    "case_id": "routine-intentions",
+    "messages": [
+      {"id": "routine-intentions-1", "sender": "me", "text": "I want to get dinner now.", "target": true},
+      {"id": "routine-intentions-2", "sender": "me", "text": "I'll call you in five minutes.", "target": true},
+      {"id": "routine-intentions-3", "sender": "me", "text": "I decided to make pasta tonight.", "target": true}
+    ],
+    "expected": []
+  }
+]

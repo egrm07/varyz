@@ -1,0 +1,14 @@
+{
+  "fixture_sha256": "65fddefe76dd6f51c7adae2afabfe9f33f6f0134516d17d9437a171aec212c83",
+  "counts": {
+    "dev": 48,
+    "held_out": 48,
+    "replication": 48
+  },
+  "candidate": "Original casefold/token-run boost, factor 1.25",
+  "frozen_before_scoring": true,
+  "primary": "First relevant source; complete@3 requires both conflict versions",
+  "gate": "No new harmful top-1 changes in held-out and replication; positive lift in both.",
+  "splits": "Independent topic families; cluster analysis by scenario category.",
+  "design_note": "Before held-out scoring: clarify conflict metric wording and compute the random-order floor after the same privacy/source filtering; no labels or candidate parameters changed."
+}

@@ -1,0 +1,479 @@
+{
+  "version": "title-boost-challenges-v1",
+  "cases": [
+    {
+      "id": "challenge-0",
+      "split": "challenge",
+      "category": "stale",
+      "variant": 0,
+      "query": "Current Falcon storage quota",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Falcon quota amendment",
+          "body": "Current Falcon storage quota is 40 GB. This current Falcon storage quota is the active signed amendment; the former 10 GB quota is withdrawn.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Current Falcon storage quota",
+          "body": "Historical page. Superseded 10 GB allowance. Withdrawn in September.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-1",
+      "split": "challenge",
+      "category": "stale",
+      "variant": 1,
+      "query": "Latest Heron certificate policy",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Heron security revision",
+          "body": "Latest Heron certificate policy requires rotation every week. The latest Heron certificate policy supersedes the obsolete annual rotation rule.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Latest Heron certificate policy",
+          "body": "Old annual rotation rule. This document is obsolete; consult the revision.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-2",
+      "split": "challenge",
+      "category": "draft",
+      "variant": 2,
+      "query": "Approved Juniper operating budget",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Juniper finance sign-off",
+          "body": "Approved Juniper operating budget is 800 credits. The approved Juniper operating budget is final and signed. The 900-credit draft was rejected.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Approved Juniper operating budget",
+          "body": "UNAPPROVED. Draft proposal: 900 credits. No signature; this is not a final decision.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-3",
+      "split": "challenge",
+      "category": "draft",
+      "variant": 3,
+      "query": "Final Hazel deployment plan",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Hazel final approval record",
+          "body": "Final Hazel deployment plan uses staging first. The final Hazel deployment plan was approved on September 29; the earlier production-first draft was rejected.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Final Hazel deployment plan",
+          "body": "DRAFT ONLY. Proposed direct production deployment. The owner rejected this draft.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-4",
+      "split": "challenge",
+      "category": "related_not_answer",
+      "variant": 4,
+      "query": "Can Kestrel backups run without encryption?",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Security answer",
+          "body": "Can Kestrel backups run without encryption? Answer: No. Kestrel backups cannot run without encryption; the approved security policy requires encryption.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Can Kestrel backups run without encryption?",
+          "body": "Question only. This page contains no answer or decision.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-5",
+      "split": "challenge",
+      "category": "related_not_answer",
+      "variant": 5,
+      "query": "Why did Sparrow imports fail?",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Sparrow incident conclusion",
+          "body": "Why did Sparrow imports fail? A missing permission caused the failure. The investigation establishes why Sparrow imports fail and records the fix.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Why did Sparrow imports fail?",
+          "body": "Incident question. The cause has not been investigated in this note.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-6",
+      "split": "challenge",
+      "category": "related_not_answer",
+      "variant": 6,
+      "query": "Confirmed Bramble deployment decision",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Owner approval",
+          "body": "Owner confirmed Bramble deployment decision: staging must pass first. The confirmed Bramble deployment decision rejects an immediate production release.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Confirmed Bramble deployment decision",
+          "body": "Third-party speculation. Owner approval is absent; the author guesses immediate release.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-7",
+      "split": "challenge",
+      "category": "related_not_answer",
+      "variant": 7,
+      "query": "Confirmed Maple retention period",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Maple signed policy",
+          "body": "Confirmed Maple retention period is fourteen days. The confirmed Maple retention period was signed by the owner and replaces the vendor's ninety-day suggestion.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Confirmed Maple retention period",
+          "body": "External vendor suggestion: ninety days. The owner did not confirm this suggestion.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-8",
+      "split": "challenge",
+      "category": "conflict",
+      "variant": 8,
+      "query": "Compare Rowan import decisions",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer",
+        "second"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Rowan decision January",
+          "body": "Compare Rowan import decisions: the January version accepted CSV only. This source records the first Rowan import decision, before the later change.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Compare Rowan import decisions",
+          "body": "Navigation page only. Links to both versions; no decision text is included.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "second",
+          "title": "September revision",
+          "body": "Compare Rowan import decisions: the September version explicitly changes the original decision.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-9",
+      "split": "challenge",
+      "category": "conflict",
+      "variant": 9,
+      "query": "Compare Birch backup policies",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer",
+        "second"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Birch policy January",
+          "body": "Compare Birch backup policies: the January policy required daily snapshots. This source records the original Birch backup policy.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Compare Birch backup policies",
+          "body": "Index only. The actual policy statements are in the linked source documents.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "second",
+          "title": "September revision",
+          "body": "Compare Birch backup policies: the September version explicitly changes the original decision.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-10",
+      "split": "challenge",
+      "category": "exact_lookup",
+      "variant": 10,
+      "query": "Merlin Relay Handbook",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Merlin Relay Handbook",
+          "body": "Merlin Relay Handbook defines the canonical operating procedure. The Merlin Relay Handbook owner is Mara.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Meeting index",
+          "body": "Meeting index. The handbook was mentioned, but this is not its text.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    },
+    {
+      "id": "challenge-11",
+      "split": "challenge",
+      "category": "phrase_lookup",
+      "variant": 11,
+      "query": "Finch Maintenance Guide",
+      "goal": "Return the source establishing the requested fact, not an obsolete, unapproved, unanswered or merely navigational title match.",
+      "expected": [
+        "answer"
+      ],
+      "excluded_sources": [],
+      "documents": [
+        {
+          "id": "answer",
+          "title": "Detailed Finch Maintenance Guide",
+          "body": "Finch Maintenance Guide: Mara checks the pump on Tuesday. This is the Finch Maintenance Guide's canonical reference text.",
+          "date": "2026-09-29T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "wrong",
+          "title": "Meeting index",
+          "body": "Meeting index. The guide was mentioned; this page does not contain the guide.",
+          "date": "2025-01-01T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        },
+        {
+          "id": "noise",
+          "title": "Office notice",
+          "body": "The office meeting starts at noon.",
+          "date": "2026-09-15T12:00:00Z",
+          "source": "manual",
+          "sensitivity": "public"
+        }
+      ]
+    }
+  ]
+}

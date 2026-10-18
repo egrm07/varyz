@@ -1,0 +1,10 @@
+{"id":"dark_scoped","text":"Make the background dark and the buttons light.","project":"persona","accept":true,"dimension":"visual","valence":"prefer"}
+{"id":"simplify_ui","text":"Simplify the UI and remove unnecessary buttons.","project":"memoir","accept":true,"dimension":"visual","valence":"prefer"}
+{"id":"weekly_boundary","text":"No weekly evaluation for Varyz.","project":"varyz","accept":true,"dimension":"workflow","valence":"avoid"}
+{"id":"brand_colour","text":"Change the main colour to #a3e3d7.","project":"san7","accept":true,"dimension":"visual","valence":"prefer"}
+{"id":"same_background","text":"Have the same colour background as Persona.","project":"memoir","accept":true,"dimension":"visual","valence":"prefer"}
+{"id":"generic_improve","text":"Improve the website.","project":"varyz","accept":false}
+{"id":"bug_fix","text":"Fix the black screen after login.","project":"san7","accept":false}
+{"id":"feature_request","text":"Add login to the website.","project":"varyz","accept":false}
+{"id":"quoted_fixture","text":"{\"text\":\"Make the background red.\"}","project":"varyz","accept":false}
+{"id":"quoted_markdown","text":"> Make the background red.\nI am quoting someone else.","project":"varyz","accept":false}

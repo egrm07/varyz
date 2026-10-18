@@ -1,0 +1,6 @@
+{
+  "fixture_sha256": "cf679eca47fbafee417e35db58e1fae9bf9b411427fe01715ca85d4fad39606f",
+  "n": 12,
+  "frozen_before_scoring": true,
+  "policy": "Designed after v2 results as a targeted counterexample audit. Not a representative or held-out rate estimate."
+}

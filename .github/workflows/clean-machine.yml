@@ -1,0 +1,79 @@
+name: Clean machine
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    # The complete Windows suite exceeded 45 minutes on a clean hosted runner.
+    # Keep every test; allow slower filesystem/process startup on that platform.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 75 || 45 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      UV_MANAGED_PYTHON: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.2
+          enable-cache: false
+
+      - name: Install a clean Python
+        run: uv python install 3.12
+
+      - name: Install the locked project
+        run: uv sync --frozen --extra cloud
+
+      - name: Lint
+        run: uv run --no-sync ruff check .
+
+      - name: Test
+        run: uv run --no-sync pytest --junitxml=.build-cache/pytest-results.xml --durations=20 -o faulthandler_timeout=180
+
+      - name: Save test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Varyz-tests-${{ matrix.os }}
+          path: .build-cache/pytest-results.xml
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Only the half a clean machine can run.  The quotation pass needs the
+      # owner's archive, which is never on a runner, so it stays a pre-push
+      # step -- see docs/RELEASE_CHECKLIST.md.
+      - name: Audit what may be published (marks only)
+        run: uv run --no-sync python scripts/audit_publication.py --without-archive --gate
+
+      - name: Build release packages
+        run: uv build --no-sources
+
+      - name: Smoke the exact release wheel with only its declared dependencies
+        run: uv run --no-sync python scripts/ci_release_smoke.py
+
+      - name: Save verified packages and provenance
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Varyz-packages-${{ matrix.os }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/release-provenance.json
+          if-no-files-found: error
+          retention-days: 14

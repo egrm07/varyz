@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "varyz": {
+      "type": "http",
+      "url": "https://cloud.varyzai.com/mcp/plugin"
+    }
+  }
+}

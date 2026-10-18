@@ -1,0 +1,89 @@
+# SYNTHETIC. Second held-out set for scripts/vision_bench.py against evals/varyz_vision_v1_knowledge.jsonl.
+# Written and frozen 2026-09-24 AFTER the v1 held-out burn showed the strict matcher's dev gains did not
+# replicate, and BEFORE any further matcher work. Covers all 30 decisions (two agent phrasings each)
+# plus negatives where any tier-1 answer would be wrong. Scored once; never tuning data.
+{"id": "v01a", "split": "held_out_v2", "expect": "k01", "question": "Is it acceptable to drop the v1 endpoints from Kestrel's public API this year?"}
+{"id": "v01b", "split": "held_out_v2", "expect": "k01", "question": "Do changes to Kestrel's public API need to preserve compatibility for existing clients?"}
+{"id": "v02a", "split": "held_out_v2", "expect": "k02", "question": "Which database engine backs Kestrel?"}
+{"id": "v02b", "split": "held_out_v2", "expect": "k02", "question": "Is Kestrel's data stored in Postgres or MySQL?"}
+{"id": "v03a", "split": "held_out_v2", "expect": "k03", "question": "What should I use for authentication in a new web app?"}
+{"id": "v03b", "split": "held_out_v2", "expect": "k03", "question": "Can I write my own login and session system for a new project?"}
+{"id": "v04a", "split": "held_out_v2", "expect": "k04", "question": "Should I use pip or uv to manage dependencies in a Python project?"}
+{"id": "v04b", "split": "held_out_v2", "expect": "k04", "question": "Which Python package manager does the owner standardise on?"}
+{"id": "v05a", "split": "held_out_v2", "expect": "k05", "question": "Can I schedule a meeting with the owner at 9am?"}
+{"id": "v05b", "split": "held_out_v2", "expect": "k05", "question": "What time of day does the owner prefer for meetings?"}
+{"id": "v06a", "split": "held_out_v2", "expect": "k06", "question": "Which project should I work on first right now?"}
+{"id": "v06b", "split": "held_out_v2", "expect": "k06", "question": "What is the owner's top priority project at the moment?"}
+{"id": "v07a", "split": "held_out_v2", "expect": "k07", "question": "Am I allowed to commit my changes without asking first?"}
+{"id": "v07b", "split": "held_out_v2", "expect": "k07", "question": "Should I create a git commit when I finish the task?"}
+{"id": "v08a", "split": "held_out_v2", "expect": "k08", "question": "Which testing framework does the Harbor CLI use?"}
+{"id": "v08b", "split": "held_out_v2", "expect": "k08", "question": "Should Harbor's tests be written with pytest or unittest?"}
+{"id": "v09a", "split": "held_out_v2", "expect": "k09", "question": "Where should I deploy a new application?"}
+{"id": "v09b", "split": "held_out_v2", "expect": "k09", "question": "Which hosting provider should the apps run on?"}
+{"id": "v10a", "split": "held_out_v2", "expect": "k10", "question": "Should the Lumen onboarding flow request uploads of the user's personal files?"}
+{"id": "v10b", "split": "held_out_v2", "expect": "k10", "question": "Can Lumen's onboarding ask users for personal data uploads?"}
+{"id": "v11a", "split": "held_out_v2", "expect": "k11", "question": "How much commenting does the owner want in code?"}
+{"id": "v11b", "split": "held_out_v2", "expect": "k11", "question": "Should code comments describe what the code does or why?"}
+{"id": "v12a", "split": "held_out_v2", "expect": "k12", "question": "Can I pull in a new third-party library for this feature?"}
+{"id": "v12b", "split": "held_out_v2", "expect": "k12", "question": "What is the owner's policy on adding dependencies?"}
+{"id": "v13a", "split": "held_out_v2", "expect": "k13", "question": "What email address should commercial enquiries go to?"}
+{"id": "v13b", "split": "held_out_v2", "expect": "k13", "question": "Which contact address should appear for business enquiries?"}
+{"id": "v14a", "split": "held_out_v2", "expect": "k14", "question": "Should I work on a feature branch or commit directly to main?"}
+{"id": "v14b", "split": "held_out_v2", "expect": "k14", "question": "How should branches be merged into main?"}
+{"id": "v15a", "split": "held_out_v2", "expect": "k15", "question": "Is it fine to send notifications on a Saturday?"}
+{"id": "v15b", "split": "held_out_v2", "expect": "k15", "question": "Should the app notify users during the weekend?"}
+{"id": "v16a", "split": "held_out_v2", "expect": "k16", "question": "Should user-facing text use British or American spelling?"}
+{"id": "v16b", "split": "held_out_v2", "expect": "k16", "question": "Which English variant should the product copy use?"}
+{"id": "v17a", "split": "held_out_v2", "expect": "k17", "question": "Which LLM provider should be used by default?"}
+{"id": "v17b", "split": "held_out_v2", "expect": "k17", "question": "Should the default model provider be OpenAI or Claude?"}
+{"id": "v18a", "split": "held_out_v2", "expect": "k18", "question": "Where should API keys be kept?"}
+{"id": "v18b", "split": "held_out_v2", "expect": "k18", "question": "Can I commit secrets to the repository?"}
+{"id": "v19a", "split": "held_out_v2", "expect": "k19", "question": "How much does the Lumen app cost per month?"}
+{"id": "v19b", "split": "held_out_v2", "expect": "k19", "question": "Does Lumen have a lifetime pricing tier?"}
+{"id": "v20a", "split": "held_out_v2", "expect": "k20", "question": "Is the Harbor CLI allowed to send usage telemetry?"}
+{"id": "v20b", "split": "held_out_v2", "expect": "k20", "question": "Should Harbor collect analytics about how the CLI is used?"}
+{"id": "v21a", "split": "held_out_v2", "expect": "k21", "question": "What framework should I use for the frontend of a new web project?"}
+{"id": "v21b", "split": "held_out_v2", "expect": "k21", "question": "Should new web projects be built with React or SvelteKit?"}
+{"id": "v22a", "split": "held_out_v2", "expect": "k22", "question": "Which timezone is the owner in?"}
+{"id": "v22b", "split": "held_out_v2", "expect": "k22", "question": "What time zone should I assume for the owner's schedule?"}
+{"id": "v23a", "split": "held_out_v2", "expect": "k23", "question": "Do I need to update the documentation after this change?"}
+{"id": "v23b", "split": "held_out_v2", "expect": "k23", "question": "When should agents update the docs?"}
+{"id": "v24a", "split": "held_out_v2", "expect": "k24", "question": "What license is Kestrel released under?"}
+{"id": "v24b", "split": "held_out_v2", "expect": "k24", "question": "Is the Kestrel source code open?"}
+{"id": "v25a", "split": "held_out_v2", "expect": "k25", "question": "Should I run the tests before I finish the task?"}
+{"id": "v25b", "split": "held_out_v2", "expect": "k25", "question": "Do agents need to run pytest and ruff before declaring a task done?"}
+{"id": "v26a", "split": "held_out_v2", "expect": "k26", "question": "Which analytics should the websites use?"}
+{"id": "v26b", "split": "held_out_v2", "expect": "k26", "question": "Can I add Google Analytics to the website?"}
+{"id": "v27a", "split": "held_out_v2", "expect": "k27", "question": "What is the primary color of the Lumen app?"}
+{"id": "v27b", "split": "held_out_v2", "expect": "k27", "question": "Which brand colour should Lumen's UI use as its main colour?"}
+{"id": "v28a", "split": "held_out_v2", "expect": "k28", "question": "Can I share the owner's calendar with another app?"}
+{"id": "v28b", "split": "held_out_v2", "expect": "k28", "question": "Is it okay to sync the owner's calendar details to a third-party tool?"}
+{"id": "v29a", "split": "held_out_v2", "expect": "k29", "question": "If some tests are flaky, should the Kestrel launch go ahead?"}
+{"id": "v29b", "split": "held_out_v2", "expect": "k29", "question": "Can Kestrel ship with a red CI build?"}
+{"id": "v30a", "split": "held_out_v2", "expect": "k30", "question": "Should Lumen launch on iOS or Android first?"}
+{"id": "v30b", "split": "held_out_v2", "expect": "k30", "question": "Which mobile platform does Lumen target first?"}
+{"id": "vn01", "split": "held_out_v2", "expect": null, "question": "Which database does Lumen use?"}
+{"id": "vn02", "split": "held_out_v2", "expect": null, "question": "Should the Lumen public API stay backward compatible?"}
+{"id": "vn03", "split": "held_out_v2", "expect": null, "question": "What test framework should the Kestrel web app use?"}
+{"id": "vn04", "split": "held_out_v2", "expect": null, "question": "What is the pricing for the Harbor CLI?"}
+{"id": "vn05", "split": "held_out_v2", "expect": null, "question": "Should the Kestrel app collect telemetry?"}
+{"id": "vn06", "split": "held_out_v2", "expect": null, "question": "Which mobile platform should Kestrel target first?"}
+{"id": "vn07", "split": "held_out_v2", "expect": null, "question": "What should the primary colour of the Kestrel website be?"}
+{"id": "vn08", "split": "held_out_v2", "expect": null, "question": "Should Lumen onboarding ask users to connect their calendar?"}
+{"id": "vn09", "split": "held_out_v2", "expect": null, "question": "Why did the owner choose Supabase for Kestrel?"}
+{"id": "vn10", "split": "held_out_v2", "expect": null, "question": "When was Kestrel open-sourced?"}
+{"id": "vn11", "split": "held_out_v2", "expect": null, "question": "Why is iOS the first platform for Lumen?"}
+{"id": "vn12", "split": "held_out_v2", "expect": null, "question": "Who decided that Kestrel should use the AGPL licence?"}
+{"id": "vn13", "split": "held_out_v2", "expect": null, "question": "What cache should Kestrel use?"}
+{"id": "vn14", "split": "held_out_v2", "expect": null, "question": "Which message queue should the Harbor CLI use?"}
+{"id": "vn15", "split": "held_out_v2", "expect": null, "question": "What font should the Lumen app use?"}
+{"id": "vn16", "split": "held_out_v2", "expect": null, "question": "How many users does Kestrel have?"}
+{"id": "vn17", "split": "held_out_v2", "expect": null, "question": "What is the owner's favourite programming language?"}
+{"id": "vn18", "split": "held_out_v2", "expect": null, "question": "Which CI provider should repositories use?"}
+{"id": "vn19", "split": "held_out_v2", "expect": null, "question": "What is the owner's phone number?"}
+{"id": "vn20", "split": "held_out_v2", "expect": null, "question": "Should the owner's meetings be recorded?"}
+{"id": "vn21", "split": "held_out_v2", "expect": null, "question": "Which email provider should Kestrel use for transactional email?"}
+{"id": "vn22", "split": "held_out_v2", "expect": null, "question": "What is the Lumen app's release date?"}
+{"id": "vn23", "split": "held_out_v2", "expect": null, "question": "Is the Lumen app open source?"}
+{"id": "vn24", "split": "held_out_v2", "expect": null, "question": "Should notifications include marketing content?"}
+{"id": "vn25", "split": "held_out_v2", "expect": null, "question": "How should logs be stored?"}

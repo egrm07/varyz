@@ -1,0 +1,309 @@
+{
+ "version": 1,
+ "labels_written": "2026-09-25",
+ "project": "lumen",
+ "role": "held-out: written before any scope-classifier run; never tuned on. Dev is scope_pairs in workflow_bench.json.",
+ "definition": "general: how the owner works everywhere (taste, habits, quality bars, tooling). project: a concrete choice for this product (a value, name, copy, price, date, scope). Labels are authored, not from any owner archive.",
+ "items": [
+  {
+   "q": "Should I write a changelog entry?",
+   "a": "Yes, every release gets one.",
+   "label": "general"
+  },
+  {
+   "q": "Which test runner?",
+   "a": "pytest, it's what I use for Python.",
+   "label": "general"
+  },
+  {
+   "q": "Should the tool log API keys when debugging?",
+   "a": "Never log secrets, full stop.",
+   "label": "general"
+  },
+  {
+   "q": "Do you want a README?",
+   "a": "Every repo needs a README with install steps.",
+   "label": "general"
+  },
+  {
+   "q": "Tabs or spaces?",
+   "a": "Spaces, four of them. That's how I write Python.",
+   "label": "general"
+  },
+  {
+   "q": "Should the CLI print colours?",
+   "a": "Only when it's a TTY; that's my standard for command line tools.",
+   "label": "general"
+  },
+  {
+   "q": "Should I add comments to this function?",
+   "a": "Keep comments sparse and explain why, not what.",
+   "label": "general"
+  },
+  {
+   "q": "Should I use a heavy framework here?",
+   "a": "I prefer the standard library over frameworks when it's enough.",
+   "label": "general"
+  },
+  {
+   "q": "Where should the docs live?",
+   "a": "In a docs folder next to the code, as I do in all my repos.",
+   "label": "general"
+  },
+  {
+   "q": "How should I format dates in the UI?",
+   "a": "Day before month, I'm in Europe.",
+   "label": "general"
+  },
+  {
+   "q": "Should the agent ask before deleting files?",
+   "a": "Yes, always confirm before deleting anything.",
+   "label": "general"
+  },
+  {
+   "q": "Should long jobs report progress?",
+   "a": "I like a progress line with an ETA on anything over a minute.",
+   "label": "general"
+  },
+  {
+   "q": "Should the app work offline?",
+   "a": "Local-first is how I build things.",
+   "label": "general"
+  },
+  {
+   "q": "Is it fine to use Google Fonts from their CDN?",
+   "a": "Self-host fonts, I don't want third-party requests.",
+   "label": "general"
+  },
+  {
+   "q": "Commit messages style?",
+   "a": "Short imperative subject, details in the body. Same for everything.",
+   "label": "general"
+  },
+  {
+   "q": "Do you want dependency versions pinned?",
+   "a": "Pin them with a lockfile, that's non-negotiable for me.",
+   "label": "general"
+  },
+  {
+   "q": "Should I add analytics?",
+   "a": "Only privacy-friendly analytics, never Google Analytics.",
+   "label": "general"
+  },
+  {
+   "q": "Should the error page be funny?",
+   "a": "No jokes in error messages, I prefer them plain and helpful.",
+   "label": "general"
+  },
+  {
+   "q": "How should the report start?",
+   "a": "Lead with the result and the numbers, then the details.",
+   "label": "general"
+  },
+  {
+   "q": "Should I build a dry-run mode?",
+   "a": "Anything that acts in the world needs a dry run first.",
+   "label": "general"
+  },
+  {
+   "q": "Which cloud for hosting?",
+   "a": "Fly.io for apps is my default.",
+   "label": "general"
+  },
+  {
+   "q": "Should images have alt text?",
+   "a": "Yes, accessibility is part of done.",
+   "label": "general"
+  },
+  {
+   "q": "Can you use emoji in commit messages?",
+   "a": "No emoji in commits.",
+   "label": "general"
+  },
+  {
+   "q": "Should I ask before pushing?",
+   "a": "Don't push, I push myself.",
+   "label": "general"
+  },
+  {
+   "q": "Light or dark theme by default?",
+   "a": "Follow the system setting, I do that in all my apps.",
+   "label": "general"
+  },
+  {
+   "q": "Is it ok to scrape the site for data?",
+   "a": "Official APIs only, I don't scrape.",
+   "label": "general"
+  },
+  {
+   "q": "Should the build run type checks?",
+   "a": "Type checks are part of every build.",
+   "label": "general"
+  },
+  {
+   "q": "How detailed should the PR description be?",
+   "a": "Brief, with a test plan.",
+   "label": "general"
+  },
+  {
+   "q": "Should the settings be in YAML or TOML?",
+   "a": "TOML for config files.",
+   "label": "general"
+  },
+  {
+   "q": "Should I write British or American spelling?",
+   "a": "British English in anything I write.",
+   "label": "general"
+  },
+  {
+   "q": "Which accent colour?",
+   "a": "The teal, #0f766e.",
+   "label": "project"
+  },
+  {
+   "q": "What should the onboarding title say?",
+   "a": "\"Welcome to Lumen\".",
+   "label": "project"
+  },
+  {
+   "q": "How much for the annual plan?",
+   "a": "EUR 60 a year.",
+   "label": "project"
+  },
+  {
+   "q": "Which icon for the app?",
+   "a": "The crescent moon one.",
+   "label": "project"
+  },
+  {
+   "q": "Should this screen have a back button?",
+   "a": "Yes, top left.",
+   "label": "project"
+  },
+  {
+   "q": "Which font for the body text?",
+   "a": "Source Serif 4.",
+   "label": "project"
+  },
+  {
+   "q": "How many free trial days?",
+   "a": "Fourteen.",
+   "label": "project"
+  },
+  {
+   "q": "Should the hero show a video?",
+   "a": "No, a still screenshot is enough here.",
+   "label": "project"
+  },
+  {
+   "q": "What's the app's bundle id?",
+   "a": "com.lumen.app",
+   "label": "project"
+  },
+  {
+   "q": "Which map provider for the store finder?",
+   "a": "Mapbox.",
+   "label": "project"
+  },
+  {
+   "q": "Should the logo be animated on launch?",
+   "a": "A short fade, 300ms.",
+   "label": "project"
+  },
+  {
+   "q": "What goes in the footer?",
+   "a": "Privacy, terms and the support address.",
+   "label": "project"
+  },
+  {
+   "q": "Is the Android version in scope for the beta?",
+   "a": "No, iOS only for the beta.",
+   "label": "project"
+  },
+  {
+   "q": "What should the push notification say?",
+   "a": "\"Your daily summary is ready\".",
+   "label": "project"
+  },
+  {
+   "q": "How wide should the content column be?",
+   "a": "720px.",
+   "label": "project"
+  },
+  {
+   "q": "Which launch date?",
+   "a": "October 14.",
+   "label": "project"
+  },
+  {
+   "q": "Who is the support contact?",
+   "a": "support@lumen.example",
+   "label": "project"
+  },
+  {
+   "q": "Should the paywall appear after onboarding?",
+   "a": "After the third session.",
+   "label": "project"
+  },
+  {
+   "q": "Rounded or square buttons on this screen?",
+   "a": "Rounded, 12px.",
+   "label": "project"
+  },
+  {
+   "q": "What's the app's tagline?",
+   "a": "Light for your notes.",
+   "label": "project"
+  },
+  {
+   "q": "Which illustration style for the empty states?",
+   "a": "Line drawings in the brand teal.",
+   "label": "project"
+  },
+  {
+   "q": "Should the pricing page show a lifetime tier?",
+   "a": "No lifetime tier for this app.",
+   "label": "project"
+  },
+  {
+   "q": "Which payment provider here?",
+   "a": "RevenueCat.",
+   "label": "project"
+  },
+  {
+   "q": "What version should the first public build be?",
+   "a": "1.0.0",
+   "label": "project"
+  },
+  {
+   "q": "Should the settings screen group by account and app?",
+   "a": "Yes, two sections.",
+   "label": "project"
+  },
+  {
+   "q": "What colour should the error banner be?",
+   "a": "A muted red, #b42318.",
+   "label": "project"
+  },
+  {
+   "q": "Which domain for the landing page?",
+   "a": "lumen.app",
+   "label": "project"
+  },
+  {
+   "q": "Should the widget show the streak?",
+   "a": "Yes, the streak and today's count.",
+   "label": "project"
+  },
+  {
+   "q": "Which sample data should the demo use?",
+   "a": "The three fictional notebooks we made.",
+   "label": "project"
+  },
+  {
+   "q": "Should the release notes mention the redesign?",
+   "a": "Yes, lead with it.",
+   "label": "project"
+  }
+ ]
+}

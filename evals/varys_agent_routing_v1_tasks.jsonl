@@ -1,0 +1,13 @@
+# Blind task packet for varys_agent_routing_v1. Do not add expected labels here.
+{"id":"repo_config","task":"Which sources does this repository currently exclude from graph compilation?"}
+{"id":"landing_page","task":"Build a new Varys landing page. Match Egor's visual style, colour, tone, information density, claims, and disliked patterns."}
+{"id":"single_colour","task":"What colour does Egor prefer for the primary call-to-action on this product?"}
+{"id":"hosting_now","task":"What is Egor's current hosting preference after he changed his mind?"}
+{"id":"project_history","task":"Prepare a multi-angle history of why the Atlas release slipped and what was tried across sessions."}
+{"id":"thin_evidence","task":"Resolution identified the likely decision but its evidence is thin; expand the evidence around the named incident."}
+{"id":"anna_preference","task":"Read the canonical stored preference records for Anna, including their status and provenance."}
+{"id":"python_fact","task":"What does pathlib.Path.resolve do in Python?"}
+{"id":"sensitive_match","task":"The most relevant private evidence was withheld, while lower-ranked public snippets were also returned. Answer the owner's question."}
+{"id":"unknown_workflow","task":"Varys has no support for Egor's preferred release-note workflow, and choosing wrong would affect the team. Decide what he wants."}
+{"id":"risky_review","task":"Review a risky pull request in Egor's preferred format, including his risk tolerance and proof expectations."}
+{"id":"generic_profile","task":"Tell me everything about Egor so I can personalize an unrelated task later."}

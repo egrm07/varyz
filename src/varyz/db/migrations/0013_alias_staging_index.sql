@@ -1,0 +1,21 @@
+-- The staging lookup that was costing a rebuild 139 ms per entry.
+--
+-- `stage_batch` asks, for every alias it resolves, which alias rows this entry
+-- contributed to this entity in this generation, so it can label them. The
+-- only index that matched was `idx_entity_alias_entity (entity_id)`, and
+-- `entity_id` is the least selective column of the three: aliases pile up on
+-- the entity for "me", which on this archive holds 290,968 of the 467,134
+-- alias rows. Every entry mentioning the user therefore scanned a quarter of
+-- a million index entries to find the handful it had just written.
+--
+-- Measured on a snapshot of the live archive: 139.58 ms per lookup before,
+-- 0.006 ms after. That one statement was 96% of a rebuild -- with the
+-- extraction cache warm and the model out of the loop entirely, staging still
+-- ran at 7 entries/s, which is 110 minutes to walk the archive. With this
+-- index the same pass runs at 554 entries/s, or about 1.4 minutes.
+--
+-- The generation column comes before the entry column because callers that
+-- sweep an entity's rows for one generation (activation, supersession) are
+-- served by the two-column prefix.
+CREATE INDEX idx_entity_alias_staging
+    ON entity_aliases (entity_id, graph_generation_id, source_entry_id);
