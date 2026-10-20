@@ -124,9 +124,11 @@ def discover_local_sources(
 
     The function inspects directory names and ``.git`` markers only.  In
     particular, discovery itself never opens a document.  A project checkout
-    is useful for both its current docs and commit history; a conventional
-    Documents folder is offered for documents, while only conventional code
-    folders are searched for repositories.
+    is useful for both its current docs and commit history, and is the only
+    folder offered for its files; conventional code folders are searched for
+    repositories.  The Documents folder itself is never offered: it holds the
+    owner's whole life, not their work with AI, and reading it made setup ask
+    for consent to far more than Varyz learns from.
     """
 
     home = (home or Path.home()).expanduser().resolve()
@@ -138,14 +140,11 @@ def discover_local_sources(
         )
     documents_dir = documents_dir.expanduser().resolve()
 
+    # A checkout is a narrow, high-signal source.  Never offer the home
+    # directory itself: consent to index "$HOME" is too broad.
     document_roots: list[Path] = []
-    if documents_dir.is_dir():
-        document_roots.append(documents_dir)
-
-    # A checkout outside Documents is a narrow, high-signal source.  Never
-    # offer the home directory itself: consent to index "$HOME" is too broad.
     cwd_repos = find_repos(cwd, max_depth=0) if cwd != home else []
-    if cwd_repos and not _inside(cwd, documents_dir):
+    if cwd_repos and cwd != documents_dir:
         document_roots.append(cwd)
 
     git_roots: list[Path] = []

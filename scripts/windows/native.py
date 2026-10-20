@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -22,6 +23,8 @@ UV_NAME = "uv.exe" if os.name == "nt" else "uv"
 PYTHON_NAME = "runtime/python.exe" if os.name == "nt" else "runtime/bin/python3"
 LAUNCHER_NAME = "varyz.exe" if os.name == "nt" else "varyz"
 WINDOWS = os.name == "nt"
+# How long uninstall waits for the processes `varyz uninstall` stopped to end.
+STOP_WAIT = 20
 
 
 def sha256(path: Path) -> str:
@@ -229,13 +232,9 @@ def uninstall_check(app: Path) -> dict:
         raise ValueError(
             "Varyz was changed outside this installer. Review its installation before removing it."
         )
-    upgrade = load_upgrade()
-    tool = tomllib.loads(receipt.read_text(encoding="utf-8"))["tool"]
-    launchers = [Path(entry["install-path"]) for entry in tool["entrypoints"]]
-    if upgrade.running(environment, launchers):
-        raise ValueError(
-            "Close your Varyz agents and stop its daemon/background sync before uninstalling."
-        )
+    # Running Varyz processes are not a reason to refuse: some (setup's
+    # learning, the daemons) run without a window, so the owner could not
+    # close them. The uninstall step stops them itself.
     return {"status": "ready_to_remove"}
 
 
@@ -248,17 +247,22 @@ def uninstall(app: Path) -> dict:
     uv = str(Path(state["payload"]) / UV_NAME)
     upgrade = load_upgrade()
     config = Path(state["config"])
-    if config.exists():
-        execute(
-            [
-                str(upgrade.python_in(environment)),
-                "-m",
-                "varyz",
-                "uninstall",
-                "--config",
-                str(config),
-            ]
-        )
+    # Always run: besides the archive's integrations it stops every process
+    # this installation still runs, which would otherwise hold its files.
+    execute(
+        [str(upgrade.python_in(environment)), "-m", "varyz", "uninstall"]
+        + (["--config", str(config)] if config.exists() else [])
+    )
+    tool = tomllib.loads((environment / "uv-receipt.toml").read_text(encoding="utf-8"))["tool"]
+    launchers = [Path(entry["install-path"]) for entry in tool["entrypoints"]]
+    deadline = time.monotonic() + STOP_WAIT
+    while upgrade.running(environment, launchers):
+        if time.monotonic() > deadline:
+            raise ValueError(
+                "Varyz is still running and could not be stopped. Restart the computer, "
+                "then uninstall again; your archive is kept."
+            )
+        time.sleep(1)
     execute([uv, "tool", "uninstall", "varyzai"])
     return {"status": "uninstalled", "retained": "Archive, configuration, models and credentials"}
 

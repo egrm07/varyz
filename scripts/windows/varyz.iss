@@ -92,7 +92,7 @@ begin
     Result := True
   else begin
     LoadStringFromFile(ExpandConstant('{tmp}\varyz-uninstall-result.json'), Status);
-    MsgBox('Varyz was not removed. Close its agents and stop its background services, then retry.' +
+    MsgBox('Varyz was not removed.' +
       Chr(13) + Chr(10) + String(Status), mbError, MB_OK);
   end;
 end;

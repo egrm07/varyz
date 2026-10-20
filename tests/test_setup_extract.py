@@ -168,6 +168,14 @@ def test_reading_says_how_far_it_got_at_its_own_pace_and_what_it_used(cfg) -> No
     assert (view["used_five_hour"], view["used_weekly"]) == (4.0, 1.0)
 
 
+def test_stuck_reader_reports_elapsed_time_without_a_countdown(cfg):
+    _status(cfg, state="running", pending=["full"])
+    view = setup_extract.progress(cfg, _started(), T0 + 5400, work=(1000, 0, 0, 0))
+    assert view["phase"] == "reading" and view["turns_left"] == 1000
+    assert view["nothing_read_for"] == 5400
+    assert view["seconds_left"] is None
+
+
 def test_before_its_pace_shows_the_estimate_counts_down(cfg) -> None:
     _status(cfg, state="queued", pending=["full"])
 

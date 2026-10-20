@@ -51,8 +51,8 @@ ALPHA_SOURCES: tuple[SourceInfo, ...] = (
     ),
     SourceInfo(
         "documents",
-        "Documents",
-        "text documents in the folders you approve",
+        "Project files",
+        "docs and notes in the project folders you approve",
         "varyz setup --source documents",
     ),
     SourceInfo(

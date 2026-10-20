@@ -505,3 +505,17 @@ def journal_dir(tmp_path: Path) -> Path:
     doc.add_paragraph("Trip to Lisbon. The tram screeched up the hill.")
     doc.save(root / "lisbon 2018-03-02.docx")
     return root
+
+
+@pytest.fixture(autouse=True)
+def _no_real_process_listing(monkeypatch):
+    """Nothing in the suite may list or stop the machine's real processes.
+
+    `varyz uninstall` stops every process the installation runs, and under
+    the suite that installation is the developer's: their agents' live Varyz
+    servers and daemon. Tests that exercise it hand `find` their own listing.
+    """
+    from varyz import background
+
+    monkeypatch.setattr(background, "_listing", lambda: [])
+    monkeypatch.setattr(background, "stop", lambda found: [])

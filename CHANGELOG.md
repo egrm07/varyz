@@ -9,6 +9,28 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-20
+
+### Fixed
+
+- Large-history preference learning now uses the newest 4,000 eligible messages,
+  caches parsed turns and stops stalled background readers. Setup reports unknown,
+  stale and zero-progress states without a misleading countdown.
+- Setup offers repository files as **Project files** and no longer offers the
+  general Documents directory. See `docs/LEARNING_SCALING.md` for scope and tests.
+- `varyz uninstall` stops every process the installation still runs, including
+  windowless ones: preference learning and its Claude Code or Codex reader, local
+  learning, a setup left open, the daemons and agent connections. Before, these kept the
+  tool's files open on Windows and removal failed. It clears queued learning first, never
+  stops itself or what started it, and lists the processes in `--dry-run`.
+- The Windows uninstaller no longer refuses to remove Varyz while it runs. It stops Varyz,
+  waits up to 20 seconds, and asks for a restart only if something is still running.
+- Setup stops when its page has been closed for 30 minutes, even with a run frozen
+  mid-step, and local learning stops waiting for a model that has not arrived within
+  3 hours.
+
+## [0.1.0] - 2026-10-18
+
 ### Added
 
 - **Varyz network.** One opt-in popup, **Join the Varyz network**, now governs everything
@@ -31,8 +53,6 @@ All notable changes to Varyz are recorded here. The format follows
 - Consent version `network-v1`. Earlier counts-only consent keeps sending counts and never
   sends examples. Anonymized examples may be licensed to AI companies; the privacy notice
   says so.
-
-## [0.1.0] - 2026-10-18
 
 ### Fixed
 

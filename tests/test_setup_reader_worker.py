@@ -59,6 +59,29 @@ def test_local_worker_waits_for_model_then_queues_real_candidates(
     assert daemon_client.principles("confirmed") == ()
 
 
+def test_local_worker_gives_up_on_a_model_that_never_arrives(tmp_path, monkeypatch):
+    """Waiting without a limit, a stuck download left this windowless worker running for good."""
+    path = tmp_path / "config.toml"
+    path.write_text(
+        f'[storage]\ndata_dir = "{(tmp_path / "data").as_posix()}"\n'
+        '[workflows]\ninference_mode = "local"\n'
+        '[connectors.ai_conversations]\napproved = true\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    open_db(cfg.db_path).close()
+    clock = iter(range(0, 10**9, 3600))
+    monkeypatch.setattr(local_reader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(local_reader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(local_reader, "model_ready", lambda cfg: False)
+
+    local_reader.run(path, wait_model=True)
+
+    status = local_reader.load_status(cfg)
+    assert status["state"] == "stopped"
+    assert "did not arrive" in status["reason"]
+
+
 def test_cloud_supervisor_reads_through_the_real_mcp_tools_and_reaches_idle(
     tmp_path, daemon_client, monkeypatch  # noqa: F811
 ):

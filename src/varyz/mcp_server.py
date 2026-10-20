@@ -55,7 +55,7 @@ from varyz.session_progress import PROGRESS_POLICY
 from varyz.session_progress import TOOLS as PROGRESS_TOOLS
 
 SERVER_NAME = "varyz"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.1.1"
 
 _COLOUR_LITERAL = re.compile(
     r"\b(?:red|orange|yellow|green|blue|purple|pink|brown|black|white|grey|gray|"

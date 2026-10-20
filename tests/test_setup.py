@@ -131,7 +131,7 @@ def test_a_declined_source_is_neither_connected_nor_indexed(tmp_path, machine):
     assert result.exit_code == 0, result.output
     assert load_config(config).connector_options("documents") == {}
     assert _entries(config) == 0
-    assert "Documents" in result.output and "not connected" in result.output
+    assert "Project files" in result.output and "not connected" in result.output
 
 
 def test_yes_connects_indexes_and_says_what_is_connected(tmp_path, machine):
@@ -141,14 +141,14 @@ def test_yes_connects_indexes_and_says_what_is_connected(tmp_path, machine):
 
     assert result.exit_code == 0, result.output
     flat = _flat(result.output)
-    assert "4/7 Data sources connected Documents; indexed" in flat
+    assert "4/7 Data sources connected Project files; indexed" in flat
     # No agent is installed on this machine, and GO says so.
     assert "GO: The archive is ready. No agent is connected yet" in flat
     assert "agents are briefed" not in flat
     assert load_config(config).connector_options("documents")["approved"] is True
     assert _entries(config) == 1
     documents = next(
-        s for s in source_statuses(load_config(config), None) if s.info.label == "Documents"
+        s for s in source_statuses(load_config(config), None) if s.info.label == "Project files"
     )
     assert documents.connected
 
@@ -362,7 +362,7 @@ def test_sources_lists_every_alpha_source_and_how_to_connect_it(tmp_path, machin
 
     assert result.exit_code == 0, result.output
     flat = _flat(result.output)
-    for label in ("AI conversations", "Git history", "GitHub", "Documents", "Notes"):
+    for label in ("AI conversations", "Git history", "GitHub", "Project files", "Notes"):
         assert label in flat
     assert "connected" not in flat.replace("not connected", "")
     assert "varyz connect github" in flat
@@ -408,7 +408,7 @@ def test_the_doctor_line_names_each_connected_source_and_its_items(tmp_path):
     assert statuses["documents"].state == "connected"
     assert statuses["git"].state == "not approved"
     assert statuses["github"].state == "not connected"
-    assert connected_summary(list(statuses.values())) == "Documents (0 items, never synced)"
+    assert connected_summary(list(statuses.values())) == "Project files (0 items, never synced)"
     assert "none connected" in connected_summary([statuses["github"]])
 
 

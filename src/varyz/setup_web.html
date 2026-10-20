@@ -838,9 +838,14 @@ function renderExtract(extract) {
   if (asking) {
     $("extract-title").textContent = "Learn from your past chats now?";
     const local = extract.runner === "local";
-    $("extract-text").textContent = local
-      ? `Read ${turns} chat ${messages} on this device? Uses no AI plan allowance.`
-      : `Read ${turns} chat ${messages} using ${extract.plan}? Sensitive content is skipped.`;
+    // A heavy history is read from its newest messages only.
+    const newest = extract.older ? `your newest ${turns}` : turns;
+    const older = extract.older
+      ? ` ${extract.older.toLocaleString()} older ones are left out, so it stays quick.` : "";
+    $("extract-text").textContent = (local
+      ? `Read ${newest} chat ${messages} on this device? Uses no AI plan allowance.`
+      : `Read ${newest} chat ${messages} using ${extract.plan}? Sensitive content is skipped.`)
+      + older;
     $("extract-costs").replaceChildren(
       cost(percent(extract.five_hour), "5-hour limit"),
       cost(percent(extract.weekly), "weekly limit"),
@@ -883,7 +888,12 @@ function renderExtract(extract) {
       : "The background reader is unavailable. ")
       + "Retry here, or send the message below to your AI.";
   } else if (phase === "reading") {
-    parts.push(`${read} of ${turns} read`);
+    if (typeof extract.turns_left === "number") parts.push(`${read} of ${turns} read`);
+    else parts.push("Starting the reader");
+    if (extract.nothing_read_for != null) {
+      parts.push(`nothing read yet, ${duration(extract.nothing_read_for)} since it started`);
+    }
+    if (extract.stale != null) parts.push(`progress last checked ${duration(extract.stale)} ago`);
     if (extract.seconds_left != null) parts.push(`${duration(extract.seconds_left)} left`);
     if (usedLine && extract.runner !== "local") parts.push(`Plan change: ${usedLine}`);
     status.textContent = `${parts.join(" · ")}. ${away}`;

@@ -44,7 +44,7 @@ The application folder is `%LOCALAPPDATA%\Programs\Varyz`. Each content-addresse
 
 Existing supported uv installations are upgraded using `src/varyz/release_upgrade.py`: preserve the old tool environment, launchers, configuration and consistent SQLite backup; verify imports and migrations before committing; restore on failure. Existing custom Python interpreters and receipt extras are preserved. An offline candidate cannot add extras not present in its wheelhouse; such an upgrade fails rather than silently dropping them. Retained runtimes are immutable and remain available for old receipt references and recovery.
 
-Use Windows **Installed apps → Varyz → Uninstall**, or **Uninstall Varyz** in the Start menu. Close agents and stop background services first. The uninstaller checks tool ownership, unregisters Varyz integrations, then removes its uv tool and native payloads. It deliberately retains the archive, configuration, models, credentials and recovery backups. If the tool receipt changed outside the native installer, automatic removal is refused for review.
+Use Windows **Installed apps → Varyz → Uninstall**, or **Uninstall Varyz** in the Start menu. Nothing needs closing first. The uninstaller checks tool ownership, unregisters Varyz integrations and stops every process Varyz still runs (including windowless learning and setup), then removes its uv tool and native payloads. If something will not stop within 20 seconds, it asks for a restart and changes nothing else. It deliberately retains the archive, configuration, models, credentials and recovery backups. If the tool receipt changed outside the native installer, automatic removal is refused for review.
 
 ## Reproducible build
 

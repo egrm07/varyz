@@ -71,11 +71,15 @@ PRESELECTED_SOURCES = frozenset({"ai_conversations"})
 # The card has no colour for a failure; this warm coral is the page's one
 # addition to its palette (the owner's choice, 2026-09-28).
 FAILED = "#ff7a66"
-# The server stops by itself after this long without a request, unless a run
-# is still going: a tab closed without "Close setup" must not leave it behind.
+# The server stops by itself after this long without a request: a tab closed
+# without "Close setup" must not leave it behind, even with a run going.
 IDLE_LIMIT = 30 * 60.0
+# How long a run left by a closed page gets to pause before setup stops anyway.
+ABANDON_GRACE = 120.0
 # How often the reading's progress is measured again for the page's polls.
 EXTRACT_REFRESH = 3.0
+# A reading's progress not measured again for this long is shown as old.
+EXTRACT_STALE = 60.0
 _MAX_BODY = 16 * 1024
 _TOKEN_HEADER = "X-Varyz-Setup"
 
@@ -264,7 +268,14 @@ class SetupSession(SetupRun):
                 and self._extract_lock.acquire(blocking=False)):
             threading.Thread(target=self._refresh_extract, daemon=True,
                              name="varyz-setup-progress").start()
-        return self._extract_seen[1] if self._extract_seen else self._extract
+        if self._extract_seen is None:
+            # Not measured yet: the offer's count is no count of what was read.
+            return None if self._extract is None else {**self._extract, "turns_left": None}
+        seen_at, view = self._extract_seen
+        if now - seen_at >= EXTRACT_STALE:
+            # A measure that stopped coming is said to be old, not shown as now.
+            return {**view, "seconds_left": None, "stale": round(now - seen_at)}
+        return view
 
     def _refresh_extract(self) -> None:
         from varyz import setup_extract
@@ -971,12 +982,27 @@ def serve(
             webbrowser.open(server.url)
         except webbrowser.Error:
             console.print("Could not open a browser; open the link above yourself.")
+    abandoned: float | None = None
     try:
         # Closing setup must not cut off a review already opened from this page.
         while not server.closed.is_set() or server.review_active:
             time.sleep(1.0)
             idle = time.monotonic() - server.last_request
-            if idle > idle_limit and not session.running and not server.review_active:
+            if idle > idle_limit and not server.review_active:
+                # A closed page with the run still going used to keep this
+                # process alive for good, and with it every file of the
+                # install. Pause a download so it can carry on later; a run
+                # that does not settle within the grace period is left.
+                if session.running:
+                    if abandoned is None:
+                        abandoned = time.monotonic()
+                        session.pause()
+                    if time.monotonic() - abandoned < ABANDON_GRACE:
+                        continue
+                    console.print("The setup page was closed while setup was still working; "
+                                  f"stopping. Run varyz setup{session._config_flag()} to "
+                                  "carry on.")
+                    break
                 console.print("Nothing heard from the page for a while; stopping.")
                 break
     except KeyboardInterrupt:
@@ -990,6 +1016,8 @@ def serve(
         console.print(f"Setup is paused. What has downloaded is kept: run varyz setup"
                       f"{session._config_flag()} to carry on from there.")
         return None
+    if result is None and abandoned is not None:
+        return False
     if result is None:
         console.print(f"Setup did not run. Start it again any time: varyz setup"
                       f"{session._config_flag()}")

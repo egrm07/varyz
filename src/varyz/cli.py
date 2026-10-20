@@ -232,7 +232,7 @@ data_dir = "data"
 # refuses to walk anything.
 # [connectors.documents]
 # approved = true
-# paths = ["~/Documents"]
+# paths = ["~/projects/some-repo"]
 
 # [connectors.git]
 # approved = true
@@ -3568,6 +3568,47 @@ def install(
         raise typer.Exit(1)
 
 
+def _stop_background(cfg: Config | None, *, dry_run: bool) -> None:
+    """Stop what this installation still runs, so `uv tool uninstall` can remove it.
+
+    Learning, setup and the daemons run windowless and detached. Left running,
+    they keep the tool's files open on Windows and the removal fails.
+    """
+    import subprocess
+
+    from varyz import background
+
+    if cfg is not None and not dry_run:
+        # Queued learning cleared first: a supervisor between runs would
+        # otherwise start the next one as the last is stopped.
+        from varyz.resolution import headless_reader
+
+        with contextlib.suppress(OSError, ValueError):
+            headless_reader.update_status(cfg, lambda status: status.update(
+                {"pending": [], "stop_run": "*", "state": "stopped", "pid": None,
+                 "reason": "Varyz was uninstalled", "next_check": None,
+                 "resume_after": None}))
+    environment, launchers = background.install_paths()
+    try:
+        found = background.find(environment, launchers)
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError):
+        console.print("[yellow]Could not list running Varyz processes; if removal says "
+                      "files are in use, restart the computer and remove it then.[/yellow]")
+        return
+    if not found:
+        console.print("Background processes: none running.")
+        return
+    names = ", ".join(background.describe(process) for process in found)
+    if dry_run:
+        console.print(f"Would stop background processes: {escape(names)}")
+        return
+    stopped = background.stop(found)
+    console.print(f"Stopped background processes: {escape(names)}")
+    if len(stopped) < len(found):
+        console.print("[yellow]Some could not be stopped (they may have just ended). If "
+                      "removal says files are in use, run varyz uninstall again.[/yellow]")
+
+
 @app.command()
 def uninstall(
     dry_run: Annotated[
@@ -3650,6 +3691,8 @@ def uninstall(
         console.print(
             f"[yellow]Config not found; autosync could not be resolved: {cfg_path}[/yellow]"
         )
+    if client is None:
+        _stop_background(cfg, dry_run=dry_run)
 
     action = "would remain" if dry_run else "remains"
     console.print(f"\nLocal state {action} deliberately:")

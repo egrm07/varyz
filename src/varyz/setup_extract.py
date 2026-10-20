@@ -39,6 +39,9 @@ START_SECONDS = 30.0
 # Before this much has been read, the measured pace says little.
 SETTLE_SECONDS = 20.0
 SETTLE_TURNS = 20
+# Nothing read this long after the start: the estimate is no longer believable,
+# so the page says nothing has been read yet instead of counting down from it.
+FIRST_READ_SECONDS = 180.0
 
 PLANS = {"claude": "Claude", "codex": "ChatGPT"}
 
@@ -75,6 +78,24 @@ def estimate(turns: int, found: Usage | None, gate: Gate) -> dict[str, Any]:
     return view
 
 
+def older_unread(cfg: Any, tier: str) -> int:
+    """Unread chat messages too old for a reading, which only the newest take."""
+    import sqlite3
+
+    from varyz.resolution import profile_reader
+
+    db = Path(cfg.db_path)
+    if not db.exists():
+        return 0
+    conn = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        state = profile_reader.ProfileState(profile_reader.profile_path(cfg, tier))
+        return profile_reader.older_unread(state, conn, tier)
+    finally:
+        conn.close()
+
+
 def offer(
     cfg: Any, config_file: Path, *,
     runners: dict[str, Any] | None = None,
@@ -101,7 +122,8 @@ def offer(
         if not turns and not merges:
             return None
         return {
-            "state": "offered", "turns": turns, "runner": "local", "plan": "AI plan",
+            "state": "offered", "turns": turns, "older": older_unread(cfg, "local"),
+            "runner": "local", "plan": "AI plan",
             "known": True, "five_hour": 0, "weekly": 0,
             "seconds": 60 + turns * 2,
             "estimate_note": ("Rough local time estimate; updates as it reads. "
@@ -117,7 +139,8 @@ def offer(
         return None
     if not runners:
         return {
-            "state": "offered", "turns": turns, "runner": "agent", "plan": "AI account",
+            "state": "offered", "turns": turns, "older": older_unread(cfg, "cloud"),
+            "runner": "agent", "plan": "AI account",
             "known": False, "allow_agent_fallback": True,
             "estimate_note": "Estimates vary by plan and model.",
             **estimate(turns, None, usage_mod.gates(cfg)["full"]),
@@ -130,6 +153,7 @@ def offer(
     return {
         "state": "offered",
         "turns": turns,
+        "older": older_unread(cfg, "cloud"),
         "runner": name,
         "plan": PLANS.get(name, name),
         "known": found is not None and found.known,
@@ -295,6 +319,10 @@ def progress(
         view["phase"] = "reading"
         if elapsed >= SETTLE_SECONDS and read >= max(SETTLE_TURNS, total * 0.02):
             view["seconds_left"] = elapsed * turns_left / read + merge_seconds
+        elif read == 0 and elapsed >= FIRST_READ_SECONDS:
+            # A reader that has read nothing has no pace; the estimate made
+            # before it started is not one either.
+            view["nothing_read_for"] = round(elapsed)
         else:
             view["seconds_left"] = max(float(started["seconds"]) - elapsed, 30.0)
     return view
@@ -321,8 +349,13 @@ def _local_progress(cfg: Any, started: dict[str, Any], now: float) -> dict[str, 
         view.update(phase="done", fraction=1)
     else:
         elapsed = now - float(status.get("reading_at") or now)
-        seconds = elapsed * left / done if done >= SETTLE_TURNS else float(started["seconds"])
-        view.update(phase="merging" if not left else "reading", seconds_left=max(seconds, 30))
+        view["phase"] = "merging" if not left else "reading"
+        if done >= SETTLE_TURNS:
+            view["seconds_left"] = max(elapsed * left / done, 30)
+        elif left and done == 0 and elapsed >= FIRST_READ_SECONDS:
+            view["nothing_read_for"] = round(elapsed)
+        else:
+            view["seconds_left"] = max(float(started["seconds"]) - elapsed, 30)
     return view
 
 
@@ -407,5 +440,5 @@ class DownloadClock:
 
 __all__ = [
     "CLASSIFIER_BYTES", "DownloadClock", "PLANS", "classifier_download", "download_bytes",
-    "estimate", "offer", "progress", "start",
+    "estimate", "offer", "older_unread", "progress", "start",
 ]

@@ -680,6 +680,29 @@ def test_serve_closed_while_paused_says_how_to_carry_on(machine, monkeypatch, ca
     assert "Setup is paused. What has downloaded is kept: run varyz setup" in printed
 
 
+def test_serve_stops_when_the_page_is_gone_even_with_a_run_going(machine, monkeypatch, capsys):
+    """A tab closed on a frozen run kept setup, and the install's files, open for good."""
+    pauses: list[bool] = []
+
+    class Stuck(SetupSession):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.started = True
+
+        def pause(self):
+            pauses.append(True)
+            return "only a download can be paused"
+
+    monkeypatch.setattr(setup_web, "SetupSession", Stuck)
+    monkeypatch.setattr(setup_web, "ABANDON_GRACE", 0)
+
+    assert serve(machine.config, open_browser=False, idle_limit=0) is False
+    printed = capsys.readouterr().out
+    assert pauses == [True]
+    assert "The setup page was closed while setup was still working" in printed
+    assert "Setup did not run" not in printed
+
+
 def test_folder_access_opens_only_for_what_the_run_found(server, monkeypatch):
     token = server.session.token
     opened: list[dict] = []
@@ -958,6 +981,24 @@ OFFER = {"state": "offered", "turns": 2807, "runner": "codex", "plan": "ChatGPT"
          "known": True, "starts_at": None, "five_hour": 12.1, "weekly": 2.0, "seconds": 566,
          "five_hour_left": 88, "weekly_left": 69, "pauses_until": None,
          "gate": {"five_hour": 30, "weekly": 25}}
+
+
+def test_unmeasured_and_stale_reading_progress_cannot_claim_completion(machine, monkeypatch):
+    session = SetupSession(machine.config)
+    session._extract = {**OFFER, "state": "accepted", "phase": "reading"}
+    session._extract_started = {"at": 1.0}
+    session._extract_lock.acquire()
+    try:
+        view = session._extract_view()
+        assert view["turns_left"] is None
+        session._extract_seen = (100.0, {"phase": "reading", "turns_left": 2807,
+                                       "seconds_left": 90.0})
+        monkeypatch.setattr(setup_web.time, "time", lambda: 190.0)
+        view = session._extract_view()
+        assert view["stale"] == 90 and view["seconds_left"] is None
+        assert view["turns_left"] == 2807
+    finally:
+        session._extract_lock.release()
 
 
 def _downloading_after_reading(monkeypatch, release: threading.Event) -> None:

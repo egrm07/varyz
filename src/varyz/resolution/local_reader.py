@@ -19,6 +19,9 @@ from varyz.db.connection import FileLock, open_db
 
 COOLDOWN_SECONDS = 300
 MAX_CALLS = 30
+# How long a windowless reader waits for setup's model before it gives up:
+# without a limit, a download that never finished left it running for good.
+MODEL_WAIT_SECONDS = 3 * 60 * 60.0
 
 
 def _allowed(cfg: Any) -> bool:
@@ -114,7 +117,13 @@ def run(config_file: Path, *, wait_model: bool = False) -> None:
     conn = None
     try:
         path.write_text(json.dumps(status), encoding="utf-8")
+        waiting_since = time.monotonic()
         while wait_model and not model_ready(cfg):
+            if time.monotonic() - waiting_since > MODEL_WAIT_SECONDS:
+                status.update(state="stopped",
+                              reason="The local model did not arrive; run varyz setup again "
+                                     "to finish it and start learning.")
+                return
             time.sleep(5)
             cfg = load_config(config_file)
             if not _allowed(cfg):

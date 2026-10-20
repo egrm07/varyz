@@ -651,6 +651,10 @@ class WorkflowsConfig(Settings):
     reader_usage_poll_seconds: int = Field(default=60, ge=15)
     reader_max_minutes: int = Field(default=90, ge=1)
     reader_tasks_per_run: int = Field(default=8, ge=1)
+    # A reader that takes no reading task for this long is stuck (its tools did
+    # not start, or its model hangs) and is stopped. A batch of tasks takes about
+    # a minute; a heavy user's reader once sat 90 minutes on none.
+    reader_stall_minutes: int = Field(default=10, ge=1)
     # Trial rules: a rule the reader found with strong evidence (the owner
     # corrected an agent over it, or said it in two conversations or projects)
     # goes into effect at once, marked as not yet the owner's word; the rest wait

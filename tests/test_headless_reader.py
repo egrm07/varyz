@@ -262,6 +262,28 @@ def test_claudes_stream_reports_count_while_it_reads(cfg: Any, killed: list[Any]
 # -- the supervisor -----------------------------------------------------------------
 
 
+def test_reader_with_no_progress_stops_at_stall_limit(cfg, killed):
+    cfg.workflows.reader_stall_minutes = 1
+    clock = _Clock()
+    process = _Process(cfg, obeys_stop=False)
+    result = hr.run_one(cfg, RUNNER, "full", ["codex.exe"], gate=Gate(30, 25),
+                        read_usage=lambda name: None, launch=lambda *a: process,
+                        clock=clock, sleep=clock.sleep)
+    assert result.stopped == "stalled" and killed == [process]
+    assert 60 <= clock.now - T0 <= 60 + hr.STOP_GRACE_SECONDS + 2 * hr.MONITOR_SECONDS
+
+
+def test_reader_tool_progress_resets_stall_watchdog(cfg, killed, monkeypatch):
+    cfg.workflows.reader_stall_minutes = 1
+    clock = _Clock()
+    process = _Process(cfg, clock=clock, ends_at=T0 + 140)
+    monkeypatch.setattr(hr, "_reading_saved", lambda cfg: int((clock.now - T0) // 40))
+    result = hr.run_one(cfg, RUNNER, "full", ["codex.exe"], gate=Gate(30, 25),
+                        read_usage=lambda name: None, launch=lambda *a: process,
+                        clock=clock, sleep=clock.sleep)
+    assert result.stopped is None and not killed
+
+
 def _work(monkeypatch, *steps: tuple[int, int, int, int]) -> None:
     remaining = list(steps)
     monkeypatch.setattr(hr, "_work_left", lambda cfg, kind, now: remaining.pop(0)

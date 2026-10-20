@@ -199,6 +199,68 @@ def _shop(conn) -> None:
 # -- read, then merge ---------------------------------------------------------
 
 
+def test_recent_window_completes_without_reading_older_turns(conn, tmp_path, monkeypatch):
+    monkeypatch.setattr(profile_reader, "READ_WINDOW_TURNS", 3)
+    for day in range(1, 7):
+        _entry(conn, f"turn-{day}", f"Message {day}: always keep this project's fonts thin.",
+               day=day)
+    state = ProfileState(tmp_path / "window.json")
+    assert profile_reader.waiting(state, conn, "cloud") == 3
+    assert profile_reader.older_unread(state, conn, "cloud") == 3
+    task = next_task(state, conn, tier="cloud", reader="agent")
+    assert [t[0] for t in state.tasks[task.id]["turns"]] == ["turn-4", "turn-5", "turn-6"]
+    accept(state, conn, task.id, [], tier="cloud")
+    assert profile_reader.waiting(state, conn, "cloud") == 0
+    assert next_task(state, conn, tier="cloud", reader="agent") is None
+    assert conn.execute("SELECT count(*) FROM entries").fetchone()[0] == 6
+
+
+def test_turn_cache_reuses_parsing_but_revokes_reclassified_evidence(conn, monkeypatch):
+    _entry(conn, "one", "Always use thin fonts in this project.")
+    actual = profile_reader.owner_turns
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(profile_reader, "owner_turns", counted)
+    assert len(profile_reader._turns(conn, "cloud")) == 1
+    assert len(profile_reader._turns(conn, "cloud")) == 1
+    assert len(calls) == 1
+    conn.execute("UPDATE entries SET sensitivity='sensitive' WHERE id='one'")
+    conn.commit()
+    assert profile_reader._turns(conn, "cloud") == []
+    assert len(calls) == 2
+
+
+def test_turn_cache_invalidates_context_and_recent_order_changes(conn):
+    _entry(conn, "one", "Always use thin fonts in this project.")
+    assert profile_reader._turns(conn, "cloud")[0].after == ""
+    conn.execute("UPDATE entries SET conversation_metadata_json=?, occurred_start=? WHERE id='one'",
+                 (json.dumps({"context_before": "Synthetic earlier assistant context"}),
+                  "2026-10-20"))
+    conn.commit()
+    turn = profile_reader._turns(conn, "cloud")[0]
+    assert turn.after == "Synthetic earlier assistant context"
+    assert turn.occurred == "2026-10-20"
+
+
+def test_recent_window_does_not_revoke_previously_read_old_evidence(conn, tmp_path, monkeypatch):
+    _entry(conn, "old", "Always use thin fonts in this project.")
+    state = ProfileState(tmp_path / "existing.json")
+    task = next_task(state, conn, tier="cloud", reader="agent")
+    accept(state, conn, task.id, [
+        _item("rule", "Always use thin fonts in this project.",
+              (1, "Always use thin fonts in this project.")),
+    ], tier="cloud")
+    assert state.notes
+    monkeypatch.setattr(profile_reader, "READ_WINDOW_TURNS", 1)
+    _entry(conn, "new", "Always keep the navigation simple in this project.", day=2)
+    next_task(state, conn, tier="cloud", reader="agent")
+    assert state.notes[0]["evidence"][0]["entry_id"] == "old"
+
+
 def test_a_read_keeps_only_notes_the_messages_they_name_back(
     conn: sqlite3.Connection, tmp_path: Path
 ) -> None:

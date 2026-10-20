@@ -24,7 +24,7 @@ def _config(path: Path) -> Path:
     return path
 
 
-def test_discovery_offers_documents_and_conventional_git_roots(tmp_path):
+def test_discovery_never_offers_the_documents_folder(tmp_path):
     home = tmp_path / "home"
     documents = home / "Documents"
     repo = home / "projects" / "one"
@@ -33,9 +33,19 @@ def test_discovery_offers_documents_and_conventional_git_roots(tmp_path):
 
     found = discover_local_sources(home=home, cwd=home, documents_dir=documents)
 
-    assert found.document_paths == (documents.resolve(),)
+    assert found.document_paths == ()
     assert found.git_paths == ((home / "projects").resolve(),)
-    assert home.resolve() not in found.document_paths
+
+
+def test_a_checkout_inside_documents_is_offered_for_its_files_alone(tmp_path):
+    home = tmp_path / "home"
+    documents = home / "Documents"
+    checkout = documents / "projects" / "varyz"
+    (checkout / ".git").mkdir(parents=True)
+
+    found = discover_local_sources(home=home, cwd=checkout, documents_dir=documents)
+
+    assert found.document_paths == (checkout.resolve(),)
 
 
 def test_a_checkout_inside_the_projects_folder_is_offered_once(tmp_path):
@@ -67,13 +77,14 @@ def test_a_checkout_deeper_than_the_scan_is_still_offered(tmp_path):
 def test_discovery_expands_home_in_the_xdg_documents_path(tmp_path, monkeypatch):
     home = tmp_path / "home"
     documents = home / "My Documents"
-    documents.mkdir(parents=True)
+    (documents / "projects" / "one" / ".git").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("XDG_DOCUMENTS_DIR", "$HOME/My Documents")
 
     found = discover_local_sources(home=home, cwd=home)
 
-    assert found.document_paths == (documents.resolve(),)
+    assert found.git_paths == ((documents / "projects").resolve(),)
+    assert found.document_paths == ()
 
 
 def test_checkout_outside_documents_is_a_narrow_source_for_both_connectors(tmp_path):

@@ -2,8 +2,9 @@
 
 One message rarely states a rule outright; what the owner wants shows across
 many of them -- the same correction made five times, a project's aim told in
-pieces over months, the order they take every app through. So the turns are
-read a project at a time, oldest first, in two kinds of task:
+pieces over months, the order they take every app through. So the newest turns
+(``READ_WINDOW_TURNS``) are read a project at a time, oldest first, in two kinds
+of task:
 
 - read: a model takes a stretch of one project's turns and notes what they show,
   each note with the owner's words from the messages behind it;
@@ -585,8 +586,58 @@ def tier_of(reader: str) -> str:
     return "local" if reader == "local" else "cloud"
 
 
+# A heavy user's archive holds tens of thousands of turns. Read in full, that
+# took hours, most of them on conversations months old, so a reading takes the
+# newest turns only: they say how the owner works now. Older turns are never
+# waiting. The setup offer discloses how many older turns are left out;
+# this does not delete them or invalidate notes already learned from them.
+READ_WINDOW_TURNS = 4_000
+
+# Every task, answer and progress check needs the turns, and parsing 28,000 of
+# them took 1.5 to 2 s, five times a task. Kept per archive until a turn the
+# readers see is added, edited, removed or reclassified.
+_TURN_CACHE: dict[tuple[str, bool], tuple[str, list[Turn]]] = {}
+_TURN_CACHE_SIZE = 4
+
+
+def _archive_name(conn: sqlite3.Connection) -> str:
+    row = conn.execute("PRAGMA database_list").fetchone()
+    name = str(row[2] or "") if row is not None else ""
+    return name or f"memory:{id(conn)}"
+
+
+def _turns_mark(conn: sqlite3.Connection) -> str:
+    """What changes whenever the turns a reader may see change, without their text."""
+    digest = hashlib.sha256()
+    for row in conn.execute(
+        """SELECT rowid, id, content_hash, sensitivity, thread_id, occurred_start,
+                  conversation_metadata_json FROM entries
+           WHERE source = 'ai_conversations' AND authored_by_user = 1 ORDER BY rowid"""
+    ):
+        # Context, conversation identity and dates affect the evidence and its
+        # position in the recent window, even when the owner's text is unchanged.
+        digest.update(json.dumps(tuple(row), ensure_ascii=False).encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def _turns(conn: sqlite3.Connection, tier: str) -> list[Turn]:
-    return owner_turns(conn, MiningStats(), cloud=tier != "local")
+    cloud = tier != "local"
+    key = (_archive_name(conn), cloud)
+    mark = _turns_mark(conn)
+    cached = _TURN_CACHE.get(key)
+    if cached is not None and cached[0] == mark:
+        return list(cached[1])
+    turns = owner_turns(conn, MiningStats(), cloud=cloud)
+    if key not in _TURN_CACHE and len(_TURN_CACHE) >= _TURN_CACHE_SIZE:
+        _TURN_CACHE.pop(next(iter(_TURN_CACHE)))
+    _TURN_CACHE[key] = (mark, turns)
+    return list(turns)
+
+
+def _window(turns: list[Turn]) -> list[Turn]:
+    """The newest turns a reading takes; ``turns`` are oldest first."""
+    return turns[-READ_WINDOW_TURNS:] if len(turns) > READ_WINDOW_TURNS else turns
 
 
 def _kinds(conn: sqlite3.Connection) -> tuple[str, ...]:
@@ -604,7 +655,16 @@ def waiting(state: ProfileState, conn: sqlite3.Connection, tier: str,
     """Turns not read yet -- said at ``since`` or later, when given -- for the offer."""
     if state.newer:
         return 0
-    return len(_recent(_unread(state, _turns(conn, tier)), since))
+    return len(_recent(_unread(state, _window(_turns(conn, tier))), since))
+
+
+def older_unread(state: ProfileState, conn: sqlite3.Connection, tier: str) -> int:
+    """Unread turns older than the newest ``READ_WINDOW_TURNS``, which no reading takes."""
+    if state.newer:
+        return 0
+    turns = _turns(conn, tier)
+    return len(_unread(state, turns[:-READ_WINDOW_TURNS])) if len(turns) > READ_WINDOW_TURNS \
+        else 0
 
 
 def _recent(turns: list[Turn], since: str | None) -> list[Turn]:
@@ -679,7 +739,7 @@ def next_task(
     by_project: dict[str, list[Turn]] = {}
     turns = _turns(conn, tier)
     _revalidate_notes(state, turns, tier)
-    for turn in _recent(_unread(state, turns), since):
+    for turn in _recent(_unread(state, _window(turns)), since):
         by_project.setdefault(turn.scope, []).append(turn)
     for project, turns in by_project.items():
         chunk: list[Turn] = []
@@ -1989,6 +2049,7 @@ __all__ = [
     "live_since",
     "momentary",
     "next_task",
+    "older_unread",
     "reading_lock",
     "reading_taken",
     "outdated_candidates",

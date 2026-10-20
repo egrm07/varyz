@@ -145,6 +145,43 @@ def test_uninstall_unregisters_integrations_before_uv_and_retains_archive(tmp_pa
     assert config.read_text() == "preserve me"
 
 
+def test_running_varyz_does_not_block_removal_it_is_stopped_first(tmp_path, monkeypatch):
+    """Setup's learning runs windowless: refusing until it was closed refused for good."""
+    app, receipt, config, commands = owned_install(tmp_path, monkeypatch)
+    checks = iter([True, True, False])
+    upgrade = native.load_upgrade()
+    upgrade.running = lambda *a: next(checks)
+    monkeypatch.setattr(native, "load_upgrade", lambda: upgrade)
+    monkeypatch.setattr(native.time, "sleep", lambda seconds: None)
+
+    assert native.uninstall_check(app)["status"] == "ready_to_remove"
+    assert native.uninstall(app)["status"] == "uninstalled"
+    assert commands[-2][1:4] == ["-m", "varyz", "uninstall"]
+    assert commands[-1][1:] == ["tool", "uninstall", "varyzai"]
+
+
+def test_uninstall_stops_short_of_uv_when_varyz_will_not_stop(tmp_path, monkeypatch):
+    app, receipt, config, commands = owned_install(tmp_path, monkeypatch)
+    upgrade = native.load_upgrade()
+    upgrade.running = lambda *a: True
+    monkeypatch.setattr(native, "load_upgrade", lambda: upgrade)
+    monkeypatch.setattr(native, "STOP_WAIT", 0)
+    monkeypatch.setattr(native.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(ValueError, match="Restart the computer"):
+        native.uninstall(app)
+    assert all(command[1:] != ["tool", "uninstall", "varyzai"] for command in commands)
+    assert config.read_text() == "preserve me"
+
+
+def test_uninstall_without_a_config_still_stops_varyz(tmp_path, monkeypatch):
+    app, receipt, config, commands = owned_install(tmp_path, monkeypatch)
+    config.unlink()
+
+    assert native.uninstall(app)["status"] == "uninstalled"
+    assert commands[-2][1:] == ["-m", "varyz", "uninstall"]
+
+
 def test_native_uninstall_only_applies_after_the_confirmation():
     recipe = (SCRIPT.parent / "varyz.iss").read_text(encoding="utf-8")
     preflight = recipe.split("function InitializeUninstall(): Boolean;", 1)[1].split(

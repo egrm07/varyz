@@ -481,6 +481,11 @@ def run_one(
     stop_at: float | None = None
     resume_after: float | None = None
     shown_at = 0.0
+    # Every reading task handed out or answered saves the reading's state, so
+    # its file changing is the reader working.
+    stall_seconds = float(getattr(workflows, "reader_stall_minutes", 10)) * 60
+    worked = _reading_saved(cfg)
+    worked_at = started
     while process.poll() is None:
         now = clock()
         if stop_at is not None:
@@ -493,9 +498,13 @@ def run_one(
             polled_at = now
             polled = _read_usage(read_usage, runner.name) or polled
         latest = _fresher(polled, output.usage)
+        if (saved := _reading_saved(cfg)) != worked:
+            worked, worked_at = saved, now
         reason: str | None = None
         if now - started >= workflows.reader_max_minutes * 60:
             reason = "time"
+        elif now - worked_at >= stall_seconds:
+            reason = "stalled"
         elif _paused(cfg) or not enabled(cfg, kind):
             reason = "turned off"
         elif _deferred(cfg, now) is not None:
@@ -521,6 +530,15 @@ def run_one(
     if exit_code and runner.name == "codex" and _model_rejected(output.error):
         rejected = command[command.index("-m") + 1] if "-m" in command else None
     return RunResult(exit_code, stopped, final, output.error, resume_after, rejected)
+
+
+def _reading_saved(cfg: Any) -> float | None:
+    from varyz.resolution.profile_reader import profile_path
+
+    try:
+        return profile_path(cfg, "cloud").stat().st_mtime_ns
+    except OSError:
+        return None
 
 
 def _model_rejected(error: str) -> bool:
@@ -691,12 +709,22 @@ def _supervise(cfg: Any, config_file: Path, kind: str | None,
                 {"pending": sorted(_pending(status) - finished)}))
             continue
         if after == before:
+            if result.stopped == "stalled" and len(runners) > 1:
+                # The other sign-in may well read; this one is not tried again
+                # until the supervisor next starts.
+                runners.pop(runner.name)
+                log(cfg, "runner_stalled", runner=runner.name, kind=job)
+                continue
             no_progress[job] += 1
             if no_progress[job] >= NO_PROGRESS_LIMIT:
                 update_status(cfg, lambda status, job=job: status.update(
                     {"pending": sorted(_pending(status) - {job})}))
+                why = result.error or (
+                    f"it took no reading task in "
+                    f"{getattr(cfg.workflows, 'reader_stall_minutes', 10)} min"
+                    if result.stopped == "stalled" else "no error given")
                 return settle("failed", reason=f"{runner.name} read nothing in "
-                              f"{NO_PROGRESS_LIMIT} runs: {result.error or 'no error given'}")
+                              f"{NO_PROGRESS_LIMIT} runs: {why}")
         else:
             no_progress[job] = 0
     remaining = bool(_pending(load_status(cfg)))
