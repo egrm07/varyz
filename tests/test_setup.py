@@ -104,8 +104,9 @@ def test_dry_run_shows_what_it_would_connect_and_changes_nothing(tmp_path, machi
     result = runner.invoke(cli.app, ["setup", "--config", str(config), "--dry-run"])
 
     assert result.exit_code == 0, result.output
-    assert "Documents" in result.output
-    assert machine.docs.name in result.output
+    assert "Project files" in _flat(result.output)
+    # Rich may wrap a long temporary path inside the final directory name.
+    assert machine.docs.name in re.sub(r"\s+", "", result.output)
     assert "Dry run: nothing connected or indexed." in result.output
     assert config.read_bytes() == before
     assert not (tmp_path / "data").exists()
