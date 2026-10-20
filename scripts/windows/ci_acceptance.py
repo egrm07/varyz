@@ -45,6 +45,14 @@ documents.mkdir()
 (documents / "release-note.md").write_text(
     "# Fictional release\n\nThe synthetic team chose a blue checklist for its demo.\n"
 )
+# Setup never offers the Documents folder itself, only project checkouts in it.
+project = documents / "projects" / "synthetic-project"
+project.mkdir(parents=True)
+(project / "README.md").write_text("# Fictional project\n\nA blue checklist for the demo.\n")
+synthetic_git = ["git", "-C", str(project), "-c", "user.name=Synthetic",
+                 "-c", "user.email=synthetic@example.invalid", "-c", "commit.gpgsign=false"]
+for command in (["init", "-q"], ["add", "README.md"], ["commit", "-q", "-m", "Fictional demo"]):
+    subprocess.run(synthetic_git + command, check=True, capture_output=True, timeout=60)
 env = {
     **os.environ,
     "UV_TOOL_DIR": str(r / "tools"),
@@ -128,7 +136,7 @@ assert sentinel.read_text() == "preserve acceptance data"
 results.append({"action": "install-after-removal", "exit": 0, "retained_data_preserved": True})
 
 # Resolve and actually launch the Start Menu shortcut. Only this disposable VM's
-# fictional document is approved below; no real account, agent or Cloud is used.
+# fictional project is approved below; no real account, agent or Cloud is used.
 reader = (
     "$reader=New-Object -ComObject WScript.Shell; $link=$reader.CreateShortcut('"
     + str(shortcuts / "Varyz Setup.lnk").replace("'", "''")
@@ -201,13 +209,14 @@ def onboard(label, sources):
     assert snapshot["picked"]["agents"] == []
     assert api("/api/close", {})["closed"]
     results.append({"action": label, "verdict": "GO", "steps": progress,
-                    "synthetic_documents_only": True, "analytics": False})
+                    "synthetic_sources_only": True, "analytics": False})
 
 
 plan = api("/api/plan")
 assert plan["exists"] is False, "First onboarding must create a fresh configuration"
-assert any(s["id"] == "documents" for s in plan["sources"])
-onboard("fresh-onboarding", ["documents"])
+assert not any(s["id"] == "documents" for s in plan["sources"]), "Documents folder offered"
+assert any(s["id"] == "git" for s in plan["sources"])
+onboard("fresh-onboarding", ["git"])
 assert config.exists() and sentinel.read_text() == "preserve acceptance data"
 python = r / "tools/varyzai/Scripts/python.exe"
 assert python.is_file()
