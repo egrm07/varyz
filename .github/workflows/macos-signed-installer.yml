@@ -87,10 +87,12 @@ jobs:
           echo 'PASS Application code signing with hardened runtime/timestamp and Installer package signature.'
           stage=$(find .build-cache -maxdepth 1 -type d -name 'macos-stage-*' -print -quit)
           arch=$(uname -m)
+          version=$(sed -nE 's/^version = "([^"]+)"$/\1/p' pyproject.toml)
+          test -n "$version"
           mkdir -p dist/signed-candidate
           python3 scripts/macos/sign.py --stage "$stage" --keychain "$keychain" \
             --application-identity "$application" --installer-identity "$installer" \
-            --output "dist/signed-candidate/VaryzSetup-0.1.0-macos-$arch.pkg"
+            --output "dist/signed-candidate/VaryzSetup-$version-macos-$arch.pkg"
           export UV_TOOL_DIR="$RUNNER_TEMP/varyz-signed-tools"
           export UV_TOOL_BIN_DIR="$RUNNER_TEMP/varyz-signed-bin"
           export VARYZ_CONFIG="$RUNNER_TEMP/varyz-signed-archive/config.toml"
@@ -103,7 +105,7 @@ jobs:
           "$payload/runtime/bin/python3" "$payload/native.py" uninstall --app "$RUNNER_TEMP/varyz-signed-app"
           test -f "$RUNNER_TEMP/varyz-signed-archive/keep.txt"
           test ! -e "$UV_TOOL_DIR/varyzai/uv-receipt.toml"
-          pkgutil --expand-full "dist/signed-candidate/VaryzSetup-0.1.0-macos-$arch.pkg" "$RUNNER_TEMP/signed-expanded"
+          pkgutil --expand-full "dist/signed-candidate/VaryzSetup-$version-macos-$arch.pkg" "$RUNNER_TEMP/signed-expanded"
           expanded=$(find "$RUNNER_TEMP/signed-expanded" -name payload.json -print -quit)
           test -n "$expanded"
           runtime=$(dirname "$expanded")
