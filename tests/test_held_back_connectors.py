@@ -2,10 +2,12 @@
 
 docs/SHIPPING.md holds Gmail, Google Calendar and Drive, the calendar-file
 import and the personal archive back from the alpha without deleting
-them, and with them `varyz enrich` and the managed model's installer. Two
-things have to stay true for that: the build leaves every one of their modules
-out, and a varyz without those modules still imports, registers the alpha
-connectors, and offers no command for a missing module.
+them, and with them `varyz enrich`, the managed model's installer, the
+personal-model compiler, the graph builder and the conversation windows.
+Two things have to stay true for that: the build leaves every one of their
+modules out, and a varyz without those modules still
+imports, registers the alpha connectors, and offers no command for a missing
+module.
 """
 
 from __future__ import annotations
@@ -28,6 +30,36 @@ EXCLUDED = set(PYPROJECT["tool"]["uv"]["build-backend"]["source-exclude"])
 # everything else excluded is a connector.
 ENRICH = "src/varyz/pipeline/enrich.py"
 LOCAL_INSTALL = "src/varyz/llm/local_install.py"
+# The personal-model compiler and the modules only it imports. Its records,
+# query and repository ship: the resolver and the pipeline share their types.
+PERSONAL_MODEL = tuple(
+    f"varyz.personal_model.{name}" for name in (
+        "annotation_wire", "cloud_runtime", "compiler", "identity", "observations",
+        "readiness", "relationships", "semantic_runtime", "synthesis", "validation",
+    )
+)
+# The graph builder and graph search. Its records, overrides and temporal
+# parsing ship: the trust centre writes corrections with them.
+GRAPH_BUILDER = (
+    *(f"varyz.graph.{name}" for name in (
+        "cache", "cadence", "doctor", "evaluation", "extract", "identity", "languages",
+        "prune", "repository", "semantic", "service", "situation",
+    )),
+    "varyz.retrieval.graph_search",
+)
+# Conversation windows: the partition, its vectors, the reader and the channel
+# that answers from them.
+WINDOWS = (
+    *(f"varyz.pipeline.{name}" for name in (
+        "conclusions", "quoting", "window_vectors", "windows",
+    )),
+    "varyz.retrieval.conversation_evidence",
+    "varyz.retrieval.conversations",
+)
+MODULE_PATHS = {
+    "src/" + module.replace(".", "/") + ".py"
+    for module in (*PERSONAL_MODEL, *GRAPH_BUILDER, *WINDOWS)
+}
 
 # Modules only the held-back connectors import; they go with them.
 PRIVATE_HELPERS = ("google_auth", "google_gmail")
@@ -37,7 +69,7 @@ ALPHA = ["ai_conversations", "documents", "git", "github", "manual"]
 def test_the_build_excludes_every_held_back_module_and_nothing_else():
     held = {*connectors.HELD_BACK, *PRIVATE_HELPERS}
     connector_paths = {f"src/varyz/connectors/{name}.py" for name in held}
-    assert connector_paths | {ENRICH, LOCAL_INSTALL} == EXCLUDED
+    assert connector_paths | {ENRICH, LOCAL_INSTALL} | MODULE_PATHS == EXCLUDED
     for path in EXCLUDED:
         assert (ROOT / path).exists(), f"{path} is excluded but no longer in the tree"
 
@@ -70,22 +102,32 @@ class Absent(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, Absent())
 import varyz.connectors as c
 import varyz.cli as cli
+import varyz.mcp_server as mcp
+import varyz.resolution.daemon
+import varyz.autosync, varyz.bootstrap, varyz.setup_run, varyz.trust
 from varyz.config import GraphConfig
+from varyz.graph import builder_is_shipped
+from varyz.pipeline import windows_are_shipped
+import varyz.retrieval.answer
 from varyz.llm.local_runtime import compile_command, install_hint
 connect = sorted(i.name for i in cli.connect_app.registered_commands if i.name)
 top = sorted(i.name or i.callback.__name__ for i in cli.app.registered_commands)
 local_model = sorted(i.name for i in cli.local_model_app.registered_commands if i.name)
+groups = sorted(i.name for i in cli.app.registered_groups if i.name)
 print(json.dumps({{
-    "ids": c.all_connector_ids(), "connect": connect, "top": top,
+    "ids": c.all_connector_ids(), "connect": connect, "top": top, "groups": groups,
+    "tools": sorted(t["name"] for t in mcp.TOOLS),
     "local_model": local_model, "hint": install_hint(),
     "extractor": GraphConfig().extractor, "compile": compile_command(),
+    "graph": builder_is_shipped(), "windows": windows_are_shipped(),
 }}))
 """
 
 
 def test_varyz_without_the_held_back_modules_imports_and_registers_the_alpha_set():
     held = sorted(f"varyz.connectors.{n}" for n in (*connectors.HELD_BACK, *PRIVATE_HELPERS))
-    held.extend(["varyz.pipeline.enrich", "varyz.llm.local_install"])
+    held.extend(["varyz.pipeline.enrich", "varyz.llm.local_install", *PERSONAL_MODEL,
+                 *GRAPH_BUILDER, *WINDOWS])
     result = subprocess.run(
         [sys.executable, "-c", _WITHOUT_HELD_BACK.format(held=held)],
         capture_output=True,
@@ -105,9 +147,16 @@ def test_varyz_without_the_held_back_modules_imports_and_registers_the_alpha_set
     # naming the command it left out.
     assert shown["local_model"] == ["status"]
     assert shown["hint"] == "this build of varyz does not install it"
-    # It builds the graph and the personal model it can build without one.
+    # It builds no graph and compiles no personal model.
     assert shown["extractor"] == "deterministic"
-    assert shown["compile"] == "varyz model compile --literal-only --run"
+    assert shown["graph"] is False
+    assert "graph" not in shown["groups"]
+    assert shown["windows"] is False
+    assert "conversations" not in shown["groups"]
+    assert "model" not in shown["groups"]
+    assert "local-model" in shown["groups"]
+    assert not {"lookup", "interpret"} & set(shown["tools"])
+    assert "context" in shown["tools"]
 
 
 def test_the_source_tree_still_registers_the_held_back_connectors():
@@ -130,6 +179,17 @@ def test_the_source_tree_still_offers_enrich_and_nothing_shipped_imports_it():
         text = source.read_text(encoding="utf-8")
         assert "varyz.pipeline.enrich import" not in text, source
         assert "varyz.pipeline import enrich" not in text, source
+
+
+def test_the_source_tree_still_offers_the_personal_model_and_the_graph():
+    from varyz import cli, mcp_server
+    from varyz.graph import builder_is_shipped
+    from varyz.pipeline import windows_are_shipped
+
+    assert builder_is_shipped()
+    assert windows_are_shipped()
+    assert {"model", "graph", "conversations"} <= {i.name for i in cli.app.registered_groups}
+    assert {"lookup", "interpret"} <= {t["name"] for t in mcp_server.TOOLS}
 
 
 def test_the_source_tree_still_offers_the_model_installer():

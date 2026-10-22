@@ -26,6 +26,7 @@ from varyz.db import dao
 from varyz.db.connection import WriteLock
 from varyz.deletion import forget_entry
 from varyz.domain import Sensitivity, local_day, local_stamp, new_id
+from varyz.graph import builder_is_shipped
 from varyz.graph.overrides import append_override
 from varyz.pipeline.embed import Embedder, embed_pending
 from varyz.pipeline.ingest import sync_connector
@@ -433,13 +434,21 @@ class TrustCenter:
 
     def run(self) -> None:
         self._banner()
+        sections = [
+            ("Overview and health", self.overview),
+            ("Sources and autosync", self.sources),
+            ("Knowledge graph review", self.graph),
+            ("Privacy, receipts, and consent", self.privacy),
+            ("Delete or restore exclusions", self.deletion),
+        ]
+        if not builder_is_shipped():
+            # The alpha builds no graph (docs/SHIPPING.md): nothing to review.
+            sections = [section for section in sections if section[1] != self.graph]
+        actions = {str(number): action for number, (_, action) in enumerate(sections, 1)}
         while True:
             menu = Table.grid(padding=(0, 2))
-            menu.add_row("1", "Overview and health")
-            menu.add_row("2", "Sources and autosync")
-            menu.add_row("3", "Knowledge graph review")
-            menu.add_row("4", "Privacy, receipts, and consent")
-            menu.add_row("5", "Delete or restore exclusions")
+            for number, (label, _) in enumerate(sections, 1):
+                menu.add_row(str(number), label)
             menu.add_row("0", "Exit")
             self.console.print(menu)
             try:
@@ -456,15 +465,9 @@ class TrustCenter:
             if choice in {"0", "q", "quit", "exit"}:
                 self.console.print("No settings changed unless confirmed above.")
                 return
-            action = {
-                "1": self.overview,
-                "2": self.sources,
-                "3": self.graph,
-                "4": self.privacy,
-                "5": self.deletion,
-            }.get(choice)
+            action = actions.get(choice)
             if action is None:
-                self.console.print("[yellow]Choose 0–5.[/yellow]")
+                self.console.print(f"[yellow]Choose 0–{len(sections)}.[/yellow]")
                 continue
             action()
 
@@ -496,7 +499,8 @@ class TrustCenter:
             f"{len(self.cfg.connectors)} configured · "
             f"{_count(self.conn, 'SELECT COUNT(DISTINCT source) FROM entries')} indexed",
         )
-        if active:
+        # The alpha builds no graph (docs/SHIPPING.md), so it has no row.
+        if active and builder_is_shipped():
             claims = _count(
                 self.conn,
                 "SELECT COUNT(*) FROM claims WHERE graph_generation_id=?",
@@ -512,7 +516,7 @@ class TrustCenter:
                 "Graph",
                 f"active · {count_noun(claims, 'claim')} · {count_noun(pending, 'review')}",
             )
-        else:
+        elif builder_is_shipped():
             summary.add_row("Graph", "not built")
         autosync = "disabled"
         if is_enabled(self.cfg):
@@ -537,9 +541,12 @@ class TrustCenter:
         graph_errors = _count(
             self.conn,
             """SELECT COUNT(*) FROM graph_runs WHERE state='failed'""",
-        )
+        ) if builder_is_shipped() else 0
         if not privacy_issues and not graph_errors:
-            self.console.print("[green]No recorded privacy or graph-integrity failures.[/green]")
+            self.console.print(
+                "[green]No recorded privacy or graph-integrity failures.[/green]"
+                if builder_is_shipped() else "[green]No recorded privacy failures.[/green]"
+            )
         else:
             # "Needs attention: 1 privacy checks, 0 failed graph runs" named a
             # count and not one thing to go and look at -- and counted the

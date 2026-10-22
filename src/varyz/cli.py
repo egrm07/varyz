@@ -94,12 +94,45 @@ news_app = typer.Typer(
 app.add_typer(todo_app, name="todo")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(connect_app, name="connect")
-app.add_typer(graph_app, name="graph")
 app.add_typer(privacy_app, name="privacy")
 app.add_typer(autosync_app, name="autosync")
 app.add_typer(local_model_app, name="local-model")
-app.add_typer(model_app, name="model")
-app.add_typer(conversations_app, name="conversations")
+
+
+# Held back from the alpha wheel with its compiler (docs/SHIPPING.md): `varyz
+# model` registers only where the compiler is present, which is the source tree.
+def _register_model_app() -> None:
+    from varyz.personal_model import compiler_is_shipped
+
+    if compiler_is_shipped():
+        app.add_typer(model_app, name="model")
+
+
+_register_model_app()
+
+
+# The graph builder is held back the same way: `varyz graph` registers only
+# where the builder is present.
+def _register_graph_app() -> None:
+    from varyz.graph import builder_is_shipped
+
+    if builder_is_shipped():
+        app.add_typer(graph_app, name="graph")
+
+
+_register_graph_app()
+
+
+# So are conversation windows: `varyz conversations` registers only where the
+# partition is present.
+def _register_conversations_app() -> None:
+    from varyz.pipeline import windows_are_shipped
+
+    if windows_are_shipped():
+        app.add_typer(conversations_app, name="conversations")
+
+
+_register_conversations_app()
 app.add_typer(session_progress_app, name="sessions")
 app.add_typer(agent_app, name="agent")
 app.add_typer(daemon_app, name="daemon")
@@ -447,8 +480,26 @@ def _config_flag(cfg_path: Path) -> str:
     return f" --config {_quote_path(cfg_path)}"
 
 
+# Setup's graph step, which the alpha leaves out with the builder.
+_GRAPH_STEP = 5
+
+
+def _shown_step(number: int) -> tuple[int, int]:
+    """Setup step ``number`` as the owner sees it, and out of how many.
+
+    The alpha holds the graph builder back (docs/SHIPPING.md), so its setup
+    has no graph step and numbers the steps after it one lower.
+    """
+    from varyz.graph import builder_is_shipped
+
+    if builder_is_shipped():
+        return number, 7
+    return number - (number > _GRAPH_STEP), 6
+
+
 def _step(number: int, name: str, detail: str) -> None:
-    console.print(f"[bold]{number}/7 {name}[/bold]  {detail}", highlight=False)
+    shown, total = _shown_step(number)
+    console.print(f"[bold]{shown}/{total} {name}[/bold]  {detail}", highlight=False)
 
 
 def _step_state(state: str, detail: str) -> str:
@@ -540,7 +591,10 @@ def _bytes_progress(on_progress: OnProgress | None) -> Callable[[str, int, int],
 # could not be fetched ahead, a first run downloads them here, with no progress
 # of its own to show.
 LOADING_SEARCH_MODELS = "Loading the local search models"
-FETCHING_SEARCH_MODELS = "Loading the local search models (the first run downloads about 1.3 GB)"
+FETCHING_SEARCH_MODELS = (
+    "Loading the local search models "
+    "(the first run downloads about 250 MB, 1.3 GB with a local judge)"
+)
 
 
 def _fetch_search_models(cfg: Config, progress: OnProgress) -> str:
@@ -550,8 +604,36 @@ def _fetch_search_models(cfg: Config, progress: OnProgress) -> str:
     return FETCHING_SEARCH_MODELS
 
 
+def recent_seconds_left(
+    samples: list[tuple[float, float]], left: float, *, recent: float, share: float,
+) -> float | None:
+    """Seconds for ``left`` more at the latest pace in ``samples`` ((time, amount done)).
+
+    The pace is read over the last ``recent`` seconds or ``share`` of the run,
+    whichever is longer, not over the whole run: a computer that heats up
+    slows down, and the whole run's pace then promised too little. The window
+    only moves forward, so samples before it are dropped (the first, which
+    the run's length is measured from, stays).
+    """
+    if len(samples) < 2:
+        return None
+    now, done = samples[-1]
+    span = max(recent, share * (now - samples[0][0]))
+    start = len(samples) - 2
+    while start > 0 and now - samples[start][0] < span:
+        start -= 1
+    at, before = samples[start]
+    del samples[1:start]
+    if done <= before or now <= at:
+        # Nothing moved in the window: the whole run's pace, until it does.
+        at, before = samples[0]
+    if done <= before or now <= at:
+        return None
+    return (now - at) * left / (done - before)
+
+
 class TimeLeft:
-    """How long a measured stretch of work still takes, from its own pace so far.
+    """How long a measured stretch of work still takes, from its own recent pace.
 
     A stretch is one phase of a step ("Embedding locally", "Downloading
     Ollama"): the text before the colon in its progress line. A new phase, a
@@ -559,34 +641,41 @@ class TimeLeft:
     one phase's pace is never used for the next. Nothing is said until the
     phase has run a few seconds and moved a little: before that the pace
     is a guess.
+
+    The pace is the last 20 s or fifth of the phase. Replayed over real
+    embedding runs of 5,544 chunks (2026-10-22), the whole phase's pace said
+    a median 12% too little and, once the run slowed by about a third, 19%;
+    the recent pace was off by 8% and 10%.
     """
 
     SETTLE_SECONDS = 5.0
     SETTLE_FRACTION = 0.02
+    RECENT_SECONDS = 20.0
+    RECENT_SHARE = 0.2
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self._phase: str | None = None
-        self._start: tuple[float, float] | None = None
-        self._last = 0.0
+        self._samples: list[tuple[float, float]] = []
 
     def __call__(self, line: str, fraction: float | None) -> str:
         phase = line.split(":", 1)[0]
         now = self._clock()
         if (
-            fraction is None or self._start is None or phase != self._phase
-            or fraction < self._last
+            fraction is None or not self._samples or phase != self._phase
+            or fraction < self._samples[-1][1]
         ):
             self._phase = phase
-            self._start = None if fraction is None else (now, fraction)
-            self._last = fraction or 0.0
+            self._samples = [] if fraction is None else [(now, fraction)]
             return ""
-        self._last = fraction
-        started, first = self._start
-        elapsed, done = now - started, fraction - first
-        if fraction >= 1.0 or elapsed < self.SETTLE_SECONDS or done < self.SETTLE_FRACTION:
+        self._samples.append((now, fraction))
+        started, first = self._samples[0]
+        if (fraction >= 1.0 or now - started < self.SETTLE_SECONDS
+                or fraction - first < self.SETTLE_FRACTION):
             return ""
-        return time_left_label(elapsed * (1.0 - fraction) / done)
+        seconds = recent_seconds_left(self._samples, 1.0 - fraction,
+                                      recent=self.RECENT_SECONDS, share=self.RECENT_SHARE)
+        return "" if seconds is None else time_left_label(seconds)
 
 
 def time_left_label(seconds: float) -> str:
@@ -611,7 +700,7 @@ def _progress_bar(description: str, *, step: int | None = None) -> Iterator[OnPr
     """
     from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
-    prefix = f"{step}/7 " if step is not None else ""
+    prefix = "{}/{} ".format(*_shown_step(step)) if step is not None else ""
     time_left = TimeLeft()
     with Progress(
         SpinnerColumn(),
@@ -737,12 +826,23 @@ def _sync_sources(
 # terminal show the same bar.
 
 
+# A 33,000-entry archive peaks near 2 GB while it compiles; out of memory the
+# failure read only "MemoryError: ".
+_OUT_OF_MEMORY = (
+    "the computer ran out of memory while building the personal model; close other "
+    "programs and run setup again (it needs about 2 GB free)"
+)
+
+
 def _build_graph(cfg_path: Path, on_progress: OnProgress | None = None) -> tuple[str, str]:
-    """The graph and the personal model compiled from it, which `lookup` and `interpret` read."""
+    """The graph and the personal model compiled from it, which `lookup` and `interpret` read.
+
+    The alpha has no compiler and builds only the graph.
+    """
     from varyz.configfile import set_graph_extractor
     from varyz.graph.service import rebuild_graph
     from varyz.llm.local_runtime import installer_is_shipped
-    from varyz.personal_model.compiler import build_personal_model_compiler
+    from varyz.personal_model import compiler_is_shipped
     from varyz.trust import count_noun
 
     cfg = _cfg(cfg_path)
@@ -778,25 +878,33 @@ def _build_graph(cfg_path: Path, on_progress: OnProgress | None = None) -> tuple
         if graph.entries_total == 0:
             return "skipped", (
                 "the archive is empty; connect a data source or add a note, "
-                "then run setup again to build the personal model"
+                "then run setup again to build the graph"
             )
-        if on_progress is not None:
-            on_progress("Compiling the personal model", None)
+        built = (f"{count_noun(graph.claims, 'claim')} from "
+                 f"{count_noun(graph.entries_total, 'entry', 'entries')}")
+        if not compiler_is_shipped():
+            return "done", "; ".join([built, *notes])
+        from varyz.personal_model.compiler import build_personal_model_compiler
+
+        def compiling(stage: str, fraction: float | None) -> None:
+            if on_progress is not None:
+                on_progress(f"Compiling the personal model: {stage}", fraction)
+
+        compiling("starting", None)
         try:
-            compiled = build_personal_model_compiler(conn, cfg).compile()
+            compiled = build_personal_model_compiler(conn, cfg).compile(on_progress=compiling)
+        except MemoryError:
+            return "failed", _OUT_OF_MEMORY
         except (LookupError, RuntimeError, ValueError) as exc:
             return "failed", f"the personal model could not compile: {exc}"
     finally:
         conn.close()
     if compiled.failed or not compiled.activated:
+        if (compiled.error or "").startswith("MemoryError"):
+            return "failed", _OUT_OF_MEMORY
         reason = compiled.error or f"compile {compiled.status}, not activated"
         return "failed", f"the personal model did not compile: {reason}"
-    notes.insert(
-        0,
-        f"{count_noun(graph.claims, 'claim')} from "
-        f"{count_noun(graph.entries_total, 'entry', 'entries')}; personal model compiled",
-    )
-    return "done", "; ".join(notes)
+    return "done", "; ".join([f"{built}; personal model compiled", *notes])
 
 
 def _install_autosync(cfg_path: Path) -> tuple[str, str]:
@@ -1078,7 +1186,7 @@ def setup(
     config: ConfigOpt = None,
 ) -> None:
     """First run, start to finish: archive, daemon, agents, data sources,
-    graph, autosync and the local classifier. Varyz is fully working after it.
+    autosync and the local classifier. Varyz is fully working after it.
 
     Opens as a page in your browser, where agents and sources are ticked. It
     asks here instead with --terminal, with any flag that answers a question
@@ -1247,12 +1355,15 @@ def _setup_dry_run(run) -> None:
     comfort = "local model fits" if run.ai_plan["comfortable"] else "lighter mode selected"
     console.print(f"AI mode: {run.inference_mode}; {comfort}")
     if not cfg_path.exists():
+        from varyz.graph import builder_is_shipped
+
         _step(1, "Archive", f"would create {cfg_path} and its database")
         console.print(
             "Dry run stops here: the remaining steps read the archive this creates. "
             "They start the daemon, connect your agents and "
-            "offer your local data sources, asking before each, then build the graph, "
-            "turn on autosync and ready the local classifier."
+            "offer your local data sources, asking before each, then "
+            + ("build the graph, " if builder_is_shipped() else "")
+            + "turn on autosync and ready the local classifier."
         )
         return
     cfg = _cfg(cfg_path)
@@ -1290,7 +1401,12 @@ def _setup_dry_run(run) -> None:
             for line in lines:
                 console.print(f"    {escape(line)}", highlight=False)
     console.print("  Dry run: nothing connected or indexed.")
-    _step(5, "Graph", "would build the graph and compile the personal model")
+    from varyz.graph import builder_is_shipped
+    from varyz.personal_model import compiler_is_shipped
+
+    if builder_is_shipped():
+        _step(5, "Graph", "would build the graph and compile the personal model"
+              if compiler_is_shipped() else "would build the graph")
     _step(6, "Autosync", "would sync in the background, at login and on a schedule")
     if run.inference_mode == "local":
         _step(7, "Classifier", f"would ready {cfg.workflows.classifier_model} in Ollama, "

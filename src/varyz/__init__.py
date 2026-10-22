@@ -1,6 +1,6 @@
 """Varyz — a self-filling, local-first memory of your entire life."""
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 # The attribution term the licence supplements the AGPL with is a requirement to
 # *display* a notice, not merely to ship a file, so it has to be reachable from

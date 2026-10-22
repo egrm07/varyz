@@ -80,6 +80,46 @@ ABANDON_GRACE = 120.0
 EXTRACT_REFRESH = 3.0
 # A reading's progress not measured again for this long is shown as old.
 EXTRACT_STALE = 60.0
+# How often setup notes in its log what it is doing. A setup that stopped
+# without a closing line was ended from outside: its window closed, or the
+# computer killed it.
+LOG_EVERY = 60.0
+LOG_LIMIT = 256 * 1024
+
+
+class SetupLog:
+    """``setup.log`` next to the config: what a run did and why it stopped.
+
+    Without it, "Lost touch with setup" on someone else's computer had no
+    cause anyone could find. Steps, progress and reasons only: no paths
+    beyond the config's, no source content, no credentials.
+    """
+
+    def __init__(self, config_path: Path) -> None:
+        self.path = Path(config_path).parent / "setup.log"
+
+    def write(self, event: str, detail: str = "") -> None:
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {event}"
+        if detail:
+            line += f": {' '.join(detail.split())[:300]}"
+        with contextlib.suppress(OSError):
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            if self.path.is_file() and self.path.stat().st_size > LOG_LIMIT:
+                self.path.replace(self.path.with_name("setup.log.1"))
+            with self.path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(line + "\n")
+
+    def progress(self, snapshot: dict[str, Any]) -> None:
+        steps = snapshot.get("steps") or []
+        running = next((i for i, step in enumerate(steps) if step.get("state") == "running"),
+                       None)
+        where = f"step {running + 1}" if running is not None else "between steps"
+        extract = snapshot.get("extract") or {}
+        learning = extract.get("phase") or extract.get("state") or "none"
+        self.write("working", f"{where}; {snapshot.get('activity') or ''}; "
+                              f"learning {learning} {extract.get('reason') or ''}")
+
+
 _MAX_BODY = 16 * 1024
 _TOKEN_HEADER = "X-Varyz-Setup"
 
@@ -288,6 +328,8 @@ class SetupSession(SetupRun):
             from varyz.setup_recovery import repair_prompt
 
             if view.get("phase") in {"waiting", "failed", "stopped"}:
+                view["reason_text"] = setup_extract.plain_reason(
+                    str(view.get("reason") or view["phase"]))
                 view["repair_prompt"] = repair_prompt(self.config_path, [
                     (self._extract["plan"] + " learning", str(view.get("reason") or view["phase"]))
                 ])
@@ -380,7 +422,7 @@ class SetupSession(SetupRun):
         """Retry or skip a quota wait; HTTP polling never performs the lookup."""
         with self._lock:
             view = self._extract_seen[1] if self._extract_seen else self._extract or {}
-            if (self._extract_started is None or self._extract_started.get("runner") == "local"
+            if (self._extract_started is None
                     or view.get("phase") not in {"waiting", "agent", "failed", "stopped"}
                     or self._extract_retrying):
                 return "learning is not waiting for a retry"
@@ -393,14 +435,18 @@ class SetupSession(SetupRun):
         from varyz import setup_extract
 
         try:
+            started = self._extract_started or {}
             if action == "skip":
-                setup_extract.stop(self._extract_cfg)
+                if started.get("runner") != "local":
+                    # A stopped local reader has nothing to cancel; new prompts restart it.
+                    setup_extract.stop(self._extract_cfg)
                 with self._lock:
                     self._extract = {**self._extract, "state": "declined"}
                     self._extract_started = None
             else:
                 # Keep the saved reading and its diagnostic if retry still cannot start.
-                setup_extract.retry(self._extract_cfg, self.config_path)
+                setup_extract.retry(self._extract_cfg, self.config_path,
+                                    runner=started.get("runner"))
         except Exception:  # noqa: BLE001 - keep the waiting state and its repair prompt
             pass
         finally:
@@ -983,10 +1029,16 @@ def serve(
         except webbrowser.Error:
             console.print("Could not open a browser; open the link above yourself.")
     abandoned: float | None = None
+    log = SetupLog(config_path)
+    log.write("opened")
+    logged = time.monotonic()
     try:
         # Closing setup must not cut off a review already opened from this page.
         while not server.closed.is_set() or server.review_active:
             time.sleep(1.0)
+            if time.monotonic() - logged >= LOG_EVERY and session.started:
+                logged = time.monotonic()
+                log.progress(session.snapshot())
             idle = time.monotonic() - server.last_request
             if idle > idle_limit and not server.review_active:
                 # A closed page with the run still going used to keep this
@@ -1002,16 +1054,26 @@ def serve(
                     console.print("The setup page was closed while setup was still working; "
                                   f"stopping. Run varyz setup{session._config_flag()} to "
                                   "carry on.")
+                    log.write("stopped", f"nothing heard from the page for {idle:.0f} s "
+                                         "while setup was working")
                     break
                 console.print("Nothing heard from the page for a while; stopping.")
+                log.write("stopped", f"nothing heard from the page for {idle:.0f} s")
                 break
+        else:
+            log.write("stopped", "closed from the page")
     except KeyboardInterrupt:
         console.print("Stopped.")
+        log.write("stopped", "interrupted in the setup window")
     finally:
         server.shutdown()
         server.server_close()
     snapshot = session.snapshot()
+    log.progress(snapshot)
+    log.write("steps", "; ".join(f"{i + 1} {step['state']} {step.get('detail') or ''}".strip()
+                                 for i, step in enumerate(snapshot["steps"])))
     result = snapshot["result"]
+    log.write("result", str(result.get("verdict")) if result else "none")
     if snapshot["paused"]:
         console.print(f"Setup is paused. What has downloaded is kept: run varyz setup"
                       f"{session._config_flag()} to carry on from there.")

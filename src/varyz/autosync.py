@@ -36,9 +36,9 @@ from varyz.connectors.base import get_connector
 from varyz.db.connection import LockHeldError, WriteLock, open_db
 from varyz.domain import iso, utc_now
 from varyz.legacy import LEGACY_DAEMON_PREFIX, LEGACY_NAME, LEGACY_REGISTRATION_MARKER
+from varyz.pipeline import windows_are_shipped
 from varyz.pipeline.embed import Embedder, embed_pending
 from varyz.pipeline.ingest import sync_connector
-from varyz.pipeline.windows import build_windows
 from varyz.vault import Vault
 
 CLAIM_MAX_AGE = timedelta(hours=4)
@@ -447,30 +447,9 @@ def run_once(
                         embedded = embed_pending(conn, cfg, Embedder(cfg))
                     except Exception as exc:
                         details.append(f"Embedding failed: {_safe_error(exc)}")
-                    # Re-cut the conversation partition and both its
-                    # indexes. This costs what embedding costs -- the same
-                    # small local model, seconds over thousands of windows --
-                    # so it belongs here and not in the GPU budget below,
-                    # where having the conversations *read* lives. What this
-                    # keeps true is that a window and its indexes never
-                    # disagree about what is in it.
-                    try:
-                        partitioned = build_windows(
-                            conn, sources=tuple(cfg.conversations.sources)
-                        )
-                        if partitioned["added"] or partitioned["removed"]:
-                            notes.append(
-                                f"Conversations: +{partitioned['added']} "
-                                f"-{partitioned['removed']}"
-                            )
-                        # Cutting a conversation invalidates its vector, so
-                        # the two run together or the index quietly describes
-                        # messages that have since changed.
-                        from varyz.pipeline.window_vectors import embed_windows
-
-                        embed_windows(conn, cfg, Embedder(cfg))
-                    except Exception as exc:
-                        details.append(f"Conversation partition failed: {_safe_error(exc)}")
+                    # The alpha holds the windows back (docs/SHIPPING.md).
+                    if windows_are_shipped():
+                        _partition_conversations(cfg, conn, notes, details)
             except LockHeldError:
                 result = _simple_run(
                     trigger,
@@ -483,7 +462,18 @@ def run_once(
 
             # Graph extraction has its own claim and takes the writer lock only
             # for staging and activation, so model latency cannot stop ingestion.
-            if any(value.status in {"ok", "partial"} for value in outcomes):
+            # The alpha holds the builder back (docs/SHIPPING.md): nothing it
+            # answers reads the graph.
+            from varyz.graph import builder_is_shipped
+
+            # Nothing reads the internal event log, whatever this build ships.
+            _prune_events(cfg, conn, out_of_time)
+            if not builder_is_shipped():
+                graph_status = "not_shipped"
+                # An older version's graph and personal model stay on disk,
+                # unread; the owner chose to have updates delete them.
+                graph_pruned = _clear_held_back(cfg, conn, notes, warnings, out_of_time)
+            elif any(value.status in {"ok", "partial"} for value in outcomes):
                 try:
                     from varyz.graph.cadence import rebuild_due
                     from varyz.graph.service import rebuild_graph
@@ -553,13 +543,16 @@ def run_once(
 
             # `lookup` and `interpret` answer from the personal model, which is
             # compiled from the graph. A build that holds the managed model back
-            # can only compile it literally, in seconds, so each new graph is
-            # compiled here. A build with the model leaves compiling to the owner,
-            # whose last compile may be a semantic one this would replace.
+            # can only compile it literally, so each new graph is compiled here.
+            # A build with the model leaves compiling to the owner, whose last
+            # compile may be a semantic one this would replace. The alpha has no
+            # compiler at all: a literal compile of an 8,500-entry archive took
+            # 49-73 s and 600 MB, and wrote another 236 MB, every time.
             if graph_status == "updated":
                 from varyz.llm.local_runtime import installer_is_shipped
+                from varyz.personal_model import compiler_is_shipped
 
-                if not installer_is_shipped():
+                if compiler_is_shipped() and not installer_is_shipped():
                     try:
                         from varyz.personal_model.compiler import build_personal_model_compiler
 
@@ -731,6 +724,43 @@ def _prune_graph(cfg: Config, conn, warnings: list[str]) -> int:
         return 0
 
 
+def _clear_held_back(cfg: Config, conn, notes: list[str], warnings: list[str], out_of_time) -> int:
+    """Delete held-back data this build cannot read; rows removed.
+
+    Resumable, so a busy writer, the deadline or the kill switch only defers it.
+    """
+    from varyz.held_back_data import clear_held_back_data
+
+    try:
+        with WriteLock(cfg.data_dir):
+            result = clear_held_back_data(
+                conn,
+                db_path=cfg.db_path,
+                should_stop=lambda: is_paused(cfg) or out_of_time(),
+            )
+    except LockHeldError:
+        return 0
+    except Exception as exc:
+        warnings.append(f"Clearing unread held-back data failed: {_safe_error(exc)}")
+        return 0
+    if result.rows:
+        freed = result.vacuumed_bytes or result.reclaimable_bytes
+        notes.append(
+            f"Removed {result.rows} rows of graph, model and conversation data this "
+            f"version does not read ({freed / 1e6:.0f} MB"
+            + (" freed)" if result.vacuumed_bytes else " reusable inside the archive)")
+        )
+    return result.rows
+
+
+def _prune_events(cfg: Config, conn, out_of_time) -> None:
+    """Keep a month of the internal event log; silent, and retried next cycle."""
+    from varyz.held_back_data import prune_events
+
+    with contextlib.suppress(Exception), WriteLock(cfg.data_dir):
+        prune_events(conn, should_stop=lambda: is_paused(cfg) or out_of_time())
+
+
 def _learn_workflows(cfg: Config, conn: sqlite3.Connection) -> int:
     """Hand agents the orders repeated across the owner's sessions; how many changed."""
     from functools import partial
@@ -802,6 +832,8 @@ def _unread_conversations(conn: sqlite3.Connection) -> int:
     floor a sync would report thousands of two-word exchanges as waiting to be
     read, and no amount of reading would ever bring that number down.
     """
+    if not windows_are_shipped():
+        return 0
     from varyz.pipeline.conclusions import MIN_CHARACTERS, MIN_TURNS
 
     try:
@@ -817,6 +849,33 @@ def _unread_conversations(conn: sqlite3.Connection) -> int:
         # An archive older than the conversation migration.
         return 0
     return int(row[0])
+
+
+def _partition_conversations(
+    cfg: Config, conn, notes: list[str], details: list[str]
+) -> None:
+    """Re-cut the conversation partition and both its indexes.
+
+    This costs what embedding costs -- the same small local model, seconds over
+    thousands of windows -- so it belongs beside embedding and not in the GPU
+    budget, where having the conversations *read* lives. What this keeps true
+    is that a window and its indexes never disagree about what is in it.
+    """
+    try:
+        from varyz.pipeline.window_vectors import embed_windows
+        from varyz.pipeline.windows import build_windows
+
+        partitioned = build_windows(conn, sources=tuple(cfg.conversations.sources))
+        if partitioned["added"] or partitioned["removed"]:
+            notes.append(
+                f"Conversations: +{partitioned['added']} -{partitioned['removed']}"
+            )
+        # Cutting a conversation invalidates its vector, so the two run
+        # together or the index quietly describes messages that have since
+        # changed.
+        embed_windows(conn, cfg, Embedder(cfg))
+    except Exception as exc:
+        details.append(f"Conversation partition failed: {_safe_error(exc)}")
 
 
 def _release_local_model() -> None:

@@ -9,6 +9,134 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-22
+
+### Added
+
+- **More useful network examples (opt-in only).** For people who share with the Varyz
+  network, examples now say whether an agent followed each confirmed rule in a task
+  (passed, failed or corrected, and who said so), which model did the work, whether a
+  question to the owner was needed, the agent's guess at the answer and whether it was
+  right, and how long a rule lasted before it changed. They also include answers nobody
+  labelled within 3 days, choices the owner made outside a Varyz question, rules withdrawn
+  in Varyz Cloud, which rule a briefing showed for which task, the working agent's own
+  end-of-task reports (task, what was done, checks, what is pending) and, for questions
+  asked in away mode, the agent's proposal and whether the owner agreed. Projects, files,
+  sensitive reports and reports read from past chats are never sent; everything is
+  scrubbed on the computer first, and `varyz data preview` shows the exact records. The
+  sharing popup is unchanged; the privacy policy (22 October 2026) lists the new data.
+  `docs/NETWORK_DATA.md` is the datasheet. An optional memory test
+  (`[signals] memory_test = true`) and `varyz data signals` show locally whether rules
+  hold.
+
+- **Cloud disk safety.** Varyz Cloud refuses signups, sync and uploads with a retryable
+  503 when free disk falls below 2 GiB (`VARYZ_CLOUD_MIN_FREE_DISK_BYTES`); sign-in,
+  billing, export and deletion keep working. The Hetzner server checks hourly and emails
+  the owner below 5 GiB free, at most once a day, and every deploy now prunes old images to
+  the live one plus one rollback. The deployed account cap is 250.
+
+- **Task recipes (2026-10-22).** When an agent finishes a task it had to work out (several
+  tries, a fix it had to discover), it saves how to do it with the new `record_recipe`
+  MCP tool: up to 8 short steps, how to tell it worked and the one trap to avoid. The
+  next `start_task` for the same kind of task, in the same project or one with a general
+  recipe, hands the recipe over, and `finish_check` asks how it went. A recipe stays
+  light: at most 8 steps of 200 characters and 1,600 characters rendered (about 400
+  tokens, under 1% of a 200k window); a typical one is under 400 characters. Recipes
+  are written by the agent, so no AI call is made. A recipe holding a key or token is
+  refused. A corrected recipe replaces the old one; two failures in a row stop it being
+  served. Recipes sync through Varyz Cloud with the owner's other preferences (without
+  the conversation they came from or their outcomes), reach hosted `start_task`, and can
+  be published to followers and shared with project collaborators. With network sharing
+  on, recipes and their outcomes are sent scrubbed (`recipe` in `docs/NETWORK_DATA.md`).
+  **Deploy the Cloud before releasing a client with this change:** an older Cloud refuses
+  the new record kind, and a refused batch holds back the rest of the queue.
+
+### Changed
+
+- **The personal model is out of the alpha (2026-10-22).** A user's laptop overheated
+  and drained its battery while setup compiled it, and autosync compiled it again after
+  every graph update. Measured on a copy of an 8,525-entry archive: the graph took 31 s,
+  372 MB of memory and about 9 MB of disk, and a repeat with nothing new took 0.8 s. The
+  personal model took 49 to 73 s, 600 MB and another 236 MB of disk on every compile,
+  repeats included. No `ask` had been answered from it (tier 3: 0 of 1,026). The
+  compiler leaves the wheel and sdist; `varyz model`, the `lookup` and `interpret` MCP
+  tools, and tier 3 of the resolver register only where it exists (the source tree). See `docs/SHIPPING.md`.
+- **The graph is out of the alpha (2026-10-22).** With the personal model gone, nothing
+  the alpha answers reads the graph. A/B on a copy of the owner's archive (10 questions
+  through `start_task`, `context`, `recall`, `brief` and `ask`, with every SQLite read
+  traced): 0 reads of any graph table on either arm, and the answers matched apart from
+  sequence counters and ids. The builder (extraction, identity, semantic, cadence, prune,
+  doctor, evaluation, the service and `retrieval/graph_search`) leaves the wheel and sdist;
+  `varyz graph`, setup's graph step, autosync's rebuild, bootstrap's rebuild and the trust
+  centre's graph review register only where it exists. Setup now has six steps. Graph
+  records, overrides and temporal parsing still ship because other modules share them.
+- **Updated installs delete the graph and personal model an older version built
+  (2026-10-22).** Autosync removes them in small resumable steps: on the owner's archive,
+  34 unread personal-model generations (1.3 GB) and 1.7 million repeated sensitivity
+  labels for 41 entities. Corrections, the entities they name and labels set by hand
+  stay. The archive shrinks only when the disk has room for the copy VACUUM writes. On a
+  snapshot of the owner's archive it took 214 s and shrank it from 2.7 GB to 342 MB. See
+  `docs/SHIPPING.md`.
+- **Conversation windows are out of the alpha (2026-10-22).** An A/B on 20 questions gave
+  the same answers with and without them (20 of 20), so autosync no longer builds them and
+  the builder leaves the wheel and sdist.
+- **The reranker downloads only where a judge runs (2026-10-22).** It changed answers only
+  by shortening the list a GPU judge reads. `[retrieval] rerank = "auto"` now fetches the
+  1.1 GB model only when a judge is set up; `"on"` still fetches it.
+- **Autosync no longer learns workflow orders by default (2026-10-22).** The learner cost
+  about 2.6 s per sync and learned 0 workflows from 5,876 turns on the owner's archive.
+  `[autosync] learn_workflows = true` turns it back on; task recipes replace it.
+
+### Fixed
+
+- **Setup says a warm computer is normal, and its times left are closer (2026-10-22).**
+  While step 4 reads and indexes on this machine, and while local learning runs, setup
+  says "This can make your computer warm and use battery faster. That's normal." The
+  time left now follows the recent pace (the last 20 s or 20% of the run) instead of the
+  whole run's: on a real 5,544-chunk embedding run, the median error fell from 12% to 8%,
+  and after a mid-run slowdown from 19% to 10%. Learning uses the last 2 minutes or 30%
+  and counts down between reads. Local merging was always shown as "under a minute"; it
+  is now timed by the reader's own calls. The local estimate before reading starts is
+  1 s a message, down from 2 s: qwen3.5:4b read 107 messages in 72.8 s (0.68 s each) on an
+  RTX 5070.
+- **The ingest queue no longer fills with graph jobs (2026-10-22).** With the graph out of
+  the alpha, ingest still queued a `graph_extract` job per entry that nothing ran: 58,937
+  on the owner's archive. Ingest now queues them only where the graph builder ships.
+- **The internal event log is capped (2026-10-22).** Every build wrote it and nothing read
+  it (29 MB on the owner's archive). Autosync now keeps 30 days.
+- **Setup step 5 no longer looks hung (2026-10-21).** Compiling the personal model
+  now names each stage and shows how many records are saved, so a long compile has a
+  moving bar instead of an endless sweep. Saving writes up to 500 records per
+  transaction under one writer lock instead of locking for every write, gives the
+  archive back after a second at most and pauses 0.1 s before taking it again, so the
+  rules daemon and the preference reader (which wait 5 s for it) get their turn. The
+  links from messages to conversations (about 41,000 on a full archive) are saved
+  2,000 per transaction too; in one transaction they kept the archive 5.6 s. On a
+  simulated slow laptop (setup sharing one core with two busy programs) other writers
+  waited up to 8.3 s and two writes failed before this; after it, none failed. The
+  final check before switching to the new model now counts the records it has checked
+  instead of showing the same words for minutes. The page reports a
+  lost connection only after three failed checks in a row, waits up to 20 s for each,
+  and clears the message once setup answers again. When setup has really gone (its
+  window closed or the computer stopped it), the page now says so and how to carry
+  on, instead of "Failed to fetch", and stops its spinner, clock and "Keep this tab
+  open". Setup killed halfway through saving and started again finished and switched
+  to the new model; the half-saved one stays inactive until `varyz model prune`.
+- **Step 5 says when the computer ran out of memory.** Compiling a 33,000-entry
+  archive peaks near 2 GB; when memory ran out the step said only "MemoryError: ".
+  It now says the computer ran out of memory, to close other programs and run setup
+  again.
+- **Setup keeps a log.** `setup.log` next to the config notes each minute which step
+  setup is on, and why it stopped (closed from the page, page gone, interrupted). A
+  log that ends without a "stopped" line means setup was ended from outside. Steps,
+  progress and reasons only: no source content or credentials.
+- **Stopped learning explains itself and recovers from the page.** The card says why
+  learning stopped in plain words instead of pointing to a terminal command, and
+  **Retry learning** and **Learn later** now work for on-device learning too (an
+  explicit retry skips the five-minute cooldown). The local reader keeps waiting for
+  its model when setup is rewriting the config, and keeps its own explanation when
+  the model cannot read.
+
 ## [0.1.1] - 2026-10-20
 
 ### Fixed
@@ -1265,7 +1393,7 @@ All notable changes to Varyz are recorded here. The format follows
   in the source tree. `[llm].enrich_model` still picks the model for graph and model
   extraction.
 - Mirror as a generated prose product and its benchmark.
-- 2026-09-26: the Mirror code the pivot left behind — `varyz mirror …`, the unregistered
+- 2026-09-26: the Mirror code the pivot left behind: `varyz mirror …`, the unregistered
   `setup`, `sources` and `bench` commands, the Personal Insight gate (`insight.py`), the
   inbox's Mirror, setup and importing pages, and the MCP Mirror filters. None of it was
   reachable from a registered command. Migrations `0011` and `0014`–`0018` stay. The alpha

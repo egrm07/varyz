@@ -312,6 +312,17 @@ def model_server(tmp_path: Path):
     server.close()
 
 
+@pytest.mark.parametrize("tool", ["lookup", "interpret"])
+def test_a_build_without_the_compiler_does_not_read_an_old_model(
+    model_server, monkeypatch, tool
+):
+    """The alpha leaves the compiler out; a model an older version left is not read."""
+    monkeypatch.setattr("varyz.mcp_server._MODEL_SHIPPED", False)
+
+    with pytest.raises(KeyError):
+        model_server.call(tool, {"text": "What does Anna like?"})
+
+
 def test_lookup_minimizes_third_party_records_without_changing_local_lookup(model_server):
     direct = LifeModelQueryService(model_server.conn).ask_text("What does Anna like?")
     via_mcp = model_server.call("lookup", {"text": "What does Anna like?"})

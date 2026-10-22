@@ -400,6 +400,38 @@ def test_literal_compile_activates_one_episode_for_two_targets_and_typed_snapsho
     assert "Anna" not in checkpoint_detail
 
 
+def test_coverage_is_saved_in_short_transactions(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full archive has about 41,000 coverage rows: in one transaction they
+    kept the archive 5.6 s on a slow laptop, past the other writers' 5 s wait."""
+    from varyz.personal_model import compiler as compiler_mod
+
+    snapshot = add_graph(conn)
+    add_turn(conn, "question", "What flowers do you like?", order=1, sender="owner")
+    add_turn(conn, "answer", "Peonies", order=2, sender="anna", reply_to="question")
+    saved: list[int] = []
+    store = compiler_mod.SQLiteCompilerStateStore.store_coverage
+    monkeypatch.setattr(compiler_mod, "_COVERAGE_BATCH", 1)
+    monkeypatch.setattr(
+        compiler_mod.SQLiteCompilerStateStore,
+        "store_coverage",
+        lambda self, generation_id, rows: (saved.append(len(rows)),
+                                           store(self, generation_id, rows))[1],
+    )
+
+    result = compiler(conn, snapshot).compile(
+        CompileRequest(generation_id="coverage-batches", created_at=NOW)
+    )
+
+    assert result.activated and not result.failed
+    assert saved == [1, 1]
+    assert conn.execute(
+        "SELECT COUNT(*) FROM personal_model_target_episode_coverage WHERE generation_id=?",
+        (result.generation_id,),
+    ).fetchone()[0] == 2
+
+
 def test_activation_that_never_happened_is_not_checkpointed_as_complete(
     conn: sqlite3.Connection,
 ) -> None:

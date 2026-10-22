@@ -286,6 +286,15 @@ in an order they would want every time, ask as above ("Remember this order for n
 time?") and, if they choose a scope, call `remember_owner_workflow` with the name,
 the steps in their order (with `how` in their words) and the scope.
 
+A `task_recipe` in the briefing is how a past agent got this same task done after
+working it out: follow its steps unless the task differs, and at `finish_check`
+record how it went with `record_recipe` (`recipe_id` and 'worked' or 'failed', or
+the corrected steps with `replaces`). When `finish_check` offers a recipe and this
+task took working out (a failed first try, a search, a changed approach) and is
+done and verified, call `record_recipe` once: the task's name, at most 8 short
+steps, the check that proved it, and the trap that cost time. No secrets; skip
+routine work.
+
 ## Evidence from the owner's history
 
 Use Varyz when the answer must be reconstructed from evidence scattered across personal
@@ -333,6 +342,8 @@ Use one surface for one job:
 - `remember_owner_workflow`: record the order of steps the user just confirmed.
 - `record_workflow_nudge`: record whether the owner took or skipped a step you raised.
 - `answer_workflow_review`: record the owner's keep / optional / drop for a step.
+- `record_recipe`: record how a worked-out task gets done next time, or how a
+  served recipe went.
 - `context`: preflight for a substantial personalised task. It joins task evidence with
   typed owner preferences and identifies unsupported dimensions.
 - `resolve` (older name of `ask`): one owner-dependent fact, current choice, preference,

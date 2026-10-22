@@ -3,7 +3,7 @@
 # command and every path on disk are varyz. Until 2026-09-24 all of them said
 # varys -- src/varyz/legacy.py carries an existing install across.
 name = "varyzai"
-version = "0.1.1"
+version = "0.1.2"
 description = "Local-first personal context engine — one memory every AI agent can read"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -147,6 +147,46 @@ source-exclude = [
     # The managed model's installer: the alpha never downloads gemma, and
     # `varyz local-model install` registers only where this module exists.
     "src/varyz/llm/local_install.py",
+    # The personal-model compiler: on a weak laptop it ran hot for minutes after
+    # every graph update, and nothing the alpha answers came from it. `varyz
+    # model`, `lookup` and `interpret` register only where compiler.py exists.
+    "src/varyz/personal_model/annotation_wire.py",
+    "src/varyz/personal_model/cloud_runtime.py",
+    "src/varyz/personal_model/compiler.py",
+    "src/varyz/personal_model/identity.py",
+    "src/varyz/personal_model/observations.py",
+    "src/varyz/personal_model/readiness.py",
+    "src/varyz/personal_model/relationships.py",
+    "src/varyz/personal_model/semantic_runtime.py",
+    "src/varyz/personal_model/synthesis.py",
+    "src/varyz/personal_model/validation.py",
+    # The graph builder: it read every entry for a graph no answer used (the
+    # 2026-10-22 A/B: no graph table read in 100 answers, the same answers
+    # without it). `varyz graph` and the setup step register only where
+    # service.py exists. Its records, overrides and temporal parsing ship.
+    "src/varyz/graph/cache.py",
+    "src/varyz/graph/cadence.py",
+    "src/varyz/graph/doctor.py",
+    "src/varyz/graph/evaluation.py",
+    "src/varyz/graph/extract.py",
+    "src/varyz/graph/identity.py",
+    "src/varyz/graph/languages.py",
+    "src/varyz/graph/prune.py",
+    "src/varyz/graph/repository.py",
+    "src/varyz/graph/semantic.py",
+    "src/varyz/graph/service.py",
+    "src/varyz/graph/situation.py",
+    # Graph search, which only the graph's own tests call.
+    "src/varyz/retrieval/graph_search.py",
+    # Conversation windows: 20 recall questions answered the same with and
+    # without them (2026-10-22), and every sync re-cut, embedded and read
+    # them. `varyz conversations` registers only where windows.py exists.
+    "src/varyz/pipeline/conclusions.py",
+    "src/varyz/pipeline/quoting.py",
+    "src/varyz/pipeline/window_vectors.py",
+    "src/varyz/pipeline/windows.py",
+    "src/varyz/retrieval/conversation_evidence.py",
+    "src/varyz/retrieval/conversations.py",
 ]
 
 [dependency-groups]

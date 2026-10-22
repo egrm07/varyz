@@ -1,9 +1,10 @@
 """Setup's offer to extract the owner's preferences from their past chats.
 
 Setup reads the chosen sources before it downloads the search models, so the
-owner's chats with AI agents are in the archive while the 1.3 GB download
-runs. When an agent that can run varyz's own reader was connected (Claude
-Code or Codex, `headless_reader.find_runners`), the page asks "Extract
+owner's chats with AI agents are in the archive while the download (250 MB,
+or 1.3 GB with a local judge) runs. When an agent that can run varyz's own
+reader was connected (Claude Code or Codex, `headless_reader.find_runners`),
+the page asks "Extract
 preferences from your existing chats?" and says what it takes: the share of
 the plan's 5-hour and weekly limits, in percent, and how long. A yes hands
 the full reading to varyz's own reader in the background now, instead of on
@@ -42,6 +43,16 @@ SETTLE_TURNS = 20
 # Nothing read this long after the start: the estimate is no longer believable,
 # so the page says nothing has been read yet instead of counting down from it.
 FIRST_READ_SECONDS = 180.0
+# Learning moves a model call at a time, so its pace is read over a longer
+# stretch than a download's: the last 2 minutes or 30% of the reading.
+RECENT_SECONDS = 120.0
+RECENT_SHARE = 0.3
+# The local reader before it has measured itself. Measured on 2026-10-22: 16
+# reads of 107 messages took 0.68 s a message with qwen3.5:4b on an RTX 5070;
+# rounded up for slower graphics cards and the merges after. Its own pace
+# replaces this after 20 messages.
+LOCAL_START_SECONDS = 60.0
+LOCAL_SECONDS_PER_TURN = 1.0
 
 PLANS = {"claude": "Claude", "codex": "ChatGPT"}
 
@@ -125,7 +136,7 @@ def offer(
             "state": "offered", "turns": turns, "older": older_unread(cfg, "local"),
             "runner": "local", "plan": "AI plan",
             "known": True, "five_hour": 0, "weekly": 0,
-            "seconds": 60 + turns * 2,
+            "seconds": LOCAL_START_SECONDS + turns * LOCAL_SECONDS_PER_TURN,
             "estimate_note": ("Rough local time estimate; updates as it reads. "
                               "Starts when the model is ready."),
         }
@@ -217,10 +228,14 @@ def start(
     }
 
 
-def retry(cfg: Any, config_file: Path) -> bool:
+def retry(cfg: Any, config_file: Path, *, runner: str | None = None) -> bool:
     """Recheck the already-approved plan now, without widening the approval."""
     from varyz.resolution import headless_reader as reader
 
+    if runner == "local":
+        from varyz.resolution import local_reader
+
+        return local_reader.request(cfg, Path(config_file), wait_model=True, force=True)
     if not reader.enabled(cfg, "full") or reader._paused(cfg):
         return False
     runners = reader.find_runners(cfg, Path(config_file).resolve())
@@ -250,6 +265,52 @@ def stop(cfg: Any) -> None:
 
 
 # -- its progress -------------------------------------------------------------------
+
+
+# Why a reading stopped, in the owner's words: the readers' statuses keep short
+# codes and class names, which the page used to send to the command line.
+_PLAIN_REASONS = {
+    "time": "it reached the time one run may take",
+    "stalled": "it went 10 minutes without reading anything",
+    "turned off": "learning was turned off or Varyz was paused",
+    "put off": "it was set to learn later",
+    "asked": "it was asked to stop",
+    "the owner asked to read later": "it was set to learn later",
+    "varyz hooks are paused": "Varyz is paused",
+    "Learning is incomplete; resume the reader.": "it ended before reading everything",
+    "Learning skipped in setup": "it was set to learn later",
+    "cli_unavailable": "Varyz could not start Claude or Codex",
+    "usage_unavailable": "Varyz could not check your plan's usage",
+    "no_runner": "Varyz could not start Claude or Codex",
+    "scheduled": "it was set to learn later",
+    "paused": "Varyz is paused",
+    "stopped": "it stopped before reading everything",
+    "failed": "the reader failed",
+    # The on-device reader's own sentences, without their advice: the card offers
+    # Retry and Learn later itself.
+    "The local model made no progress; retry learning later.":
+        "the local model read nothing new on its last try",
+    "The local model did not arrive; run varyz setup again to finish it and start learning.":
+        "the local model has not finished downloading",
+    "Local learning was paused or the AI mode changed.": "Varyz was paused or the AI mode changed",
+    "local reading was paused or the AI mode changed": "Varyz was paused or the AI mode changed",
+}
+
+
+def plain_reason(reason: str) -> str:
+    """Why a reading stopped, said so the owner needs no command line to follow it."""
+    reason = reason.strip()
+    if reason in _PLAIN_REASONS:
+        return _PLAIN_REASONS[reason]
+    if reason.startswith("reader supervisor failed: "):
+        return f"the background reader crashed ({reason.split(': ', 1)[1]})"
+    if re.fullmatch(r"[A-Z]\w*(Error|Exception|Unavailable|Timeout|Interrupt)", reason):
+        return f"an unexpected error stopped it ({reason})"
+    # The card puts this after "It stopped: " and ends the sentence itself.
+    reason = reason.rstrip(". ")
+    if reason[:1].isupper() and reason[1:2].islower():
+        reason = reason[0].lower() + reason[1:]
+    return reason or "it stopped before reading everything"
 
 
 def _used_since(status: dict[str, Any], started: dict[str, Any]) -> dict[str, float | None]:
@@ -317,8 +378,9 @@ def progress(
                     seconds_left=max(merge_seconds - (now - started["merging_since"]), 30.0))
     else:
         view["phase"] = "reading"
-        if elapsed >= SETTLE_SECONDS and read >= max(SETTLE_TURNS, total * 0.02):
-            view["seconds_left"] = elapsed * turns_left / read + merge_seconds
+        pace = _recent(started, now, read, turns_left, float(started["at"]))
+        if elapsed >= SETTLE_SECONDS and read >= max(SETTLE_TURNS, total * 0.02) and pace:
+            view["seconds_left"] = pace + merge_seconds
         elif read == 0 and elapsed >= FIRST_READ_SECONDS:
             # A reader that has read nothing has no pace; the estimate made
             # before it started is not one either.
@@ -326,6 +388,33 @@ def progress(
         else:
             view["seconds_left"] = max(float(started["seconds"]) - elapsed, 30.0)
     return view
+
+
+def _recent(
+    started: dict[str, Any], now: float, read: int, left: int, origin: float,
+) -> float | None:
+    """Seconds for ``left`` more turns at the latest pace; the samples live in ``started``.
+
+    Reading moves a call at a time, so the figure is set when the count moves and
+    counts down between moves; a stall longer than it falls back to the pace with
+    the stall in it.
+    """
+    from varyz.cli import recent_seconds_left
+
+    # Nothing was read when reading began at ``origin``.
+    samples = started.setdefault("samples", [(origin, 0)])
+    if read != samples[-1][1]:
+        samples.append((now, read))
+        started["estimate"] = recent_seconds_left(samples, left, recent=RECENT_SECONDS,
+                                                  share=RECENT_SHARE)
+    estimate = started.get("estimate")
+    if estimate is None:
+        return None
+    since = now - samples[-1][0]
+    if since < estimate:
+        return estimate - since
+    return recent_seconds_left([*samples, (now, read)], left, recent=RECENT_SECONDS,
+                               share=RECENT_SHARE)
 
 
 def _local_progress(cfg: Any, started: dict[str, Any], now: float) -> dict[str, Any]:
@@ -350,8 +439,15 @@ def _local_progress(cfg: Any, started: dict[str, Any], now: float) -> dict[str, 
     else:
         elapsed = now - float(status.get("reading_at") or now)
         view["phase"] = "merging" if not left else "reading"
-        if done >= SETTLE_TURNS:
-            view["seconds_left"] = max(elapsed * left / done, 30)
+        # The merges still to make, at the length the reader's own calls take.
+        call = status.get("call_seconds")
+        merging = merges * float(call) if isinstance(call, int | float) else None
+        pace = _recent(started, now, done, left, now - elapsed) if left else None
+        if not left:
+            # No measured call yet: no figure, rather than "under a minute" throughout.
+            view["seconds_left"] = max(merging, 30) if merging else None
+        elif done >= SETTLE_TURNS and pace is not None:
+            view["seconds_left"] = max(pace + (merging or 0), 30)
         elif left and done == 0 and elapsed >= FIRST_READ_SECONDS:
             view["nothing_read_for"] = round(elapsed)
         else:

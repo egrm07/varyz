@@ -580,7 +580,8 @@ def test_autosync_learns_workflows_after_new_turns(tmp_path: Path, monkeypatch) 
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         '[storage]\ndata_dir = "data"\n\n[graph]\nextractor = "deterministic"\n\n'
-        "[connectors.ai_conversations]\napproved = true\n",
+        "[connectors.ai_conversations]\napproved = true\n\n"
+        "[autosync]\nlearn_workflows = true\n",
         encoding="utf-8",
     )
     cfg = load_config(config_path)

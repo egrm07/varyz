@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: 18 October 2026
+Last updated: 22 October 2026
 
 This is the privacy notice for the Varyz website (varyzai.com) and for the Varyz software it
 distributes. It is the canonical copy: the website's privacy page is generated from this file
@@ -76,7 +76,30 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
   reports expire after 30 days.
 - The second is anonymized examples created after you opt in: questions your agents asked
   Varyz and the answers they got, whether you adopted, overrode or corrected them and the
-  correction, how long an answer took, and the rules you confirmed, revised or rejected.
+  correction (an answer nobody labels within 3 days is sent unlabelled, and a later label
+  replaces it), how long an answer took, and the rules you confirmed, revised or rejected,
+  including rules you withdrew in Varyz Cloud. Choices you made yourself outside a Varyz
+  question, such as a pick in an agent's own question box or an answer an agent relayed,
+  are sent too; answers synced from Varyz Cloud are not.
+  A rule can carry a one-line note of what the agent did and what you wanted instead.
+  Examples also say whether an agent followed a confirmed rule in a task: passed, failed or
+  corrected by you, and whether Varyz checked this itself or the agent reported it. The
+  agent's own work, the check's evidence and the task are not sent; opaque references,
+  made with a secret that changes each time you opt in, let these examples be grouped by
+  rule and task without revealing either. Examples can also name the AI model that did the
+  work, whether a question to you was needed, unnecessary or left unanswered, the agent's
+  guess at your answer and whether it was right, and how long a rule lasted before you
+  changed it. For a question asked while you were away, examples hold the choice the agent
+  proposed, whether your answer matched it and the kind of decision (a preference, a
+  permission, a blocker or a choice you delegated). Examples also record which confirmed
+  rule an agent's briefing showed for which task, as opaque references only. When an agent
+  reports a finished, blocked or dropped task to Varyz, the example holds its one-line task,
+  up to 6 short lines each of what it did, the checks it ran and what is still pending,
+  and the outcome; the project, the list of files it made, reports marked sensitive and
+  reports Varyz read from past chats are not sent. When an agent saves how it did a task
+  (a recipe), the example holds the task's name, up to 8 short steps, how to tell it
+  worked and the pitfall, and later whether the recipe worked when it was reused. If you turn on the optional memory test, Varyz sometimes leaves a low-stakes
+  rule out of an agent's briefing at random and records which rules were shown.
   Vision notes, chats, files, connected sources and the archive itself are never sent.
 - Before an example leaves your computer, Varyz replaces names of people it knows,
   project names, emails, links, file paths, phone and other long numbers, network
@@ -123,7 +146,7 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
 ## Optional cloud accounts
 
 - Varyz Cloud has a deployed account service with live Paddle billing. Local Varyz remains usable without an account. The processing below applies to the deployed Cloud service. Public release checks for installers, directory listings and retention remain separate from payment availability.
-- Cloud stores your account email, a salted password hash, subscription status and identifiers, selected confirmed rules, explicit answers and stated workflows, pending questions, authorized connections and synchronization history. Raw passwords and connection credentials are not stored in plaintext.
+- Cloud stores your account email, a salted password hash, subscription status and identifiers, selected confirmed rules, explicit answers, stated workflows and task recipes, pending questions, authorized connections and synchronization history. Raw passwords and connection credentials are not stored in plaintext.
 - Connecting an account does not itself upload preferences. You explicitly select what to sync. Your local archive, documents, transcripts, source snippets and candidate preferences are not part of that synchronization.
 - Connected tools receive relevant cloud preferences and task context when you authorize them. Your cloud preferences are private to your account; we do not sell them or use them for advertising. Only examples you choose to share through the Varyz network, described under The software, may be licensed. Your chosen AI provider's own terms apply to data its agent receives.
 - The cloud sign-in pages use essential session, form-security and authorization cookies.

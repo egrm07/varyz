@@ -8,6 +8,10 @@ from varyz.scopes import normalize_scope as canonical_scope
 
 from .hosted_data import require_hosted_safe
 
+RECIPE_MAX_STEPS = 8
+RECIPE_STEP_CHARS = 200
+RECIPE_MAX_CHARS = 1600
+
 
 def normalize_scope(scope):
     value = canonical_scope(scope)
@@ -75,4 +79,31 @@ def canonical_payload(kind, payload):
         if len(set(names)) != len(names):
             raise ValueError("Workflow steps must be unique")
         result["steps"] = steps
+    if kind == "recipe":
+        result["name"] = result["name"].strip(" -:")
+        result.setdefault("pitfalls", "")
+        steps = []
+        for original in result["steps"]:
+            step = " ".join(original["step"].split()).strip(" -:")
+            how = " ".join(original.get("how", "").split())
+            if not step or len(step) + len(how) > RECIPE_STEP_CHARS:
+                raise ValueError("A recipe step and how it is done are limited to 200 characters")
+            steps.append({"step": step, "how": how} if how else {"step": step})
+        result["steps"] = steps
+        # The same caps as a local recipe, so it stays light in a briefing.
+        if (
+            not result["name"] or len(result["name"]) > 80
+            or not 2 <= len(steps) <= RECIPE_MAX_STEPS
+            or not result["check"] or len(result["check"]) > 240
+            or len(result["pitfalls"]) > 240
+        ):
+            raise ValueError(
+                "A recipe needs a name up to 80 characters, 2-8 steps, a check and "
+                "pitfalls up to 240 characters"
+            )
+        size = len(result["name"]) + len(result["check"]) + len(result["pitfalls"]) + sum(
+            len(s["step"]) + len(s.get("how", "")) + 6 for s in steps
+        ) + 20
+        if size > RECIPE_MAX_CHARS:
+            raise ValueError(f"A recipe is limited to {RECIPE_MAX_CHARS} characters")
     return result

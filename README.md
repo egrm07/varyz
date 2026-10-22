@@ -113,20 +113,19 @@ installer's window open (or the agent running it) until the page says you are do
 `--terminal`, with any of the flags below, or where no browser can open (over SSH).
 
 `setup` is the whole first run, and Varyz is fully working when it ends. It shows each
-step as it goes, with a progress bar and the time left for the long ones (indexing, the graph, downloads), asks before it connects anything, and can be run again at any time. A download can be paused (**Pause download** on the page, Ctrl+C in the terminal) and carries on from what has arrived. A
+step as it goes, with a progress bar and the time left for the long ones (indexing, downloads), asks before it connects anything, and can be run again at any time. A download can be paused (**Pause download** on the page, Ctrl+C in the terminal) and carries on from what has arrived. A
 second run keeps everything already there.
 
 | Step | What it does |
 |---|---|
-| 1/7 Archive | Creates `~/.varyz/config.toml` and the local database, unless they already exist. |
-| 2/7 Daemon | Starts the local service that answers agents' questions (on `127.0.0.1`). If another Varyz archive already uses the port, setup gives this archive its own port. |
-| 3/7 Agents | Connects Claude Code, Codex and Cursor where they are installed. |
-| 4/7 Data sources | Finds your AI conversation histories, git repositories and documents folder. It lists the exact paths, asks about each one, then indexes the ones you approve on this machine. |
-| 5/7 Graph | Builds the graph from what was indexed and compiles the personal model from it, which `lookup` and `interpret` answer from. |
-| 6/7 Autosync | Turns on the background sync, which keeps the sources, the graph and the personal model current (see `varyz autosync` below). It waits until a data source is connected. |
-| 7/7 AI mode | **More privacy** readies `qwen3.5:4b` through Ollama and reads conversations locally. **Lighter on your device** skips Ollama/Qwen and uses the connected AI for conversation learning only when allowed; simple local classifiers remain available. |
+| 1/6 Archive | Creates `~/.varyz/config.toml` and the local database, unless they already exist. |
+| 2/6 Daemon | Starts the local service that answers agents' questions (on `127.0.0.1`). If another Varyz archive already uses the port, setup gives this archive its own port. |
+| 3/6 Agents | Connects Claude Code, Codex and Cursor where they are installed. |
+| 4/6 Data sources | Finds your AI conversation histories, git repositories and the project folder you run it in (never your whole Documents folder). It lists the exact paths, asks about each one, then indexes the ones you approve on this machine. |
+| 5/6 Autosync | Turns on the background sync, which keeps the sources current (see `varyz autosync` below). It waits until a data source is connected. |
+| 6/6 AI mode | **More privacy** readies `qwen3.5:4b` through Ollama and reads conversations locally. **Lighter on your device** skips Ollama/Qwen and uses the connected AI for conversation learning only when allowed; simple local classifiers remain available. |
 
-Before the seven steps, setup checks total and available memory, free disk, CPU
+Before the six steps, setup checks total and available memory, free disk, CPU
 cores and GPU headroom. It automatically selects **Lighter on your device** on
 constrained machines, including 8 GB Macs. Machines with comfortable headroom get
 both choices. The conservative local thresholds are 16 GB installed memory
@@ -416,6 +415,7 @@ removing its archive. Add `--config <path>` when managing a separate archive.
 | Learn | `remember_owner_rule` | when you correct how the agent works, it offers to remember |
 | Learn | `remember_owner_workflow` | when you steer it through steps in your usual order, it offers to remember the order |
 | Learn | `record_workflow_nudge` → `answer_workflow_review` | records whether you took or skipped a step it raised; after 2 skips in a week that cost nothing, asks you once whether to keep the step |
+| Learn | `record_recipe` | when a task took working out, saves how to do it so the next agent starts from there |
 
 ### A way of working vs a one-off choice
 
@@ -478,9 +478,10 @@ colours), the agent does what you asked, says once that you usually settle colou
 first, and offers to do that first. It never blocks.
 
 Add one with `varyz workflows add website colour "logo: three options side by side"
-"page content" --domain website`, or confirm one when an agent offers. Autosync also
-learns them from your own non-sensitive turns to coding agents and uses them straight
-away, marked *learned*. Learning does not copy a slip: when a later step was started
+"page content" --domain website`, or confirm one when an agent offers. With
+`[autosync] learn_workflows = true` (off by default: on the owner's archive it cost
+2.6 s a sync and found nothing in 5,876 turns), autosync also learns them from your own
+non-sensitive turns to coding agents and uses them straight away, marked *learned*. Learning does not copy a slip: when a later step was started
 first and then redone ("now redo the hero with the new colours"), or you said you
 should have done something first, the step you went back to counts as first. A product
 order is learned only from what you said or corrected, never from what a project happened
@@ -503,6 +504,22 @@ optional (agents stop raising it), or drop it. Older skips expire, and the step 
 Varyz never changes the order without your answer.
 `varyz workflows review` shows how often each step was raised, taken, skipped and
 redone, and records your decision (`varyz workflows review <id> logo optional`).
+
+### Task recipes
+
+A workflow is the order *you* guide work in. A recipe is how an *agent* got one task
+done once it had worked it out: a release that needed three tries, a deploy with a step
+nobody wrote down. When such a task ends, `finish_check` offers the agent
+`record_recipe`, and it saves up to 8 short steps, how to tell it worked and the trap to
+avoid. The next agent given the same kind of task, in that project (or anywhere, for a
+general recipe), gets it in its briefing and starts where the last one finished. Then it
+reports whether the recipe worked; a corrected recipe replaces the old one, and a recipe
+that fails twice in a row is no longer handed out.
+
+Recipes stay light: at most 1,600 characters (about 400 tokens), usually under 400.
+Routine work gets none. A recipe holding a key or token is refused. Recipes sync through
+Varyz Cloud with your other preferences, and you can publish them to followers or share
+them with a project's collaborators.
 
 ## Keep working while you are away
 
@@ -572,7 +589,7 @@ and silence never become your preferences. The local mode and review are free.
 | Layer | What | Surfaces |
 |---|---|---|
 | **Core: the workflow** | briefing, ask/relay, definition of done, scoped owner knowledge and rules, hooks | `start_task`, `ask`, `answer_owner_question`, `owner_questions`, `finish_check`, `remember_owner_rule`; `varyz task/know/answer/questions/dismiss/rules/connect` |
-| **Evidence** | the owner's history, when the task depends on it | `context`, `recall`, `brief`, `lookup`, `interpret`; `varyz search/sync` |
+| **Evidence** | the owner's history, when the task depends on it | `context`, `recall`, `brief`; `varyz search/sync` |
 | **Engine** | resolution ladder, daemon, privacy gate, archive | `varyz daemon` |
 | **Legacy names** | kept so older agent configs keep working | `resolve` (= `ask`), `advise` (= `start_task`) |
 
@@ -596,7 +613,7 @@ receipt, or an escalation id.
 |---|---|
 | `varyz away on/off/status/complete` | Set scoped away mode and review deferred questions; `--task` identifies the task, or explicitly choose `--scope project/all`. |
 | `varyz doctor [--json] [--fix]` | Operational checks for archive, daemon, agent credentials/hooks, sync and reader; `--fix` tries bounded local repairs and verifies. Exits 1 while checks fail. |
-| `varyz setup [--terminal] [--dry-run] [--yes] [--source ...]` | First run, and safe to repeat: archive, daemon, agents, data sources, graph, autosync and the local classifier, then GO or NO-GO. Opens as a page in your browser; `--terminal` or any other flag asks in the terminal |
+| `varyz setup [--terminal] [--dry-run] [--yes] [--source ...]` | First run, and safe to repeat: archive, daemon, agents, data sources, autosync and the local classifier, then GO or NO-GO. Opens as a page in your browser; `--terminal` or any other flag asks in the terminal |
 | `varyz setup --web` | Serve the setup page even where setup finds no browser to open; open the printed link yourself |
 | `varyz sources` | Which data sources are connected, how many items each holds, when it last synced, and how to connect the rest |
 | `varyz task "..." [--finish]` | Preview the briefing (or finish checklist) an agent gets |
@@ -630,17 +647,18 @@ The Mirror, Mirror benchmark, RAG `ask`, `understand`, the local web inbox (`var
 the Gmail, Google Calendar and Drive, calendar-file and personal-archive connectors (in the
 source tree, left out of the package), and the semantic graph are not alpha surfaces. The
 semantic graph is read by a 7.4 GB local model (gemma) that the alpha never downloads:
-`varyz local-model install` is left out of the package, and `varyz graph rebuild` builds the
-deterministic graph instead, from explicit statements only, with no model. The tier-3
-personal model compiles from it with `varyz model compile --literal-only --run`, which is
-what `lookup` and `interpret` answer from. Setup builds both, and autosync compiles the
-model again after each graph update, so neither needs running by hand. varyz does not read WhatsApp,
+`varyz local-model install` is left out of the package. The deterministic graph
+builder and `varyz graph` are left out too: once the personal model was gone, an A/B
+found no answer that read the graph. The tier-3 personal model, with `varyz model` and the
+`lookup` and `interpret` tools, is not in the alpha either: compiling it kept a laptop busy
+for a minute or more after every graph update, and no answer came from it (see
+`docs/SHIPPING.md`). varyz does not read WhatsApp,
 Telegram, Instagram, Google Contacts or browser history at all: those connectors were removed
 on 2026-09-27. The alpha is the CLI above and the MCP server
 (`varyz mcp`), reading AI conversations, git, GitHub, documents and manual notes.
 
 The alpha's automated context boundary is the same everywhere: sources listed in
-`graph.excluded_sources` do not enter the graph, personal-model compile, `resolve`, MCP
+`graph.excluded_sources` do not enter the graph, `resolve`, MCP
 `context`, MCP `recall`, or MCP `brief`. The raw rows remain local and `varyz search` can inspect them
 deliberately; exclusion avoids spending inference on them and prevents agents from using
 them implicitly. Conversation analysis reads only your sessions with coding agents.

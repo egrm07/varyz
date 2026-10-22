@@ -269,6 +269,7 @@ def test_the_index_build_fetches_a_missing_model_once(tmp_path, monkeypatch):
     monkeypatch.delenv("VARYZ_DISABLE_EMBEDDINGS", raising=False)
     loads: list[str] = []
     monkeypatch.setattr(Reranker, "load", lambda self: loads.append(self.model_name))
+    monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: object())
     cfg = Config(base_dir=tmp_path)
     assert fetch_reranker(cfg) is True
     assert loads == [DEFAULT_RERANK_MODEL]
@@ -287,6 +288,7 @@ def test_a_failed_fetch_does_not_stop_the_index_build(tmp_path, monkeypatch, cap
         raise OSError("no network")
 
     monkeypatch.setattr(Reranker, "load", offline)
+    monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: object())
     assert fetch_reranker(Config(base_dir=tmp_path)) is False
     assert "no network" in capsys.readouterr().err
 
@@ -440,3 +442,19 @@ def test_the_processor_reads_questions_side_by_side(devices):
     reranker.load()
     _two_at_once(reranker, wait_for_second=True)
     assert FakeCrossEncoder.most_inside == 2
+
+
+def test_auto_skips_the_download_without_a_judge(tmp_path, monkeypatch):
+    # Without a judge the reranker changed no answer, so `auto` leaves the
+    # 1.1 GB model on the Hub; `on` still fetches it.
+    monkeypatch.setenv("VARYZ_EMBEDDING_CACHE", str(tmp_path / "models"))
+    monkeypatch.delenv("VARYZ_DISABLE_EMBEDDINGS", raising=False)
+    loads: list[str] = []
+    monkeypatch.setattr(Reranker, "load", lambda self: loads.append(self.model_name))
+    monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: None)
+    cfg = Config(base_dir=tmp_path)
+    assert fetch_reranker(cfg) is False
+    assert loads == []
+    cfg.retrieval.rerank = "on"
+    assert fetch_reranker(cfg) is True
+    assert loads == [DEFAULT_RERANK_MODEL]

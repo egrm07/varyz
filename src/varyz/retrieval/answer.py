@@ -30,8 +30,8 @@ from typing import Any
 from varyz.config import Config
 from varyz.db.dao import row_to_entry
 from varyz.domain import SearchHit, Sensitivity
+from varyz.pipeline import windows_are_shipped
 from varyz.pipeline.embed import Embedder
-from varyz.retrieval import conversation_evidence
 from varyz.retrieval.capsule import (
     DEFAULT_LIMIT,
     DEFAULT_MAX_CHARS,
@@ -80,6 +80,17 @@ _LONG_TASK_WORDS = 25
 # rather than a multiplier: the cost is a few more rows from an index that is
 # already open, and it should not grow with a limit an agent chose.
 _SENSITIVITY_HEADROOM = 12
+
+
+def _conversation_capsules(
+    conn: sqlite3.Connection, question: str, **kwargs: Any
+) -> tuple[list[Capsule], int]:
+    """The conversation channel, or nothing where this build holds it back."""
+    if not windows_are_shipped():
+        return [], 0
+    from varyz.retrieval import conversation_evidence
+
+    return conversation_evidence.capsules(conn, question, **kwargs)
 
 
 def _salient(task: str) -> list[str]:
@@ -201,7 +212,7 @@ def recall(
             excluded_sources=excluded_sources,
         )
     capsules, withheld = to_capsules(hits, max_chars=max_chars, allowed=allowed)
-    spoken, spoken_withheld = conversation_evidence.capsules(
+    spoken, spoken_withheld = _conversation_capsules(
         conn,
         question,
         limit=limit,
@@ -674,7 +685,7 @@ def _spoken_for(
         # the same reason abstention is decided once on the task above. It
         # would also be paid once per sub-query, on the path that already fans
         # out the most.
-        capsules, held = conversation_evidence.capsules(
+        capsules, held = _conversation_capsules(
             conn, query, limit=limit, max_chars=max_chars, allowed=allowed,
             embedder=embedder,
             excluded_sources=excluded_sources,

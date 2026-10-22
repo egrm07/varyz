@@ -67,12 +67,14 @@ def model_ready(cfg: Any) -> bool:
         return False
 
 
-def request(cfg: Any, config_file: Path, *, wait_model: bool = False) -> bool:
+def request(cfg: Any, config_file: Path, *, wait_model: bool = False,
+            force: bool = False) -> bool:
+    """Start a reader; ``force`` is the owner's own retry, which skips the cooldown."""
     if not _allowed(cfg):
         return False
     try:
         last = load_status(cfg)
-        if time.time() - float(last.get("started_at", 0)) < COOLDOWN_SECONDS:
+        if not force and time.time() - float(last.get("started_at", 0)) < COOLDOWN_SECONDS:
             return False
     except (OSError, ValueError, TypeError, AttributeError):
         pass
@@ -125,7 +127,10 @@ def run(config_file: Path, *, wait_model: bool = False) -> None:
                                      "to finish it and start learning.")
                 return
             time.sleep(5)
-            cfg = load_config(config_file)
+            try:
+                cfg = load_config(config_file)
+            except (OSError, ValueError):  # setup may be rewriting it; read it next time
+                continue
             if not _allowed(cfg):
                 status.update(state="stopped",
                               reason="Local learning was paused or the AI mode changed.")
@@ -138,7 +143,16 @@ def run(config_file: Path, *, wait_model: bool = False) -> None:
             def complete(self, system: str, user: str) -> str:
                 if not _allowed(load_config(config_file)):
                     raise ReaderUnavailable("local reading was paused or the AI mode changed")
-                return provider.complete(system, user)
+                began = time.monotonic()
+                reply = provider.complete(system, user)
+                # How long one call takes, so setup can time the merges still to come.
+                took = time.monotonic() - began
+                last = status.get("call_seconds")
+                status["call_seconds"] = round(
+                    0.7 * last + 0.3 * took if isinstance(last, float) else took, 2)
+                with contextlib.suppress(OSError):
+                    path.write_text(json.dumps(status), encoding="utf-8")
+                return reply
 
         client = cli._resolution_client(cfg)
         caller = cli._local_owner_caller(cfg, "owner_knowledge")
@@ -163,6 +177,9 @@ def run(config_file: Path, *, wait_model: bool = False) -> None:
             if after == before:
                 raise ReaderUnavailable("The local model made no progress; retry learning later.")
         status["state"] = "idle"
+    except ReaderUnavailable as exc:
+        # Varyz's own sentences say why; capped, as one may quote a connection error.
+        status.update(state="stopped", reason=(str(exc) or type(exc).__name__)[:200])
     except Exception as exc:
         # No prompt, excerpt, model response or credential enters this status file.
         status.update(state="stopped", reason=type(exc).__name__)

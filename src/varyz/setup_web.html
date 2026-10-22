@@ -204,6 +204,8 @@ td.state.connected { color: var(--signal); }
 .learning-elapsed { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 @keyframes learning-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .learning-spinner { animation: none; } }
+/* Setup has gone: nothing on the page is working, so nothing moves. */
+.setup-gone .learning-spinner, .setup-gone .bar span, .setup-gone li .num { animation: none; }
 .repair-prompt { width: 100%; min-height: 180px; box-sizing: border-box; resize: vertical;
   margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--night); color: var(--muted); font: 14px/1.5 var(--sans); }
@@ -284,9 +286,10 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
           preferences. Sensitive content is skipped; detected credentials are removed.
           Documents and repositories stay on this device.</p>
       </details>
-      <div class="note" id="sources-note">Search models: about 1.3&nbsp;GB on first use.</div>
+      <div class="note" id="sources-note">Search models: about 250&nbsp;MB on first use, 1.3&nbsp;GB with local learning on a graphics card.</div>
       <div class="status"></div>
-      <div class="bar" role="progressbar" aria-label="Data sources progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div></div></li>
+      <div class="bar" role="progressbar" aria-label="Data sources progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div>
+      <p class="note warm" hidden>This can make your computer warm and use battery faster. That&rsquo;s normal.</p></div></li>
     <li data-step="4"><span class="num">05</span><div>
       <div class="name">Your context</div>
       <div class="desc">Prepares your history for your AI tools.</div>
@@ -329,6 +332,7 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
     <dl class="costs" id="extract-costs"></dl>
     <div class="bar" id="extract-bar" role="progressbar" aria-label="Extraction progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div>
     <p class="hint" id="extract-status"></p>
+    <p class="note warm" id="extract-warm" hidden>This can make your computer warm and use battery faster. That&rsquo;s normal.</p>
     <div class="actions" id="extract-actions">
       <button id="extract-yes">Start learning</button>
       <button id="extract-no" class="quiet">Not now</button>
@@ -430,10 +434,11 @@ function showError(message) {
   $("error").hidden = !message;
 }
 
-async function api(path, body) {
+async function api(path, body, timeout) {
   const init = body === undefined
     ? { headers: HEADERS }
     : { method: "POST", headers: { ...HEADERS, "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  if (timeout && AbortSignal.timeout) init.signal = AbortSignal.timeout(timeout);
   const response = await fetch(path, init);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `${response.status} ${response.statusText}`);
@@ -592,12 +597,14 @@ function renderState(state) {
   // Between steps (the macOS privacy check after the last one) the wait is
   // the run's own, so it shows under the button.
   const running = state.steps.findIndex((step) => step.state === "running");
+  // A step this build does not have (the alpha's graph) is neither shown nor counted.
+  const shown = state.steps.filter((step) => step.state !== "absent");
   const stageNames = ["Creating your archive", "Starting Varyz", "Connecting AI tools",
     "Reading your sources", "Preparing your preferences", "Turning on background sync", "Preparing your AI"];
   const active = running >= 0 ? running : state.steps.findIndex((step) =>
     ["failed", "paused", "waiting"].includes(step.state));
   const completed = state.steps.filter((step) => step.state === "done").length;
-  $("completed-step").textContent = completed ? `${completed} of ${state.steps.length} steps complete` : "";
+  $("completed-step").textContent = completed ? `${completed} of ${shown.length} steps complete` : "";
   $("completed-step").hidden = !completed || state.finished;
   const between = !state.finished && running < 0 && Boolean(state.activity);
   // What a step is doing, and how long it has left once its pace is measured.
@@ -605,7 +612,7 @@ function renderState(state) {
   $("hint").textContent = state.finished ? ""
     : state.paused ? "Paused. What has downloaded is kept: resume here, or close this tab and run varyz setup later to carry on."
     : between ? doing
-    : `${running >= 0 ? `Step ${running + 1} of ${state.steps.length}. ` : ""}`
+    : `${running >= 0 ? `Step ${shown.indexOf(state.steps[running]) + 1} of ${shown.length}. ` : ""}`
       + "Keep this tab open.";
   renderBar($("wait-bar"), between ? state : null);
   for (const step of state.steps) {
@@ -614,7 +621,11 @@ function renderState(state) {
     item.dataset.state = step.state;
     item.querySelector(".name").textContent = stageNames[index];
     for (const detail of item.querySelectorAll(".desc, .note, #cloud-details")) detail.hidden = true;
-    item.hidden = state.finished || index !== active;
+    // Reading and indexing on this machine works it hard for a while; say that is fine.
+    const warm = item.querySelector(".warm");
+    if (warm) warm.hidden = step.state !== "running";
+    item.hidden = state.finished || index !== active || step.state === "absent";
+    item.querySelector(".num").textContent = String(shown.indexOf(step) + 1).padStart(2, "0");
     item.querySelector(".num").hidden = false;
     // Completed choices remain in the DOM so their selected values survive reloads.
     for (const choices of item.querySelectorAll(".choices")) choices.hidden = true;
@@ -774,7 +785,7 @@ let learningActivityTimer = null;
 let extractStarting = false;
 
 function updateLearningElapsed() {
-  if (!learningActivity) return;
+  if (!learningActivity || document.body.classList.contains("setup-gone")) return;
   const seconds = Math.max(0, Math.floor((performance.now() - learningActivity.since) / 1000));
   $("learning-elapsed").textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} elapsed`;
 }
@@ -816,6 +827,9 @@ function renderExtract(extract) {
   $("extract-wait-actions").hidden = extract?.state !== "accepted"
     || !["waiting", "agent", "failed", "stopped"].includes(extract.phase);
   renderRepair($("extract-help"), extract?.repair_prompt);
+  // Reading on this device keeps its graphics card busy until it is done.
+  $("extract-warm").hidden = !(extract?.state === "accepted" && extract.runner === "local"
+    && ["reading", "merging"].includes(extract.phase));
   if (!extract) return;
   const state = extract.state;
   if (state === "preparing") {
@@ -873,7 +887,8 @@ function renderExtract(extract) {
   $("extract-title").textContent = phase === "agent" ? "Continue in your AI"
     : phase === "done" ? "Ready to review"
     : phase === "waiting" ? "Learning paused"
-    : phase === "failed" ? "Learning stopped" : "Learning your preferences…";
+    : phase === "failed" ? "Learning stopped"
+    : phase === "stopped" ? "Learning stopped for now" : "Learning your preferences…";
   const read = ((extract.turns || 0) - (extract.turns_left || 0)).toLocaleString();
   const parts = [];
   const used = [];
@@ -913,8 +928,13 @@ function renderExtract(extract) {
   } else if (phase === "done") {
     status.textContent = "Learning finished. Your preferences are ready to review.";
   } else {
-    status.replaceChildren(phase === "failed" ? `It could not finish (${extract.reason}). ` : "Stopped for now. ",
-      el("code", {}, "varyz rules read --status"), " says more.");
+    // Said in plain words: whoever sees this may never have opened a terminal.
+    const why = (extract.reason_text || extract.reason || "").replace(/[.\s]+$/, "");
+    const progress = typeof extract.turns_left === "number" && extract.turns
+      ? ` ${read} of ${turns} read, and that is saved.` : " What it read so far is saved.";
+    status.textContent = (phase === "failed" ? "It could not finish" : "It stopped")
+      + (why ? `: ${why}.` : ".") + progress
+      + " Retry learning now, or choose Learn later: it picks up again as you use your AI.";
   }
   const moving = ["reading", "merging", "waiting", "waiting_model", "checking", "done"].includes(phase);
   renderBar($("extract-bar"), moving
@@ -994,13 +1014,40 @@ function renderPrivacy(privacy) {
   $("privacy-program").textContent = privacy.program;
 }
 
+// One poll at a time: while setup was busy, polls 700 ms apart used to pile up
+// behind a slow answer. A poll with no answer gives up, and only a few failed
+// in a row say touch is lost; the next answer takes that back.
+const POLL_TIMEOUT = 20000;
+const LOST_AFTER = 3;
+let pollBusy = false;
+let pollFailures = 0;
+
 async function poll() {
+  if (pollBusy) return;
+  pollBusy = true;
   try {
-    const state = await api("/api/state");
+    const state = await api("/api/state", undefined, POLL_TIMEOUT);
+    if (pollFailures >= LOST_AFTER) showError("");
+    pollFailures = 0;
+    document.body.classList.remove("setup-gone");
     renderState(state);
     if (state.finished && !extractActive(state.extract)) { clearInterval(polling); polling = null; }
   } catch (error) {
-    showError(`Lost touch with setup (${error.message}). Is the Varyz window still open?`);
+    pollFailures += 1;
+    // A slow answer is a busy setup; a refused one is a setup no longer running,
+    // whose window was closed or whose computer stopped it. Said so either way.
+    if (pollFailures >= LOST_AFTER) {
+      // Gone, the spinner, the clock and "Keep this tab open" said it still worked.
+      const gone = error.name !== "TimeoutError";
+      document.body.classList.toggle("setup-gone", gone);
+      if (gone) $("hint").textContent = "";
+      showError(!gone
+        ? "Setup is busy and has not answered for a while. This page keeps trying; leave it open."
+        : "Setup is no longer running, so this page cannot reach it. What it finished is kept: "
+          + "start Varyz setup again the way you started it, and it carries on from there.");
+    }
+  } finally {
+    pollBusy = false;
   }
 }
 

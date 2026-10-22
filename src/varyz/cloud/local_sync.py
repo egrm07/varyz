@@ -21,10 +21,17 @@ from varyz.personal_model.query import AnswerBasis
 from varyz.resolution.knowledge import SQLiteKnowledgeStore, _write_transaction, normalize_scope
 from varyz.resolution.models import Caller
 from varyz.resolution.principles import SQLitePrincipleStore, normalize_domain
+from varyz.resolution.recipes import SQLiteRecipeStore, parse_recipe_steps
+from varyz.resolution.recipes import validated as validated_recipe
 from varyz.resolution.workflows import SQLiteWorkflowStore, parse_steps
 
-KINDS = ("rule", "answer", "workflow")
-TABLES = {"rule": "owner_principles", "answer": "owner_knowledge", "workflow": "owner_workflows"}
+KINDS = ("rule", "answer", "workflow", "recipe")
+TABLES = {
+    "rule": "owner_principles",
+    "answer": "owner_knowledge",
+    "workflow": "owner_workflows",
+    "recipe": "task_recipes",
+}
 
 
 class SyncTransport(Protocol):
@@ -47,7 +54,14 @@ def _sync_lock(path: Path):
 
 
 def fingerprint(payload: dict[str, Any] | None) -> str:
-    if payload is not None:
+    if payload is not None and "check" in payload:  # a task recipe
+        payload = dict(payload)
+        payload["scope"] = normalize_scope(payload.get("scope"))
+        payload["name"] = " ".join(payload["name"].split()).strip(" -:")
+        payload["steps"] = [s.to_dict() for s in parse_recipe_steps(payload["steps"])]
+        payload["check"] = " ".join(payload["check"].split())
+        payload["pitfalls"] = " ".join(payload.get("pitfalls", "").split())
+    elif payload is not None:
         payload = dict(payload)
         payload["scope"] = normalize_scope(payload.get("scope"))
         if "statement" in payload:
@@ -141,6 +155,22 @@ def selected_payloads(
                 "domain": row["domain"],
                 "rationale": row["rationale"],
             }
+    # A recipe is how an agent got a task done; its provenance (conversation,
+    # caller) stays local, and so do its outcomes.
+    for row in conn.execute(
+        """SELECT t.* FROM task_recipes t
+           WHERE NOT EXISTS (SELECT 1 FROM task_recipe_retractions r WHERE r.recipe_id=t.id)
+           AND NOT EXISTS (SELECT 1 FROM task_recipes newer WHERE newer.supersedes_id=t.id)"""
+    ):
+        scope = normalize_scope(row["scope"])
+        if applies(scope):
+            result[f"recipe:{row['id']}"] = {
+                "name": row["name"],
+                "steps": json.loads(row["steps_json"]),
+                "check": row["check_text"],
+                "pitfalls": row["pitfalls"],
+                "scope": scope,
+            }
     from varyz.privacy.secrets_scan import redact_tree
 
     for payload in result.values():
@@ -191,6 +221,7 @@ class LocalSync:
             "rule": "owner_principles",
             "answer": "owner_knowledge",
             "workflow": "owner_workflows",
+            "recipe": "task_recipes",
         }
         for local_key in selected:
             if local_key in aliases:
@@ -447,6 +478,26 @@ class LocalSync:
                 supersedes_id=old,
                 **common,
             )
+        if kind == "recipe":
+            recipes = SQLiteRecipeStore(self.conn)
+            # The same size cap and credential scan as a local recipe, appended
+            # with its remote predecessor rather than deduplicated by name.
+            name, steps, check, pitfalls, scope = validated_recipe(
+                p["name"], p["steps"], p["check"], p.get("pitfalls", ""), p["scope"]
+            )
+            with _write_transaction(self.conn, recipes._lock):
+                return recipes._insert(
+                    name=name,
+                    scope=scope,
+                    steps=steps,
+                    check=check,
+                    pitfalls=pitfalls,
+                    source=source,
+                    provenance={},
+                    caller=self.caller,
+                    device_id="cloud-sync",
+                    supersedes_id=old,
+                )
         # record() deduplicates on name/order and intentionally ignores rationale.
         # A remote revision needs its explicit predecessor even when its name or
         # scope changes, so append through the ledger's validated writer here.
@@ -475,6 +526,7 @@ class LocalSync:
             "rule": SQLitePrincipleStore,
             "answer": SQLiteKnowledgeStore,
             "workflow": SQLiteWorkflowStore,
+            "recipe": SQLiteRecipeStore,
         }
         store = stores[kind](self.conn)
         try:

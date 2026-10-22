@@ -224,6 +224,81 @@ class ResolutionService:
             device_id=str(payload["device_id"]),
         )
 
+    def record_task_signals(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """What finish_check found for each rule, and the answers a finished task adopted."""
+        from varyz.resolution import rule_signals
+
+        conversation = str(payload.get("conversation_id") or "") or None
+        receipts = payload.get("receipts") or []
+        if not isinstance(receipts, list):
+            raise ValueError("receipts is the list finish_check returned")
+        # The rate the caller's briefings held rules back at, so each draw is recorded
+        # as it was made; else this daemon's own setting.
+        rate = payload.get("memory_test")
+        memory_test = (float(rate) if isinstance(rate, int | float) and 0 <= rate <= 0.1
+                       else rule_signals.memory_test_rate(self.shadow_config))
+        with self.lock:
+            checks = rule_signals.record_checks(
+                self.knowledge._conn, conversation,
+                [item for item in receipts if isinstance(item, dict)],
+                project=payload.get("project") or None,
+                agent=str(payload.get("agent") or ""), model=str(payload.get("model") or ""),
+                memory_test=memory_test,
+            )
+            adopted = (
+                rule_signals.adopt_finished(
+                    self.knowledge._conn, conversation, device_id=str(payload["device_id"])
+                )
+                if payload.get("ready") else []
+            )
+        return {"checks": checks, "adopted": adopted}
+
+    def record_rule_correction(self, principle_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """A rule the owner just taught: the one it corrected, and the output it was about."""
+        from varyz.resolution import rule_signals
+
+        conversation = str(payload.get("conversation_id") or "") or None
+        corrected = str(payload.get("corrected") or "") or None
+        agent_turn = str(payload.get("agent_turn") or "")
+        with self.lock:
+            check = (
+                rule_signals.record_correction(
+                    self.knowledge._conn, corrected, conversation,
+                    project=payload.get("project") or None,
+                )
+                if corrected else None
+            )
+            kept = bool(agent_turn.strip()) and rule_signals.record_turn(
+                self.knowledge._conn, principle_id, method="agent_supplied",
+                agent_turn=agent_turn, thread=conversation or "",
+            )
+            ask = (
+                rule_signals.record_ask_feedback(
+                    self.knowledge._conn, "should_have_asked", principle_id=principle_id,
+                    conversation_id=conversation,
+                )
+                if payload.get("should_have_asked") else None
+            )
+        return {"check": check, "turn_kept": kept, "ask_feedback": ask}
+
+    def record_ask_signals(self, escalation_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Before the owner answers: the agent's guess. After: whether asking was needed."""
+        from varyz.resolution import rule_signals
+
+        with self.lock:
+            predicted = bool(payload.get("predict")) and rule_signals.record_prediction(
+                self.knowledge._conn, escalation_id,
+                decision_kind=str(payload.get("decision_kind") or ""),
+                agent=str(payload.get("agent") or ""), model=str(payload.get("model") or ""),
+                agent_guess=str(payload.get("agent_guess") or ""),
+            )
+            label = str(payload.get("ask_feedback") or "")
+            feedback = rule_signals.record_ask_feedback(
+                self.knowledge._conn, label, escalation_id=escalation_id,
+                conversation_id=str(payload.get("conversation_id") or "") or None,
+            ) if label else None
+        return {"predicted": predicted, "ask_feedback": feedback}
+
     def trial_status(self) -> dict[str, Any]:
         trials = self._trials()
         status = trials.status()
@@ -451,6 +526,10 @@ class ResolutionDaemon:
                     from varyz.analytics import tick
 
                     tick(daemon.service.shadow_config)
+                    from varyz.resolution import rule_signals
+
+                    rule_signals.tick(daemon.service.knowledge._conn,
+                                      daemon.service.shadow_config, daemon.service.lock)
 
         server = Server((self.host, self.port), Handler)
         server.daemon_threads = True
@@ -583,6 +662,19 @@ class _ResolutionHandler(BaseHTTPRequestHandler):
         if path == "/v1/principles/uses":
             promoted = self.resolution_daemon.service.record_principle_uses(payload)
             self._json(HTTPStatus.OK, {"promoted": promoted})
+            return
+        if path == "/v1/tasks/signals":
+            self._json(HTTPStatus.OK, self.resolution_daemon.service.record_task_signals(payload))
+            return
+        if path.startswith("/v1/escalations/") and path.endswith("/signals"):
+            self._json(HTTPStatus.OK, self.resolution_daemon.service.record_ask_signals(
+                unquote(path[len("/v1/escalations/") : -len("/signals")]), payload
+            ))
+            return
+        if path.startswith("/v1/principles/") and path.endswith("/correction"):
+            self._json(HTTPStatus.OK, self.resolution_daemon.service.record_rule_correction(
+                unquote(path[len("/v1/principles/") : -len("/correction")]), payload
+            ))
             return
         if path == "/v1/principles/trials/scan":
             self._json(HTTPStatus.OK, self.resolution_daemon.service.scan_trials(payload))
@@ -773,10 +865,10 @@ def build_resolution_daemon(
     lock = threading.RLock()
     default_tiers: tuple[ResolverTier, ...] = ()
     if config is not None:
+        from varyz.personal_model import compiler_is_shipped
         from varyz.resolution.evidence_verify import evidence_verifier_from_config
         from varyz.retrieval.loaded_models import RetrievalModels
 
-        model = LifeModelQueryService(conn)
         default_tiers = (
             EvidenceTier(
                 conn,
@@ -785,8 +877,14 @@ def build_resolution_daemon(
                 models=RetrievalModels(config),
                 connect=_read_only(Path(db_path)),
             ),
-            LifeResultTier(3, lambda request: model.ask_text(request.question)),
         )
+        # A build that cannot compile the model does not answer from one an
+        # older version left behind.
+        if compiler_is_shipped():
+            model = LifeModelQueryService(conn)
+            default_tiers += (
+                LifeResultTier(3, lambda request: model.ask_text(request.question)),
+            )
     resolver = ResolutionResolver(
         (knowledge, *(tiers or default_tiers)),
         escalation_queue=escalations,

@@ -15,6 +15,7 @@ FIELDS = (
     "project_rules",
     "definition_of_done",
     "owner_workflows",
+    "task_recipe",
     "project_decisions",
     "general_preferences",
     "pending_owner_questions",

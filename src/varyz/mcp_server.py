@@ -44,7 +44,8 @@ from varyz.agent_style import instruction, read_style
 from varyz.config import Config, ConfigError, find_config_file, load_config
 from varyz.coordination import ROUTE_DESCRIPTION, ROUTE_SCHEMA, WORKFLOW_TOOLS
 from varyz.db.connection import open_db
-from varyz.domain import new_id
+from varyz.domain import new_id, utc_now
+from varyz.personal_model import compiler_is_shipped
 from varyz.privacy.secrets_scan import redact_tree
 from varyz.resolution.away import AWAY_POLICY, RECOGNITION
 from varyz.resolution.memory_policy import MEMORY_POLICY
@@ -55,7 +56,7 @@ from varyz.session_progress import PROGRESS_POLICY
 from varyz.session_progress import TOOLS as PROGRESS_TOOLS
 
 SERVER_NAME = "varyz"
-SERVER_VERSION = "0.1.1"
+SERVER_VERSION = "0.1.2"
 
 _COLOUR_LITERAL = re.compile(
     r"\b(?:red|orange|yellow|green|blue|purple|pink|brown|black|white|grey|gray|"
@@ -112,6 +113,9 @@ MAX_LIMIT = 25
 MAX_CHARS_CEILING = 4000
 
 MAX_PERSONAL_MODEL_REQUEST_BYTES = 16_384
+# The alpha has no personal-model compiler (docs/SHIPPING.md), so it offers
+# no tool that reads a model and does not read one an older version left.
+_MODEL_SHIPPED = compiler_is_shipped()
 MAX_LIFE_QUERY_TEXT_CHARS = 1_000
 # After this long without a call the embedder, reranker and judge are let go
 # (1.8 GB of the process's memory). Loading them again costs the next call
@@ -188,10 +192,11 @@ INSTRUCTIONS = (
     "never asked its reach, then or as a follow-up. Pass their reply, in their words, "
     "and the scope to answer_owner_question. Never answer it yourself; if the user "
     "skips it, it stays pending. "
-    "owner_questions lists every question varyz is still waiting on. The lookup "
-    "tool only reads facts already in the active personal model. The interpret "
-    "tool only reads a stored, offered interpretation selected by its ID; "
-    "neither tool may create a new judgment.\n\n"
+    "owner_questions lists every question varyz is still waiting on."
+    + (" The lookup tool only reads facts already in the active personal model. The "
+       "interpret tool only reads a stored, offered interpretation selected by its ID; "
+       "neither tool may create a new judgment." if _MODEL_SHIPPED else "")
+    + "\n\n"
     # The owner should never need a terminal for Varyz itself: whatever it
     # takes a command to do, the agent they are talking to runs for them.
     "The owner does not type Varyz commands; when they ask for what one does, run "
@@ -738,6 +743,74 @@ _RECORD_WORKFLOW_NUDGE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+_RECORD_RECIPE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": (
+                "The task the recipe does, in the words a later request would use "
+                "('release a new varyz version', 'deploy the Cloud')."
+            ),
+        },
+        "steps": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "items": {"type": "string", "minLength": 1, "maxLength": 200},
+            "description": (
+                "The steps that got it done, in order, as 'step: how' "
+                "('build: uv build --wheel, never pip wheel'). Only the ones the "
+                "next agent would get wrong; no secrets."
+            ),
+        },
+        "check": {
+            "type": "string",
+            "maxLength": 240,
+            "description": "How the next agent tells the task worked.",
+        },
+        "pitfalls": {
+            "type": "string",
+            "maxLength": 240,
+            "description": "The trap that cost time this time, if any.",
+        },
+        "scope": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "'all' or the project's name (default: the project).",
+        },
+        "replaces": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The id of the recipe these steps correct.",
+        },
+        "recipe_id": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "For an outcome: the recipe start_task served.",
+        },
+        "outcome": {
+            "type": "string",
+            "enum": ["worked", "failed"],
+            "description": (
+                "For a served recipe: 'worked' or 'failed' (add a note). If it needed "
+                "changing, pass the corrected recipe with replaces=recipe_id instead."
+            ),
+        },
+        "note": {
+            "type": "string",
+            "maxLength": 240,
+            "description": "For 'failed': what went wrong.",
+        },
+        "conversation_id": ROUTE_SCHEMA["properties"]["conversation_id"],
+        "project": _PROJECT_PROPERTY,
+        "purpose": _PURPOSE_PROPERTY,
+    },
+    "additionalProperties": False,
+}
+
 _ANSWER_WORKFLOW_REVIEW_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -907,6 +980,27 @@ _REMEMBER_OWNER_RULE_SCHEMA: dict[str, Any] = {
                 "domain stay the old rule's unless given."
             ),
         },
+        "agent_did": {
+            "type": "string",
+            "maxLength": 300,
+            "description": (
+                "When the rule corrects something you did: what you did, in one plain "
+                "sentence ('Used npm to install packages'). No names, paths or secrets."
+            ),
+        },
+        "wanted": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "What the user wanted instead, in one plain sentence.",
+        },
+        "corrected_output": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": (
+                "The output of yours the user corrected, as it was. Kept on this computer "
+                "only, beside the rule; never sent anywhere."
+            ),
+        },
         "purpose": _PURPOSE_PROPERTY,
     },
     "required": ["statement"],
@@ -939,8 +1033,26 @@ _CONVERSATION_PROPERTY = {
     "type": "string", "minLength": 1, "maxLength": 200,
     "description": "Stable id of this task from the hook; reuse it on every call.",
 }
-for _schema in (_START_TASK_SCHEMA, _FINISH_CHECK_SCHEMA, _OWNER_QUESTIONS_SCHEMA):
+for _schema in (_START_TASK_SCHEMA, _FINISH_CHECK_SCHEMA, _OWNER_QUESTIONS_SCHEMA,
+                _REMEMBER_OWNER_RULE_SCHEMA):
     _schema["properties"]["conversation_id"] = _CONVERSATION_PROPERTY
+_MODEL_PROPERTY = {
+    "type": "string", "maxLength": 64,
+    "description": "Your exact model id as your client states it (for example "
+                   "claude-opus-5-5), so results compare across models. Omit if unknown.",
+}
+for _schema in (_FINISH_CHECK_SCHEMA, _ASK_SCHEMA, _RESOLVE_SCHEMA):
+    _schema["properties"]["model"] = _MODEL_PROPERTY
+_ANSWER_OWNER_QUESTION_SCHEMA["properties"]["ask_feedback"] = {
+    "type": "string", "enum": ["needed", "unneeded"],
+    "description": "Only when the user said so: 'unneeded' when they said you did not "
+                   "need to ask, 'needed' when they said asking was right.",
+}
+_REMEMBER_OWNER_RULE_SCHEMA["properties"]["should_have_asked"] = {
+    "type": "boolean",
+    "description": "True when the user said you should have asked before doing what "
+                   "this rule corrects.",
+}
 _OWNER_QUESTIONS_SCHEMA["properties"]["project"] = _PROJECT_PROPERTY
 for _schema in (_ASK_SCHEMA, _RESOLVE_SCHEMA):
     _schema["properties"].update({
@@ -953,7 +1065,10 @@ for _schema in (_ASK_SCHEMA, _RESOLVE_SCHEMA):
         },
         "proposed_choice": {
             "type": "string", "maxLength": 2000,
-            "description": "Proposed default, not owner knowledge; keep technical detail here.",
+            "description": (
+                "Your best guess at the owner's answer, the default you would use. Not "
+                "owner knowledge; keep technical detail here."
+            ),
         },
         "reason": {
             "type": "string", "maxLength": 2000,
@@ -1239,6 +1354,27 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "record_recipe",
+        "title": "Record how a worked-out task gets done next time",
+        "description": (
+            "When a task took working out (a failed first try, a search for how, a fix "
+            "to your first approach) and it is now done and verified, record the "
+            "recipe: its name, at most 8 short steps that got it done, the check that "
+            "proved it, and the trap that cost time. start_task hands it to the next "
+            "agent given the same task, so it need not work it out again. It is kept "
+            "under 1,600 characters (about 400 tokens). When start_task served a "
+            "recipe, record its outcome instead: recipe_id with 'worked' or 'failed', "
+            "or a corrected recipe with replaces=recipe_id. Never put secrets in it."
+        ),
+        "inputSchema": _RECORD_RECIPE_SCHEMA,
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    },
+    {
         "name": "record_workflow_nudge",
         "title": "Record the owner's answer to a raised workflow step",
         "description": (
@@ -1382,12 +1518,13 @@ TOOLS: list[dict[str, Any]] = [
         "title": "Get owner context for a task",
         "description": (
             "Use this before substantial work whose quality depends on how the owner "
-            "prefers it done. Returns task-specific archive evidence together with the "
-            "active personal model's typed owner preferences, including superseded or "
-            "conflicting records when the model exposes them. Respect each preference's "
-            "valence and project scope. A project_directive records what the owner asked "
-            "for in that project at the stated time; it is not a global or irrevocable "
-            "taste. Newer task instructions take precedence, and unsupported dimensions "
+            "prefers it done. Returns task-specific archive evidence"
+            + (" together with the active personal model's typed owner preferences, "
+               "including superseded or conflicting records when the model exposes them. "
+               "Respect each preference's valence and project scope. A project_directive "
+               "records what the owner asked for in that project at the stated time; it is "
+               "not a global or irrevocable taste." if _MODEL_SHIPPED else ".")
+            + " Newer task instructions take precedence, and unsupported dimensions "
             "remain unknown. " + _UNTRUSTED_NOTE
         ),
         "inputSchema": _CONTEXT_SCHEMA,
@@ -1441,6 +1578,8 @@ LEGACY_TOOLS: list[dict[str, Any]] = [
     tool for tool in TOOLS if tool["name"] in {"advise", "resolve"}
 ]
 TOOLS[:] = [tool for tool in TOOLS if tool["name"] not in {"advise", "resolve"}]
+if not _MODEL_SHIPPED:
+    TOOLS[:] = [tool for tool in TOOLS if tool["name"] not in {"lookup", "interpret"}]
 
 TOOLS.append({
     "name": "route_task", "description": ROUTE_DESCRIPTION + " " + _UNTRUSTED_NOTE,
@@ -1463,6 +1602,33 @@ _UNREGISTERED_READER = (
     "Only a registered agent reads the owner's messages. Run `varyz install` to "
     "register this client."
 )
+
+
+# Claude Code saves an MCP result over 50,000 characters to a file and shows
+# only a preview; a reader limited to varyz's two tools cannot open that file,
+# so it ends without answering. A reading task stays below that, with room for
+# the notice `call` may add.
+_READING_RESULT_CHARS = 45_000
+# How much of "already in the profile" a merge shows at first. Leaving some out
+# costs nothing but a repeat: queueing drops what the ledger already holds.
+_KNOWN_CHARS = 20_000
+
+
+def _first_fitting(statements: list[str], chars: int | None) -> list[str]:
+    if chars is None:
+        return statements
+    kept: list[str] = []
+    used = 0
+    for statement in statements:
+        used += len(statement) + 3
+        if used > chars:
+            break
+        kept.append(statement)
+    return kept
+
+
+def _result_chars(payload: dict[str, Any]) -> int:
+    return len(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _relay_outage(outage: Exception) -> dict[str, Any]:
@@ -1847,6 +2013,16 @@ class VaryzServer:
                 from varyz.resolution.scope import scope_options
 
                 ask_owner["scope"] = scope_options(request.question, None, request.project)
+            # Before the owner sees it: the agent's guess and the nearest earlier
+            # answer, scored once the owner replies. Best effort.
+            escalation_id = result.escalation_id
+            with contextlib.suppress(Exception):
+                self._with_daemon(lambda client: client.record_ask_signals(
+                    escalation_id, conversation_id=conversation_id, predict=True,
+                    decision_kind=kind, agent=caller.agent_id,
+                    model=str(arguments.get("model") or ""),
+                    agent_guess=str(arguments.get("proposed_choice") or ""),
+                ))
             if mode["active"]:
                 note = review_note(
                     self.conn, result.escalation_id, project, conversation_id,
@@ -2034,7 +2210,7 @@ class VaryzServer:
         caller, limit = granted
         result = start_task(
             self.conn, task, project=project, cwd=cwd, limit=limit, sizer=self._task_sizer(),
-            conversation_id=self._conversation_id(arguments),
+            conversation_id=self._conversation_id(arguments), signals_cfg=self.cfg,
         )
         if result.get("status") == "delegated":
             return result
@@ -2169,6 +2345,7 @@ class VaryzServer:
 
     def _call_finish_check(self, arguments: dict[str, Any]) -> dict[str, Any]:
         from varyz.resolution.briefing import finish_check
+        from varyz.resolution.rule_signals import memory_test_rate
         from varyz.trust import capability_limits
 
         task = self._required_task(arguments, "finish_check")
@@ -2218,6 +2395,18 @@ class VaryzServer:
                 observe_briefing(self.conn, self.cfg, task, project,
                                  self._conversation_id(arguments), result, origin="mcp",
                                  phase="finish_check", limit=limit)
+            conversation = self._conversation_id(arguments)
+            if conversation:
+                # Whether each rule held in this task; best effort, never blocks the check.
+                verification = result.get("verification") or {}
+                with contextlib.suppress(Exception):
+                    self._with_daemon(lambda client: client.record_task_signals(
+                        conversation, list(verification.get("receipts") or []),
+                        project=project, ready=bool(verification.get("ready_to_report")),
+                        device_id=self.cfg.resolution.device_id,
+                        agent=caller.agent_id, model=str(arguments.get("model") or ""),
+                        memory_test=memory_test_rate(self.cfg),
+                    ))
         return result
 
     def _with_daemon(self, operation: Callable[[Any], Any]) -> Any:
@@ -2327,6 +2516,9 @@ class VaryzServer:
             not isinstance(scope_choice, str) or not scope_choice.strip()
         ):
             raise ValueError("scope must be 'general' or 'project'")
+        ask_feedback = arguments.get("ask_feedback") or ""
+        if ask_feedback not in {"", "needed", "unneeded"}:
+            raise ValueError("ask_feedback must be 'needed' or 'unneeded'")
         caller = self._caller(purpose=self._relay_purpose(arguments), tool_name="resolve")
         device_id = self.cfg.resolution.device_id
 
@@ -2366,6 +2558,11 @@ class VaryzServer:
                 source=f"agent_relay:{caller.agent_id}",
                 scope=scope,
             )
+            if ask_feedback:
+                # The owner's own word on whether this question needed them.
+                with contextlib.suppress(Exception):
+                    client.record_ask_signals(escalation_id, ask_feedback=ask_feedback,
+                                              conversation_id=item.get("conversation_id"))
             return {
                 "recorded": True,
                 "escalation_id": escalation_id,
@@ -2455,6 +2652,17 @@ class VaryzServer:
         domain = arguments.get("domain")
         if domain is not None and not isinstance(domain, str):
             raise ValueError("domain must be a string")
+        before: dict[str, str] = {}
+        for field in ("agent_did", "wanted", "corrected_output"):
+            value = arguments.get(field) or ""
+            if not isinstance(value, str):
+                raise ValueError(f"{field} must be a string")
+            if value.strip():
+                before[field] = value.strip()
+        should_have_asked = arguments.get("should_have_asked", False)
+        if not isinstance(should_have_asked, bool):
+            raise ValueError("should_have_asked must be true or false")
+        conversation = self._conversation_id(arguments)
         caller, denial = self._advice_caller(arguments)
         if denial is not None:
             return {"recorded": False, "error": denial}
@@ -2464,6 +2672,12 @@ class VaryzServer:
         def record(client: Any) -> str | None:
             provenance: dict[str, Any] = {"relayed_by": caller.agent_id,
                                           "tool": "remember_owner_rule"}
+            if before.get("agent_did") and before.get("wanted"):
+                # The same shape the background reader keeps for a mined correction.
+                provenance["corrections"] = [{
+                    "agent_did": before["agent_did"], "wanted": before["wanted"],
+                    "occurred": utc_now().isoformat(),
+                }]
             if replaces is not None:
                 old = next((item for status in ("confirmed", "candidate")
                             for item in client.principles(status)
@@ -2491,6 +2705,16 @@ class VaryzServer:
             principle_id = self._with_daemon(record)
         except ResolutionClientError as outage:
             return _relay_outage(outage)
+        if principle_id and (corrected or before.get("corrected_output") or should_have_asked):
+            # The rule this one corrected did not hold in this task, and the agent's
+            # own output it was about stays here beside the new rule.
+            with contextlib.suppress(Exception):
+                self._with_daemon(lambda client: client.record_rule_correction(
+                    principle_id, corrected=corrected.get("id"), conversation_id=conversation,
+                    project=self._project_argument(arguments)[0],
+                    agent_turn=before.get("corrected_output", ""),
+                    should_have_asked=should_have_asked,
+                ))
         if replaces is not None and not corrected:
             return {"recorded": False, "error": (
                 f"No current rule has the id {replaces.strip()!r}: it was already replaced "
@@ -2628,26 +2852,38 @@ class VaryzServer:
             return (*client.principles("confirmed"), *client.principles("candidate")), \
                 client.knowledge()
 
+        fetched: list[Any] = []
+        limit: list[int | None] = [_KNOWN_CHARS]
+
         def known(scope: str) -> list[str]:
             # Asked only for a merge, so reading goes on while the daemon is away.
             if self.cfg.workflows.inference_mode == "conversations":
                 # Existing manual/file-derived rules are outside this reader's consent.
                 return []
-            ledger, answers = self._with_daemon(profile)
-            return known_from(ledger, answers)(scope)
+            if not fetched:
+                fetched.append(known_from(*self._with_daemon(profile)))
+            return _first_fitting(fetched[0](scope), limit[0])
 
         try:
             task = next_task(state, self.conn, tier="cloud", reader="agent", known=known,
                              since=since)
+            payload = task_payload(task, state, self.conn, "cloud", since) if task else None
+            # The same merge again with less of the profile shown, until it fits.
+            while (task is not None and payload is not None and task.kind == "merge"
+                   and _result_chars(payload) > _READING_RESULT_CHARS and limit[0]):
+                limit[0] = limit[0] // 2 if limit[0] > 1_000 else 0
+                task = next_task(state, self.conn, tier="cloud", reader="agent",
+                                 known=known, since=since)
+                payload = task_payload(task, state, self.conn, "cloud", since) if task else None
         except ResolutionClientError as outage:
             return _relay_outage(outage)
-        if task is None:
+        if task is None or payload is None:
             return {"done": True}
         state.save()
         # The ask is taken: the next briefings stop making it.
         with contextlib.suppress(OSError):
             reading_taken(self.cfg, now, live=since is not None)
-        return task_payload(task, state, self.conn, "cloud", since)
+        return payload
 
     def _call_submit_profile_reading(self, arguments: dict[str, Any]) -> dict[str, Any]:
         from varyz.resolution.profile_reader import reading_lock
@@ -2778,6 +3014,66 @@ class VaryzServer:
                 "from now on. The owner can review or withdraw it with `varyz workflows "
                 "list` and `varyz workflows retract <id>`."
             ),
+        }
+
+    def _call_record_recipe(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        from varyz.resolution.recipes import GLOBAL_SCOPE, SQLiteRecipeStore, render
+
+        project, _cwd = self._project_argument(arguments)
+        caller, denial = self._advice_caller(arguments)
+        if denial is not None:
+            return {"recorded": False, "error": denial}
+        conversation_id = self._conversation_id(arguments)
+        store = SQLiteRecipeStore(self.conn)
+        device_id = self.cfg.resolution.device_id
+        outcome = arguments.get("outcome")
+        if outcome is not None:
+            recipe_id = arguments.get("recipe_id")
+            if not isinstance(recipe_id, str) or not recipe_id.strip():
+                raise ValueError("recipe_id is required with an outcome, as start_task gave it")
+            note = arguments.get("note") or ""
+            if outcome not in ("worked", "failed") or not isinstance(note, str):
+                raise ValueError(
+                    "outcome is 'worked' or 'failed'; a recipe that needed changing is "
+                    "recorded with the corrected steps and replaces=recipe_id"
+                )
+            outcome_id = store.outcome(
+                recipe_id.strip(), outcome, caller=caller, device_id=device_id,
+                note=note, conversation_id=conversation_id,
+            )
+            return {"recorded": True, "recipe_id": recipe_id.strip(), "outcome": outcome,
+                    "outcome_id": outcome_id}
+        name, steps, check = arguments.get("name"), arguments.get("steps"), arguments.get("check")
+        if not isinstance(name, str) or not isinstance(steps, list) or not isinstance(check, str):
+            raise ValueError(
+                "name, steps and check are required: the task, the steps that got it "
+                "done, and how to tell it worked"
+            )
+        scope = arguments.get("scope") or project or GLOBAL_SCOPE
+        replaces = arguments.get("replaces") or None
+        pitfalls = arguments.get("pitfalls") or ""
+        if not isinstance(scope, str) or not isinstance(pitfalls, str) or (
+            replaces is not None and not isinstance(replaces, str)
+        ):
+            raise ValueError("scope, pitfalls and replaces must be strings")
+        provenance = {
+            key: value for key, value in
+            (("conversation_id", conversation_id), ("project", project)) if value
+        }
+        recipe_id = store.record(
+            name=name, steps=steps, check=check, pitfalls=pitfalls, scope=scope,
+            replaces=replaces, caller=caller, device_id=device_id,
+            source=f"recipe:{caller.agent_id}", conversation_id=conversation_id,
+            provenance=provenance,
+        )
+        recipe = store.get(recipe_id)
+        assert recipe is not None
+        return {
+            "recorded": True,
+            "recipe_id": recipe_id,
+            "replaced": recipe.supersedes_id,
+            "chars": len(render(recipe)),
+            "note": "start_task gives it to the next agent whose task names it.",
         }
 
     def _call_record_workflow_nudge(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -3014,6 +3310,7 @@ class VaryzServer:
             "schedule_reading",
             "record_workflow_nudge",
             "answer_workflow_review",
+            "record_recipe",
             "resolve",
             "owner_questions",
             "answer_owner_question",
@@ -3022,7 +3319,7 @@ class VaryzServer:
             "context",
             "lookup",
             "interpret",
-        }:
+        } or (name in {"lookup", "interpret"} and not _MODEL_SHIPPED):
             raise KeyError(name)
         # The first call of the day checks for a newer Varyz in a detached
         # process; the answer to this call never waits for it.
@@ -3059,6 +3356,8 @@ class VaryzServer:
             return self._call_remember_owner_workflow(arguments)
         if name == "record_workflow_nudge":
             return self._call_record_workflow_nudge(arguments)
+        if name == "record_recipe":
+            return self._call_record_recipe(arguments)
         if name == "answer_workflow_review":
             return self._call_answer_workflow_review(arguments)
         if name == "resolve":
@@ -3146,7 +3445,9 @@ class VaryzServer:
                 "limit": 20,
             }
         }
-        preferences = self._call_personal_model("lookup", preference_query)
+        preferences = (
+            self._call_personal_model("lookup", preference_query) if _MODEL_SHIPPED else {}
+        )
         typed_answers = [
             answer for answer in preferences.get("answers", [])
             if isinstance(answer, dict)
@@ -3245,7 +3546,11 @@ class VaryzServer:
         chosen, _ = SQLitePrincipleStore(self.conn).applicable(
             task, project=default_project(), limit=max(1, min(8, max_items))
         )
-        return [item.principle.advice() for item in chosen]
+        from varyz.resolution.rule_signals import held_back
+
+        hidden = held_back([item.principle for item in chosen],
+                           self._conversation_id(arguments), self.cfg)
+        return [item.principle.advice() for item in chosen if item.principle.id not in hidden]
 
     def _call_personal_model(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """SELECT-only personal-model tools; deliberately bypass autosync and providers."""

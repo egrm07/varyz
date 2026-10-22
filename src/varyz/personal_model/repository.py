@@ -11,7 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Collection
+from collections.abc import Callable, Collection, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -681,9 +682,48 @@ def _row_to_override(row: sqlite3.Row) -> ModelOverride:
     )
 
 
+class _JoinedTransaction:
+    """The repository's connection while a batch is open: its writes join the batch.
+
+    Every write method commits with ``with self.conn``. Through this the
+    ``with`` neither commits nor rolls back; the batch does both, once.
+    """
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def __enter__(self) -> sqlite3.Connection:
+        return self._conn
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+
 class PersonalModelRepository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+
+    @contextmanager
+    def batched(self) -> Iterator[None]:
+        """Commit the writes made inside as one transaction, or roll them all back.
+
+        A compile stages tens of thousands of records. One commit each made
+        the disk sync that many times, which on a laptop was most of the
+        compile and most of its battery.
+        """
+        if isinstance(self.conn, _JoinedTransaction):
+            yield
+            return
+        outer = self.conn
+        self.conn = _JoinedTransaction(outer)  # type: ignore[assignment]
+        try:
+            with outer:
+                yield
+        finally:
+            self.conn = outer
 
     def create_generation(
         self,
@@ -1329,11 +1369,18 @@ class PersonalModelRepository:
                     (generation_id,),
                 )
 
-    def activate_generation(self, generation_id: str) -> ModelGeneration:
+    def activate_generation(
+        self, generation_id: str, *, on_checked: Callable[[int, int], None] | None = None,
+    ) -> ModelGeneration:
+        """Check every record, then make the generation current.
+
+        ``on_checked(done, total)`` hears how far the check has got: on a slow
+        laptop it takes minutes, and setup shows it.
+        """
         self._require_staged(generation_id)
         now = iso(utc_now())
         with self.conn:
-            self._validate_generation_integrity(generation_id)
+            self._validate_generation_integrity(generation_id, on_checked)
             previous = self.active_generation_id()
             if previous is not None:
                 self.conn.execute(
@@ -1508,8 +1555,16 @@ class PersonalModelRepository:
             return "person", record.other_person_id, "relationship", None
         return None, None, None, None
 
-    def _validate_generation_integrity(self, generation_id: str) -> None:
+    def _validate_generation_integrity(
+        self, generation_id: str, on_checked: Callable[[int, int], None] | None = None,
+    ) -> None:
         generation = self._require_staged(generation_id)
+        total = 0
+        if on_checked is not None:
+            total = self.conn.execute(
+                "SELECT COUNT(*) FROM personal_model_records WHERE generation_id=?",
+                (generation_id,),
+            ).fetchone()[0]
         # Iterated, not fetched: a real generation is 120,000 records and
         # 1.87 GB of record JSON, and holding every raw row alive while every
         # parsed model is also alive doubles the peak for no reason.  The
@@ -1522,6 +1577,8 @@ class PersonalModelRepository:
         )
         records: dict[str, tuple[str, DerivedRecord, str]] = {}
         for row in cursor:
+            if on_checked is not None and len(records) % 500 == 0:
+                on_checked(len(records), total)
             encoded = row["record_json"]
             if canonical_json(json.loads(encoded)) != encoded:
                 raise ValueError(f"record JSON is not canonical: {row['record_id']}")

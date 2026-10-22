@@ -110,7 +110,7 @@ def test_usage_wait_controls_are_async_and_preserve_setup_completion(
     session._extract_started = {"runner": "claude", "at": time.time()}
     session._extract_seen = (time.time(), dict(session._extract))
 
-    def worker(*args):
+    def worker(*args, **kwargs):
         entered.set()
         assert release.wait(5)
         return True
@@ -133,6 +133,60 @@ def test_usage_wait_controls_are_async_and_preserve_setup_completion(
             time.sleep(0.01)
     if action == "skip":
         assert session.snapshot()["extract"]["state"] == "declined"
+
+
+@pytest.mark.parametrize("action", ["retry", "skip"])
+def test_local_learning_can_be_retried_or_put_off_from_the_page(
+    server, monkeypatch, action  # noqa: F811
+):
+    """On-device learning that stopped once left only a command line to restart it."""
+    session = server.session
+    session.started = session.finished = True
+    session._extract = {"state": "accepted", "plan": "AI plan", "phase": "stopped"}
+    session._extract_started = {"runner": "local", "at": time.time()}
+    session._extract_seen = (time.time(), dict(session._extract))
+    retried = []
+    monkeypatch.setattr(setup_extract, "retry",
+                        lambda *a, **k: retried.append(k.get("runner")) or True)
+    monkeypatch.setattr(setup_extract, "stop", lambda *a: pytest.fail("no cloud job to stop"))
+    status, _, _ = _request(server, "POST", "/api/extract/control", token=session.token,
+                            body={"action": action})
+    assert status == 200
+    deadline = time.monotonic() + 2
+    while session._extract_retrying and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if action == "retry":
+        assert retried == ["local"]
+    else:
+        assert not retried and session.snapshot()["extract"]["state"] == "declined"
+
+
+def test_local_retry_restarts_the_on_device_reader_at_once(tmp_path, monkeypatch):
+    from varyz.resolution import local_reader
+
+    path = tmp_path / "config.toml"
+    path.write_text('[storage]\ndata_dir = "data"\n', encoding="utf-8")
+    cfg = load_config(path)
+    asked = []
+    monkeypatch.setattr(local_reader, "request", lambda *a, **k: asked.append(k) or True)
+    monkeypatch.setattr(headless_reader, "request", lambda *a, **k: pytest.fail("not cloud"))
+    assert setup_extract.retry(cfg, path, runner="local")
+    assert asked == [{"wait_model": True, "force": True}]
+
+
+@pytest.mark.parametrize(("reason", "said"), [
+    ("stalled", "it went 10 minutes without reading anything"),
+    ("the owner asked to read later", "it was set to learn later"),
+    ("Learning is incomplete; resume the reader.", "it ended before reading everything"),
+    ("OperationalError", "an unexpected error stopped it (OperationalError)"),
+    ("reader supervisor failed: KeyError", "the background reader crashed (KeyError)"),
+    ("The local model made no progress; retry learning later.",
+     "the local model read nothing new on its last try"),
+    ("Could not reach the model.", "could not reach the model"),
+    ("", "it stopped before reading everything"),
+])
+def test_stop_reasons_are_said_without_the_command_line(reason, said):
+    assert setup_extract.plain_reason(reason) == said
 
 
 def test_skip_drops_the_setup_job_and_retry_cannot_switch_approved_provider(tmp_path, monkeypatch):

@@ -13,6 +13,7 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from varyz import connectors as connector_registry  # noqa: F401 - registers connectors
 from varyz.config import Config, load_config
@@ -22,10 +23,14 @@ from varyz.connectors.base import get_connector
 from varyz.connectors.git_repos import DEFAULT_SCAN_DEPTH, find_repos
 from varyz.db.connection import WriteLock, open_db
 from varyz.domain import IngestStats
-from varyz.graph.repository import RebuildResult
+from varyz.graph import builder_is_shipped
 from varyz.pipeline.embed import Embedder, embed_pending
 from varyz.pipeline.ingest import sync_connector
 from varyz.vault import Vault
+
+if TYPE_CHECKING:
+    # Held back from the alpha with the builder (docs/SHIPPING.md).
+    from varyz.graph.repository import RebuildResult
 
 # AI conversations comes first because it holds the owner's own words, and it
 # needs no account, no password, and no export request — the histories are
@@ -282,7 +287,7 @@ def sync_local_sources(
                     continue
                 stats.append(result)
             embedded = embed_pending(conn, cfg, Embedder(cfg)) if stats else 0
-            if stats:
+            if stats and builder_is_shipped():
                 try:
                     from varyz.graph.service import rebuild_graph_while_locked
 

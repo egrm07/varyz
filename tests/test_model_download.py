@@ -222,10 +222,16 @@ def test_the_listing_is_read_with_a_timeout_and_must_name_the_weights(monkeypatc
 
 
 def test_the_models_wanted_follow_the_config(cfg, monkeypatch):
+    monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: object())
     repos = [want.repo for want in wanted_models(cfg)]
     assert repos == [
         "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q", "BAAI/bge-reranker-base",
     ]
+
+    # No judge, no reranker: it only ever shortened what a judge reads.
+    monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: None)
+    assert [want.repo for want in wanted_models(cfg)] == repos[:1]
+    monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: object())
 
     cfg.retrieval.rerank = "off"
     assert [want.repo for want in wanted_models(cfg)] == repos[:1]

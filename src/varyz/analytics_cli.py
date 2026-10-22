@@ -71,6 +71,24 @@ def data_preview(
     show(contribute.preview(load_config(config), limit))
 
 
+@data_app.command("signals")
+def data_signals(config: ConfigOpt = None) -> None:
+    """What this computer's signals show: rules holding per model, false "done"
+    claims, needless questions, guessed answers, the memory test. Sends nothing."""
+    import contextlib
+    import sqlite3
+
+    from varyz.resolution.rule_signals import summary
+
+    cfg = load_config(config)
+    if not cfg.db_path.exists():
+        show({})
+        return
+    archive = sqlite3.connect(cfg.db_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+    with contextlib.closing(archive):
+        show({"memory_test_on": cfg.signals.memory_test, **summary(archive)})
+
+
 @data_app.command("on")
 def data_on(config: ConfigOpt = None) -> None:
     _set_sharing(True, config)

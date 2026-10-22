@@ -748,8 +748,10 @@ class AutoSyncConfig(Settings):
     semantic_graph: bool = False
     # After new turns to coding agents arrive, learn the order the owner guides
     # work in and hand it to agents (marked as learned, withdrawable with
-    # `varyz workflows retract`). Lexical, local, and quick.
-    learn_workflows: bool = True
+    # `varyz workflows retract`). Off by default: on 2026-10-22 it took 2.6 s a
+    # sync and found no order in 5,876 turns. Agents record task recipes
+    # instead (resolution/recipes.py).
+    learn_workflows: bool = False
     # Record the option the owner picks in a Claude Code question as that
     # project's decision; a newer pick supersedes. The owner chose this on
     # 2026-09-25. Withdraw one with `varyz knowledge retract`.
@@ -790,6 +792,17 @@ class RuleShadowConfig(Settings):
     max_bytes: int = Field(default=64 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
 
 
+class SignalsConfig(Settings):
+    """The memory test: off unless the owner turns it on.
+
+    With it on, a small share of low-stakes rules is held back from a task's
+    briefing and shown only at finish_check, so whether a shown rule changes what
+    agents do can be measured against the same rule unshown."""
+
+    memory_test: bool = False
+    memory_test_rate: float = Field(default=0.02, gt=0, le=0.1)
+
+
 class SessionReportsConfig(Settings):
     """Backfill bounds never grant Cloud sharing permission."""
 
@@ -819,6 +832,7 @@ class Config(Settings):
     workflows: WorkflowsConfig = Field(default_factory=WorkflowsConfig)
     rule_shadow: RuleShadowConfig = Field(default_factory=RuleShadowConfig)
     session_reports: SessionReportsConfig = Field(default_factory=SessionReportsConfig)
+    signals: SignalsConfig = Field(default_factory=SignalsConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     resolution: ResolutionConfig = Field(default_factory=ResolutionConfig)
     autosync: AutoSyncConfig = Field(default_factory=AutoSyncConfig)

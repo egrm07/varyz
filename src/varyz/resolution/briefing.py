@@ -34,9 +34,18 @@ from varyz.resolution.knowledge import (
 from varyz.resolution.memory_policy import MEMORY_POLICY
 from varyz.resolution.principles import Principle, SQLitePrincipleStore
 from varyz.resolution.questioning import QUESTION_POLICY
+from varyz.resolution.recipes import OFFER as RECIPE_OFFER
+from varyz.resolution.recipes import RECORD_HINT as RECIPE_RECORD
+from varyz.resolution.recipes import served as recipe_for
 from varyz.resolution.task_history import preflight
 from varyz.resolution.workflow_nudges import SQLiteNudgeStore
-from varyz.resolution.workflows import SQLiteWorkflowStore, TaskSizer, guide, owner_kinds
+from varyz.resolution.workflows import (
+    SQLiteWorkflowStore,
+    TaskSizer,
+    guide,
+    owner_kinds,
+    task_size,
+)
 
 MAX_GENERAL_PREFERENCES = 6
 MAX_PROJECT_DECISIONS = 20
@@ -191,9 +200,11 @@ def start_task(
     sizer: TaskSizer | None = None,
     conversation_id: str | None = None,
     cfg: Any = None,
+    signals_cfg: Any = None,
 ) -> dict[str, Any]:
     """The owner's briefing for a task. ``sizer`` sizes it for workflow nudges
-    (``task_size.sizer_from_config``); without one, the verb lexicon does."""
+    (``task_size.sizer_from_config``); without one, the verb lexicon does.
+    ``signals_cfg`` (default ``cfg``) holds the owner's memory-test setting."""
     task = " ".join(task.split())
     if not task:
         raise ValueError("task is required: what the user asked you to do")
@@ -207,9 +218,19 @@ def start_task(
     principles = SQLitePrincipleStore(conn)
     domains = detect_domains(task, cwd, extra=owner_kinds(conn))
     chosen, withheld = principles.applicable(task, project=project, limit=limit)
+    checklist = principles.checklist(domains, project=project, text=task)
+    # The owner's memory test: a few low-stakes rules wait until finish_check.
+    from varyz.resolution.rule_signals import held_back
+
+    hidden = held_back([item.principle for item in chosen]
+                       + [rule for rules in checklist.values() for rule in rules],
+                       conversation_id, signals_cfg or cfg)
+    if hidden:
+        chosen = tuple(item for item in chosen if item.principle.id not in hidden)
+        checklist = {name: tuple(rule for rule in rules if rule.id not in hidden)
+                     for name, rules in checklist.items()}
     general = [item.principle for item in chosen if item.principle.scope == GLOBAL_SCOPE]
     specific = [item.principle for item in chosen if item.principle.scope != GLOBAL_SCOPE]
-    checklist = principles.checklist(domains, project=project, text=task)
 
     entries = [
         entry for entry in SQLiteKnowledgeStore(conn).current()
@@ -264,6 +285,7 @@ def start_task(
         "more_rules_in_scope": withheld,
         "trial_rules": TRIAL_NOTE if any(p.trial for p in (*general, *specific)) else None,
         "owner_workflows": workflows,
+        "task_recipe": recipe_for(conn, task, project),
         "project_decisions": [_decision(entry) for entry in project_decisions][
             :MAX_PROJECT_DECISIONS
         ],
@@ -361,6 +383,14 @@ def finish_check(
 
     completion = task_completion(conn, project, conversation_id, cfg=cfg,
                                  max_chars=progress_max_chars)
+    # A recipe that was served asks for its outcome; new work without one asks
+    # once for the recipe, so the next agent need not work it out again.
+    recipe = recipe_for(conn, task, project)
+    recipe_check = (
+        {"recipe_id": recipe["id"], "name": recipe["name"], "record": RECIPE_RECORD}
+        if recipe is not None
+        else {"offer": RECIPE_OFFER} if task_size(task) != "small" else None
+    )
     return {
         "task": task,
         "verification": verification,
@@ -380,6 +410,7 @@ def finish_check(
         "workflow_steps_open": steps_open,
         "workflow_reviews_due": reviews,
         "workflow_reworks": reworks,
+        "task_recipe": recipe_check,
         "open_owner_questions": _pending_questions(conn, project),
         "how": (
             "Check every item yourself before you write your report and fix anything "
@@ -494,6 +525,17 @@ def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True) 
             rows.append(row)
         rows.append(f"→ {item['guidance']}")
         section(f"How the owner guides this work: {item['name']} (their usual order)", rows)
+    recipe = briefing.get("task_recipe")
+    if recipe:
+        worked = recipe.get("worked_before")
+        rows = [f"*{recipe['scope']}" + (f", worked {worked} times before" if worked else "")
+                + "*"]
+        rows.extend(f"{number}. {step}" for number, step in enumerate(recipe["steps"], 1))
+        rows.append(f"Check: {recipe['check']}")
+        if recipe.get("pitfalls"):
+            rows.append(f"Watch out: {recipe['pitfalls']}")
+        rows.append(f"→ {recipe['guidance']}")
+        section(f"Recipe from a past task: {recipe['name']} (id {recipe['id']})", rows)
     section(
         "Already decided for this project",
         [f"- {item['question']} → {item['answer']}"

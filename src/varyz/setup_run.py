@@ -24,6 +24,8 @@ from typing import Any
 from varyz.bootstrap import DetectedSources
 
 STEPS = ("Archive", "Daemon", "Agents", "Data sources", "Graph", "Autosync", "Classifier")
+# Said as step 4 reads and indexes on this machine, and on the page as it does.
+WARM_NOTE = "This can make your computer warm and use battery faster. That's normal."
 
 OnProgress = Callable[[str, float | None], None]
 
@@ -31,7 +33,8 @@ OnProgress = Callable[[str, float | None], None]
 @dataclass
 class Step:
     name: str
-    # waiting, running, paused, done, failed or skipped.
+    # waiting, running, paused, done, failed or skipped; absent where this
+    # build has no such step (the alpha's graph), which no view shows.
     state: str = "waiting"
     detail: str = ""
 
@@ -83,6 +86,11 @@ class SetupRun:
         self._analytics_cfg: Any = None
         self._lock = threading.Lock()
         self.steps = [Step(name) for name in STEPS]
+        from varyz.graph import builder_is_shipped
+
+        if not builder_is_shipped():
+            # The alpha holds the graph builder back: that step never runs.
+            self.steps[STEPS.index("Graph")].state = "absent"
         self.result: dict[str, Any] | None = None
         self.detected = missing_detected_sources(
             config_path, detected if detected is not None else discover_local_sources()
@@ -124,6 +132,9 @@ class SetupRun:
 
     def _progress(self, line: str, fraction: float | None = None) -> None:
         """What a long step is doing; a view that draws its own bar ignores it."""
+
+    def _working_hard(self) -> None:
+        """Step 4 is about to read and index on this machine; a view may say that is fine."""
 
     def _sources_read(self, run: _Run) -> None:
         """The chosen sources are in the archive; a view may offer to read the chats now.
@@ -182,7 +193,8 @@ class SetupRun:
         if status is None:
             self._set(1, "failed", "did not start; run `varyz daemon start --foreground`")
             for index in range(2, len(STEPS)):
-                self._set(index, "skipped", "not run: the daemon is down")
+                if self.steps[index].state != "absent":
+                    self._set(index, "skipped", "not run: the daemon is down")
             return self._finish(cfg, problems=[("daemon", "did not start")], failed=[],
                                 agents_connected=False, agents_changed=False)
         self._set(1, "done", f"running on {status.host}:{status.port}")
@@ -273,6 +285,7 @@ class SetupRun:
         its download carries on from what has arrived.
         """
         from varyz import cli
+        from varyz.graph import builder_is_shipped
 
         cfg_path = self.config_path
         with self._lock:
@@ -282,6 +295,8 @@ class SetupRun:
             # 4. Read the sources, then download the search models and index
             # them. The terminal's bar is drawn by `_sync_sources` itself.
             self._set(3, "running")
+            if run.to_sync:
+                self._working_hard()
             run.failed = (
                 cli._sync_sources(run.cfg, run.to_sync, on_progress=self._progress, step=4,
                                   on_read=lambda: self._sources_read(run))
@@ -298,8 +313,8 @@ class SetupRun:
         # Also with no source to read: the archive may hold chats from before.
         self._sources_read(run)
 
-        if index <= 4:
-            # 5. The graph and the personal model, which `lookup` and `interpret` read.
+        if index <= 4 and builder_is_shipped():
+            # 5. The graph, only where the builder ships (not in the alpha).
             self._set(4, "running")
             with self._bar(4, "Building the graph") as progress:
                 state, detail = cli._build_graph(cfg_path, on_progress=progress)
@@ -314,7 +329,7 @@ class SetupRun:
             state, detail = cli._install_autosync(cfg_path)
             self._set(5, state, detail)
             if state == "failed":
-                run.problems.append(("autosync", f"{detail} (step 6)"))
+                run.problems.append(("autosync", f"{detail} (step {cli._shown_step(6)[0]})"))
 
         # 7. The chosen reader, without downloading Ollama in conversation mode.
         self._set(6, "running")
@@ -337,7 +352,7 @@ class SetupRun:
                         state, detail = "failed", f"{detail}; the daemon did not start again"
         self._set(6, state, detail)
         if state == "failed":
-            run.problems.append(("classifier", f"{detail} (step 7)"))
+            run.problems.append(("classifier", f"{detail} (step {cli._shown_step(7)[0]})"))
 
         privacy = None
         if self.steps[5].state == "done":
@@ -465,6 +480,11 @@ class TerminalSetup(SetupRun):
         super()._set(index, state, detail)
         if state != "running":
             cli._step(index + 1, STEPS[index], cli._step_state(state, detail))
+
+    def _working_hard(self) -> None:
+        from varyz import cli
+
+        cli.console.print(f"[dim]{WARM_NOTE}[/dim]", highlight=False)
 
     @contextlib.contextmanager
     def _bar(self, index: int | None, description: str) -> Iterator[OnProgress]:

@@ -16,8 +16,10 @@ import json
 import logging
 import os
 import sqlite3
+import time
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -134,6 +136,7 @@ from varyz.personal_model.repository import (
     InterpretationEditPayload,
     InterpretationVerdictPayload,
     MergePayload,
+    ModelDependency,
     ModelGeneration,
     ModelOverride,
     OverrideAction,
@@ -242,6 +245,7 @@ class _WriteLockedPort:
         self._target = target
         self._data_dir = data_dir
         self._write_methods = write_methods
+        self._held = False
 
     def __getattr__(self, name: str) -> Any:
         attribute = getattr(self._target, name)
@@ -250,11 +254,41 @@ class _WriteLockedPort:
 
         @wraps(attribute)
         def locked(*args, **kwargs):
+            if self._held:
+                return attribute(*args, **kwargs)
             with WriteLock(self._data_dir):
                 return attribute(*args, **kwargs)
 
         return locked
 
+    @contextmanager
+    def held(self) -> Iterator[None]:
+        """Hold the writer lock once for a run of writes rather than once per write."""
+        if self._held:
+            yield
+            return
+        with WriteLock(self._data_dir):
+            self._held = True
+            try:
+                yield
+            finally:
+                self._held = False
+
+
+# Repository writes per transaction and writer lock: one commit per record
+# synced the disk tens of thousands of times in a compile.
+_WRITE_BATCH = 500
+# And how long one transaction may keep the archive: the rules daemon and the
+# preference reader wait at most 5 s for it (busy_timeout), and a slow laptop
+# takes several times longer than a fast one for the same 500 records.
+_WRITE_BATCH_SECONDS = 1.0
+# And the pause between two transactions. A waiting writer only looks again
+# every 100 ms; started back to back, the compile took the archive again
+# before it looked, and on one slow core writers waited 8 s and failed.
+_WRITE_PAUSE_SECONDS = 0.1
+# Coverage rows per transaction: a full archive has about 41,000, and in one
+# transaction they kept the archive 5.6 s on a slow laptop.
+_COVERAGE_BATCH = 2000
 
 _REPOSITORY_WRITES = frozenset(
     {
@@ -1296,6 +1330,29 @@ class ModelRepository(Protocol):
     def fail_generation(self, generation_id: str, reason: str) -> ModelGeneration: ...
 
 
+# target_entry_id, ordinal, episode_id, context_complete, correlation_id,
+# omitted_ranges_json: one row of personal_model_target_episode_coverage.
+CoverageRow = tuple[str, int, str, int, str | None, str]
+
+
+def coverage_rows(result: EpisodeBuildResult) -> list[CoverageRow]:
+    """The coverage rows to store for a build, in their stored order."""
+    episode_by_id = {item.id: item for item in result.episodes}
+    rows: list[CoverageRow] = []
+    for coverage in sorted(result.target_coverage, key=lambda item: item.target_entry_id):
+        for ordinal, episode_id in enumerate(coverage.episode_ids):
+            episode = episode_by_id[episode_id]
+            rows.append((
+                coverage.target_entry_id,
+                ordinal,
+                episode_id,
+                int(episode.completeness == ContextCompleteness.COMPLETE),
+                episode.correlation_id,
+                canonical_json([item.model_dump(mode="json") for item in episode.omitted_ranges]),
+            ))
+    return rows
+
+
 class CompilerStateStore(Protocol):
     def checkpoint(
         self,
@@ -1306,7 +1363,7 @@ class CompilerStateStore(Protocol):
         detail: Mapping[str, Any] = {},
     ) -> None: ...
 
-    def store_coverage(self, generation_id: str, result: EpisodeBuildResult) -> None: ...
+    def store_coverage(self, generation_id: str, rows: Sequence[CoverageRow]) -> None: ...
     def store_action_handoffs(self, generation_id: str, items: Sequence[ActionHandoff]) -> None: ...
 
     def store_relationship_histories(
@@ -1434,28 +1491,14 @@ class SQLiteCompilerStateStore:
                 ),
             )
 
-    def store_coverage(self, generation_id: str, result: EpisodeBuildResult) -> None:
-        episode_by_id = {item.id: item for item in result.episodes}
+    def store_coverage(self, generation_id: str, rows: Sequence[CoverageRow]) -> None:
         with self.conn:
-            for coverage in sorted(result.target_coverage, key=lambda item: item.target_entry_id):
-                for ordinal, episode_id in enumerate(coverage.episode_ids):
-                    episode = episode_by_id[episode_id]
-                    self.conn.execute(
-                        """INSERT INTO personal_model_target_episode_coverage
-                           (generation_id,target_entry_id,ordinal,episode_id,context_complete,
-                            correlation_id,omitted_ranges_json) VALUES (?,?,?,?,?,?,?)""",
-                        (
-                            generation_id,
-                            coverage.target_entry_id,
-                            ordinal,
-                            episode_id,
-                            int(episode.completeness == ContextCompleteness.COMPLETE),
-                            episode.correlation_id,
-                            canonical_json(
-                                [item.model_dump(mode="json") for item in episode.omitted_ranges]
-                            ),
-                        ),
-                    )
+            self.conn.executemany(
+                """INSERT INTO personal_model_target_episode_coverage
+                   (generation_id,target_entry_id,ordinal,episode_id,context_complete,
+                    correlation_id,omitted_ranges_json) VALUES (?,?,?,?,?,?,?)""",
+                ((generation_id, *row) for row in rows),
+            )
 
     def store_action_handoffs(self, generation_id: str, items: Sequence[ActionHandoff]) -> None:
         with self.conn:
@@ -2150,13 +2193,39 @@ class PersonalModelCompiler:
         self.validation_policy = validation_policy or ValidationPolicy()
         self.policy = policy or CompilerPolicy()
         self.clock = clock or (lambda: datetime.now(UTC))
+        self._on_progress: Callable[[str, float | None], None] | None = None
 
-    def compile(self, request: CompileRequest | None = None) -> CompileResult:
+    def compile(
+        self,
+        request: CompileRequest | None = None,
+        *,
+        on_progress: Callable[[str, float | None], None] | None = None,
+    ) -> CompileResult:
+        """``on_progress`` hears (stage, fraction or None) as the compile moves on."""
         selected = request or CompileRequest()
-        if self._data_dir is None:
-            return self._compile(selected)
-        with PersonalModelCompileClaim(self._data_dir, generation_id=selected.generation_id):
-            return self._compile(selected)
+        self._on_progress = on_progress
+        try:
+            if self._data_dir is None:
+                return self._compile(selected)
+            with PersonalModelCompileClaim(self._data_dir, generation_id=selected.generation_id):
+                return self._compile(selected)
+        finally:
+            self._on_progress = None
+
+    def _say(self, stage: str, fraction: float | None = None) -> None:
+        # A compile on a full archive runs for minutes; a person watching a
+        # bar that names no stage cannot tell it from a hung one.
+        if self._on_progress is not None:
+            self._on_progress(stage, fraction)
+
+    @contextmanager
+    def _write_batch(self) -> Iterator[None]:
+        """One writer lock and one transaction for a chunk of repository writes."""
+        batched = getattr(self.repository, "batched", None)
+        lock = (self.repository.held() if isinstance(self.repository, _WriteLockedPort)
+                else nullcontext())
+        with lock, (batched() if batched is not None else nullcontext()):
+            yield
 
     def preflight(self) -> None:
         """Validate the pinned graph projection without creating a generation."""
@@ -2171,6 +2240,7 @@ class PersonalModelCompiler:
         # compile does and, on a real archive, one of the longest. Before this
         # line it was also silent, and a run watched by a person or a
         # supervisor is indistinguishable from a hung one.
+        self._say("reading your archive")
         log.info("reading the active graph")
         snapshot = self.graph_reader.read_active()
         entries = tuple(
@@ -2222,6 +2292,7 @@ class PersonalModelCompiler:
                 {"people": len(identity.persons), "reviews": len(identity.review_candidates)},
             )
 
+            self._say("finding conversations")
             log.info("reconstructing conversation episodes from %d entries", len(entries))
             episodes = EpisodeReconstructor().build(
                 entries,
@@ -2239,6 +2310,7 @@ class PersonalModelCompiler:
                 },
             )
 
+            self._say("reading what was said")
             observation_stage = self._observations(
                 generation_id,
                 entries,
@@ -2283,6 +2355,7 @@ class PersonalModelCompiler:
                 },
             )
 
+            self._say("sorting facts and preferences")
             try:
                 candidates = self.candidate_adapter.propose(
                     snapshot=snapshot,
@@ -2538,7 +2611,11 @@ class PersonalModelCompiler:
                 prior_active=prior_active,
                 no_reuse=self._override_affected_ids(overrides, applied_matches),
             )
-            self.state_store.store_coverage(generation_id, episodes)
+            rows = coverage_rows(episodes)
+            for start in range(0, len(rows), _COVERAGE_BATCH):
+                if start:
+                    time.sleep(_WRITE_PAUSE_SECONDS)
+                self.state_store.store_coverage(generation_id, rows[start:start + _COVERAGE_BATCH])
             self.state_store.store_identity_memberships(generation_id, identity, source_people)
             self.state_store.store_project_memberships(generation_id, projects)
             self.state_store.store_action_handoffs(generation_id, projects.action_handoffs)
@@ -2548,6 +2625,7 @@ class PersonalModelCompiler:
                 generation_id, CompilerStage.PERSIST, input_hash, {"records": len(staged_hashes)}
             )
 
+            self._say("checking the result")
             self._record_quarantines(
                 generation_id,
                 episodes,
@@ -2664,6 +2742,8 @@ class PersonalModelCompiler:
             del records, entries, snapshot, episodes, observation_result
             del identity, source_people, projects, candidates, atomic_claims
             gc.collect()
+            # The switch re-checks every record first: on a slow laptop, minutes.
+            self._say("checking every record, then switching to the new model")
             activated_generation = (
                 self._activate_generation(generation_id, input_hash)
                 if selected.activate
@@ -2711,13 +2791,16 @@ class PersonalModelCompiler:
             )
 
     def _activate_generation(self, generation_id: str, expected_input_hash: str) -> ModelGeneration:
+        def checked(done: int, total: int) -> None:
+            self._say(f"checking {done:,} of {total:,} records", done / total if total else None)
+
         if self._data_dir is None:
-            return self.repository.activate_generation(generation_id)
+            return self.repository.activate_generation(generation_id, on_checked=checked)
         # The final input check and pointer swap are one writer session. Ingestion
         # may run during inference, but it cannot slip between these two operations.
         with WriteLock(self._data_dir):
             self._assert_inputs_current(expected_input_hash)
-            return self.repository.activate_generation(generation_id)
+            return self.repository.activate_generation(generation_id, on_checked=checked)
 
     def _assert_inputs_current(self, expected_input_hash: str) -> None:
         current_snapshot = self.graph_reader.read_active()
@@ -3313,35 +3396,75 @@ class PersonalModelCompiler:
                 "validation_policy": self.validation_policy.model_dump(mode="json"),
             },
         )
-        for record in staging_order:
-            dependencies = list(
-                required_record_dependencies(self.repository.conn, snapshot.generation_id, record)
-            )
-            dependencies.append(common)
-            for kind, target in sorted(required_model_references(record)):
-                if target not in staged:
-                    raise ValueError(f"{record.id} depends on unstaged {kind} {target}")
-                dependencies.append(model_record_dependency(kind, target, staged[target]))
-            unique = {(item.kind, item.id): item for item in dependencies}
-            dep_tuple = tuple(unique[key] for key in sorted(unique))
-            expected = compute_dependency_hash(
-                record,
-                dep_tuple,
-                compiler_version=self.policy.compiler_version,
-                policy_version=self.policy.version,
-            )
-            reused = False
-            if prior_active is not None and record.id not in no_reuse:
-                reused = self.repository.clone_record_if_unchanged(
-                    source_generation_id=prior_active,
-                    target_generation_id=generation_id,
-                    record_id=record.id,
-                    expected_dependency_hash=expected,
-                )
-            staged[record.id] = (
-                expected if reused else self.repository.stage_record(record, dependencies=dep_tuple)
-            )
+        total = len(staging_order)
+
+        def say(done: int) -> None:
+            self._say(f"saving {done:,} of {total:,} records", done / total)
+
+        self._write_all(staging_order, lambda record: self._stage_one(
+            generation_id, snapshot, record, staged, common,
+            prior_active=prior_active, no_reuse=no_reuse,
+        ), say)
         return staged
+
+    def _write_all(
+        self, items: Sequence[Any], write: Callable[[Any], object],
+        say: Callable[[int], None] | None = None,
+    ) -> None:
+        """Write the items in short transactions, so other writers never wait long."""
+        done, said = 0, -_WRITE_BATCH
+        while done < len(items):
+            if say is not None and done - said >= _WRITE_BATCH:
+                say(done)
+                said = done
+            deadline = time.monotonic() + _WRITE_BATCH_SECONDS
+            with self._write_batch():
+                for item in items[done:done + _WRITE_BATCH]:
+                    write(item)
+                    done += 1
+                    if time.monotonic() >= deadline:
+                        break
+            if done < len(items):
+                time.sleep(_WRITE_PAUSE_SECONDS)
+
+    def _stage_one(
+        self,
+        generation_id: str,
+        snapshot: GraphSnapshot,
+        record: PersonalModelRecord,
+        staged: dict[str, str],
+        common: ModelDependency,
+        *,
+        prior_active: str | None,
+        no_reuse: frozenset[str],
+    ) -> None:
+        dependencies = list(
+            required_record_dependencies(self.repository.conn, snapshot.generation_id, record)
+        )
+        dependencies.append(common)
+        for kind, target in sorted(required_model_references(record)):
+            if target not in staged:
+                raise ValueError(f"{record.id} depends on unstaged {kind} {target}")
+            dependencies.append(model_record_dependency(kind, target, staged[target]))
+        unique = {(item.kind, item.id): item for item in dependencies}
+        dep_tuple = tuple(unique[key] for key in sorted(unique))
+        expected = compute_dependency_hash(
+            record,
+            dep_tuple,
+            compiler_version=self.policy.compiler_version,
+            policy_version=self.policy.version,
+        )
+        reused = False
+        if prior_active is not None and record.id not in no_reuse:
+            reused = self.repository.clone_record_if_unchanged(
+                source_generation_id=prior_active,
+                target_generation_id=generation_id,
+                record_id=record.id,
+                expected_dependency_hash=expected,
+            )
+        staged[record.id] = (
+            expected if reused else self.repository.stage_record(record, dependencies=dep_tuple)
+        )
 
     def _replay_overrides(
         self,
@@ -3536,17 +3659,21 @@ class PersonalModelCompiler:
             ("relationships", relationship_quarantines),
             ("synthesis", synthesis.diagnostics if synthesis else ()),
         )
-        for stage, items in groups:
-            for item in items:
-                payload = (
-                    item.model_dump(mode="json")
-                    if isinstance(item, BaseModel)
-                    else getattr(item, "__dict__", {"detail": str(item)})
-                )
-                reason = payload.get("code") or payload.get("reason") or type(item).__name__
-                self.repository.quarantine(
-                    generation_id, stage=stage, reason_code=str(reason), detail=payload
-                )
+        pending = [(stage, item) for stage, items in groups for item in items]
+
+        def write(pair: tuple[str, Any]) -> None:
+            stage, item = pair
+            payload = (
+                item.model_dump(mode="json")
+                if isinstance(item, BaseModel)
+                else getattr(item, "__dict__", {"detail": str(item)})
+            )
+            reason = payload.get("code") or payload.get("reason") or type(item).__name__
+            self.repository.quarantine(
+                generation_id, stage=stage, reason_code=str(reason), detail=payload
+            )
+
+        self._write_all(pending, write)
 
     @staticmethod
     def _counts(records: Iterable[PersonalModelRecord]) -> dict[str, int]:

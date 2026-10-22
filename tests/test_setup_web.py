@@ -290,7 +290,9 @@ def test_a_measured_phase_says_how_long_it_has_left(machine, monkeypatch):
 def test_the_page_numbers_the_running_step_and_shows_the_time_left():
     page = render_page("tok").decode("utf-8")
 
-    assert "Step ${running + 1} of ${state.steps.length}. " in page
+    # Counted among the steps this build shows: the alpha has no graph step.
+    assert "Step ${shown.indexOf(state.steps[running]) + 1} of ${shown.length}. " in page
+    assert 'step.state !== "absent"' in page
     assert "`${state.activity} · ${state.left}`" in page
 
 
@@ -701,6 +703,22 @@ def test_serve_stops_when_the_page_is_gone_even_with_a_run_going(machine, monkey
     assert pauses == [True]
     assert "The setup page was closed while setup was still working" in printed
     assert "Setup did not run" not in printed
+    # Why it stopped is kept for whoever helps the owner afterwards.
+    log = (machine.config.parent / "setup.log").read_text("utf-8").splitlines()
+    assert [line.split(" ", 2)[2].split(":")[0] for line in log] == [
+        "opened", "stopped", "working", "steps", "result"]
+    assert "while setup was working" in log[1]
+    assert log[-1].endswith("result: none")
+
+
+def test_setup_log_keeps_its_size(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup_web, "LOG_LIMIT", 100)
+    log = setup_web.SetupLog(tmp_path / "config.toml")
+    for n in range(10):
+        log.write("working", f"step {n} " + "x" * 400)
+    lines = (tmp_path / "setup.log").read_text("utf-8").splitlines()
+    assert lines[-1].endswith("step 9 " + "x" * 293)
+    assert len(lines) < 10 and (tmp_path / "setup.log.1").is_file()
 
 
 def test_folder_access_opens_only_for_what_the_run_found(server, monkeypatch):

@@ -70,14 +70,15 @@ def ingest_item(
             stored = dao.get_entry(conn, entry_id)
             if stored is None:
                 raise RuntimeError("entry disappeared during ingest")
-            enqueue_in_transaction(
-                conn,
-                "entry",
-                entry_id,
-                "graph_extract",
-                "deterministic:1",
-                stored.content_hash,
-            )
+            if _graph_is_built():
+                enqueue_in_transaction(
+                    conn,
+                    "entry",
+                    entry_id,
+                    "graph_extract",
+                    "deterministic:1",
+                    stored.content_hash,
+                )
             label_resource(
                 conn,
                 "entry",
@@ -103,6 +104,17 @@ def ingest_item(
                 {"content_hash": stored.content_hash, "source": stored.source},
             )
     return entry_id, status
+
+
+def _graph_is_built() -> bool:
+    """Whether a graph job could ever run here.
+
+    The alpha holds the builder back, and before this every new entry still
+    queued one: 58,937 pending jobs on the owner's archive, none ever run.
+    """
+    from varyz.graph import builder_is_shipped
+
+    return builder_is_shipped()
 
 
 def prune_vanished(

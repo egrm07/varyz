@@ -197,6 +197,23 @@ def load_reranker(cfg: Config) -> Reranker | None:
     return reranker
 
 
+def worth_fetching(cfg: Config) -> bool:
+    """Whether `auto` should download the 1.1 GB reranker at all.
+
+    Measured 2026-10-22, it earned its place only by shortening the list a
+    judge reads; without a judge the answers were the same. So `auto` fetches
+    it only where a judge runs, and `on` fetches it regardless.
+    """
+    if cfg.retrieval.rerank != "auto":
+        return cfg.retrieval.rerank == "on"
+    from varyz.retrieval.judge import load_judge
+
+    try:
+        return load_judge(cfg) is not None
+    except Exception:
+        return False
+
+
 def fetch_reranker(cfg: Config) -> bool:
     """Download the configured reranker if `recall` would use it and it is absent.
 
@@ -208,6 +225,8 @@ def fetch_reranker(cfg: Config) -> bool:
         return False
     reranker = Reranker(cfg)
     if reranker.calibration is None or reranker.is_downloaded():
+        return False
+    if not worth_fetching(cfg):
         return False
     try:
         reranker.load()

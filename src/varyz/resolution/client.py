@@ -222,6 +222,66 @@ class ResolutionClient:
         )
         return [str(value) for value in response.get("promoted") or []]
 
+    def record_task_signals(
+        self,
+        conversation_id: str,
+        receipts: list[dict[str, Any]],
+        *,
+        project: str | None,
+        ready: bool,
+        device_id: str,
+        agent: str = "",
+        model: str = "",
+        memory_test: float | None = None,
+    ) -> dict[str, Any]:
+        """Keep finish_check's per-rule results; a ready task adopts the answers it used.
+        ``memory_test`` is the holdout rate the caller's briefings used, if known."""
+        payload: dict[str, Any] = {
+            "conversation_id": conversation_id, "receipts": receipts, "project": project,
+            "ready": ready, "device_id": device_id, "agent": agent, "model": model,
+        }
+        if memory_test is not None:
+            payload["memory_test"] = memory_test
+        return self._request("POST", "/tasks/signals", payload)
+
+    def record_ask_signals(
+        self,
+        escalation_id: str,
+        *,
+        conversation_id: str | None = None,
+        predict: bool = False,
+        decision_kind: str = "",
+        agent: str = "",
+        model: str = "",
+        agent_guess: str = "",
+        ask_feedback: str = "",
+    ) -> dict[str, Any]:
+        """The agent's guess at the owner's answer, or the owner's word on whether
+        the question was needed."""
+        return self._request(
+            "POST", f"/escalations/{quote(escalation_id, safe='')}/signals",
+            {"conversation_id": conversation_id, "predict": predict,
+             "decision_kind": decision_kind, "agent": agent, "model": model,
+             "agent_guess": agent_guess, "ask_feedback": ask_feedback},
+        )
+
+    def record_rule_correction(
+        self,
+        principle_id: str,
+        *,
+        corrected: str | None,
+        conversation_id: str | None,
+        project: str | None,
+        agent_turn: str = "",
+        should_have_asked: bool = False,
+    ) -> dict[str, Any]:
+        """Mark the corrected rule as not held in this task; keep the output it was about."""
+        return self._request(
+            "POST", f"/principles/{quote(principle_id, safe='')}/correction",
+            {"corrected": corrected, "conversation_id": conversation_id, "project": project,
+             "agent_turn": agent_turn, "should_have_asked": should_have_asked},
+        )
+
     def nudge_live(self) -> bool:
         """Ask the daemon to read the AI chats' new messages; True when it started a read."""
         return bool(self._request("POST", "/live/nudge", {}).get("reading"))

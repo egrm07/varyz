@@ -97,11 +97,31 @@ def test_the_graph_is_built_deterministically_and_the_model_compiled(tmp_path, m
     assert "# which reader" in config.read_text(encoding="utf-8")
     assert ("Building the graph: 1 of 2 entries", 0.5) in heard
     assert ("Building the graph: 2 of 2 entries", 1.0) in heard
-    # Compiling says nothing of how far along it is, so its bar sweeps.
-    assert heard[-1] == ("Compiling the personal model", None)
+    # Compiling names each stage, so a long one is not taken for a hung one,
+    # and says how far the saving has got.
+    compiling = [item for item in heard if item[0].startswith("Compiling the personal model")]
+    assert compiling[0] == ("Compiling the personal model: starting", None)
+    assert ("Compiling the personal model: finding conversations", None) in compiling
+    assert any(line.startswith("Compiling the personal model: saving 0 of ")
+               and fraction == 0.0 for line, fraction in compiling)
+    assert ("Compiling the personal model: checking every record, then switching to the "
+            "new model", None) in compiling
+    assert compiling[-1][0].startswith("Compiling the personal model: checking 0 of ")
+    assert compiling[-1][1] == 0.0
 
     again, detail = real_build_graph(config)
     assert again == "done" and "extractor set" not in detail
+
+
+def test_a_build_without_the_compiler_builds_only_the_graph(tmp_path, monkeypatch):
+    config = _archive(tmp_path, monkeypatch, "deterministic")
+    monkeypatch.setattr("varyz.personal_model.compiler_is_shipped", lambda: False)
+    heard: list[str] = []
+
+    state, detail = real_build_graph(config, on_progress=lambda line, _f: heard.append(line))
+
+    assert (state, detail) == ("done", "1 claim from 2 entries")
+    assert not any(line.startswith("Compiling") for line in heard)
 
 
 def test_a_build_with_the_model_leaves_the_semantic_graph_to_the_owner(tmp_path, monkeypatch):
@@ -126,6 +146,30 @@ def test_a_graph_that_cannot_be_built_says_why(tmp_path, monkeypatch):
     assert real_build_graph(config) == (
         "failed", "the graph could not be built: database is locked",
     )
+
+
+@pytest.mark.parametrize("where", ["before", "inside"])
+def test_a_compile_out_of_memory_says_what_to_do(tmp_path, monkeypatch, where):
+    """It said only "MemoryError: ", whether the compile caught it or not."""
+    from varyz.personal_model import episodes
+
+    config = _archive(tmp_path, monkeypatch, "deterministic")
+
+    def full(*args, **kwargs):
+        raise MemoryError
+
+    if where == "inside":
+        monkeypatch.setattr(episodes.EpisodeReconstructor, "build", full)
+    else:
+        monkeypatch.setattr(
+            "varyz.personal_model.compiler.PersonalModelCompiler.compile", full
+        )
+
+    state, detail = real_build_graph(config)
+
+    assert state == "failed"
+    assert detail.startswith("the computer ran out of memory")
+    assert "close other programs and run setup again" in detail
 
 
 def test_the_graph_reports_every_entry_read(tmp_path, monkeypatch):
@@ -504,6 +548,30 @@ def test_time_left_waits_for_a_pace_then_follows_it():
     assert left("Embedding locally: 100 of 100 chunks", 1.0) == ""
 
 
+def test_time_left_follows_the_recent_pace_when_the_run_slows():
+    now = [0.0]
+    left = cli.TimeLeft(clock=lambda: now[0])
+    left("Embedding locally: 0 of 1000 chunks", 0.0)
+    # 10 chunks a second for 60 s, then 2 a second, as a laptop that warms up.
+    for second in range(1, 61):
+        now[0] = float(second)
+        left(f"Embedding locally: {second * 10} of 1000 chunks", second / 100)
+    for second in range(61, 121):
+        now[0] = float(second)
+        said = left(f"Embedding locally: {600 + (second - 60) * 2} of 1000 chunks",
+                    (600 + (second - 60) * 2) / 1000)
+    # 280 chunks left at 2 a second: 140 s. The whole run's pace would say 47 s.
+    assert said == "about 3 min left"
+
+
+def test_recent_seconds_left_drops_samples_before_its_window():
+    samples = [(float(t), float(t * 10)) for t in range(0, 101)]
+
+    assert cli.recent_seconds_left(samples, 100, recent=20, share=0.2) == pytest.approx(10)
+    assert samples[0] == (0.0, 0.0) and len(samples) == 22  # the first, then the last 21 s
+    assert cli.recent_seconds_left(samples[:1], 100, recent=20, share=0.2) is None
+
+
 @pytest.mark.parametrize("line, fraction", [
     ("Pulling qwen3.5:4b: 1 MB of 3 GB", 0.0),  # another phase
     ("Embedding locally: 5 of 100 chunks", 0.05),  # went back: a new pass
@@ -706,6 +774,49 @@ def test_terminal_setup_ends_with_the_graph_autosync_and_the_classifier(
     assert "6/7 Autosync syncs every 30 minutes and at login" in flat
     assert "7/7 Classifier qwen3.5:4b ready" in flat
     assert "NO-GO" not in flat
+
+
+def test_terminal_setup_says_a_warm_computer_is_normal_only_when_it_reads(
+    tmp_path, machine, monkeypatch  # noqa: F811 - the fixture
+):
+    from varyz.setup_run import WARM_NOTE
+
+    _finishing(monkeypatch)
+
+    def setup(name: str, *extra: str) -> str:
+        (tmp_path / name).mkdir()
+        config = _config(tmp_path / name / "config.toml")
+        result = runner.invoke(cli.app, ["setup", "--config", str(config), "--yes",
+                                        "--ai-mode", "local", *extra])
+        assert result.exit_code == 0, result.output
+        return _flat(result.output)
+
+    assert WARM_NOTE not in setup("nothing", "--no-sources")
+    monkeypatch.setattr("varyz.bootstrap.approved_local_connectors", lambda _path: ("git",))
+    monkeypatch.setattr(cli, "_sync_sources", lambda *_a, **_k: [])
+    flat = setup("git")
+    assert WARM_NOTE in flat
+    assert flat.index(WARM_NOTE) < flat.index("4/7 Data sources")
+
+
+def test_a_build_without_the_graph_builder_has_no_graph_step(
+    tmp_path, machine, monkeypatch  # noqa: F811 - the fixture
+):
+    """The alpha holds the builder back: setup has six steps and builds no graph."""
+    monkeypatch.setattr("varyz.graph.builder_is_shipped", lambda: False)
+    config = _config(tmp_path / "config.toml")
+    calls = _finishing(monkeypatch, classifier=("failed", "Ollama did not start", False))
+
+    result = runner.invoke(cli.app, ["setup", "--config", str(config), "--no-sources",
+                                    "--ai-mode", "local"])
+
+    assert result.exit_code == 1, result.output
+    assert "graph" not in calls
+    flat = _flat(result.output)
+    assert "1/6 Archive" in flat
+    assert "5/6 Autosync syncs every 30 minutes and at login" in flat
+    assert "6/6 Classifier failed: Ollama did not start" in flat
+    assert "Graph" not in flat and "/7" not in flat
 
 
 def test_a_failed_last_step_is_a_no_go(tmp_path, machine, monkeypatch):  # noqa: F811

@@ -259,7 +259,8 @@ strict tuples and enums remain strict in Python while using arrays and strings o
    connection opened for the question, without the lock that the other tiers, the other
    endpoints and the ledger take turns on, so a question that waits on the models holds up
    nothing else. The cross-encoder runs on an NVIDIA card when onnxruntime can reach one
-   (the Windows installer adds DirectML for it; `retrieval/rerank.py`), where questions
+   (the Windows installer adds DirectML for it; `retrieval/rerank.py`; `rerank = "auto"`
+   downloads it only where a judge is set up, since only the judge gained from it), where questions
    take turns on one session, and on the processor otherwise, where they read side by side.
    Tier-2 confidence is the fused rank score, not a probability, so no confidence threshold
    stands in for these checks.
@@ -601,7 +602,24 @@ Learned orders reach agents straight away, so the bar is high: at least 3 units 
 each step, and each link has 3 votes with at least 3/4 agreeing. Steps are ranked by
 Copeland score. Provenance records unit counts,
 agreement, dropped steps and up to 5 sample entry ids, never text. Autosync runs the
-learner after new AI-conversation turns arrive (`[autosync] learn_workflows`).
+learner after new AI-conversation turns arrive only when `[autosync] learn_workflows` is
+on. It is off by default: on the owner's archive it cost about 2.6 s a sync and learned 0
+workflows from 5,876 turns.
+
+Task recipes (`resolution/recipes.py`, migration 0051) take its place for the agent's
+side. A recipe is what an agent learned doing one task: a name, 2 to 8 steps of at most
+200 characters, a check and one pitfall, at most 1,600 characters rendered. The agent
+writes it through `record_recipe`, so no AI call is made; a credential found by the
+secrets scan refuses it. `task_recipes`, `task_recipe_retractions` and
+`task_recipe_outcomes` are append-only. The same name and scope again is one recipe; a
+correction supersedes, and an outcome is `worked`, `changed` or `failed`. `start_task`
+serves the best match by word overlap with the task (the project's own recipe before a
+general one) unless its last two outcomes failed, and `finish_check` either offers to
+record one or asks how the served one went. Cloud sync carries current recipes (name,
+steps, check, pitfalls, scope; never provenance or outcomes) as the `recipe` kind, which
+the Cloud validates with the same caps; hosted `start_task` serves them from synced
+records, and following and project sharing publish them like workflows. They are not on
+the owner's Cloud dashboard.
 
 Decisions come from the same transcripts (`resolution/decision_capture.py`). Each
 autosync cycle reads the lines each Claude Code transcript gained since its stored byte

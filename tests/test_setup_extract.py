@@ -186,6 +186,44 @@ def test_before_its_pace_shows_the_estimate_counts_down(cfg) -> None:
     assert view["used_five_hour"] is None
 
 
+def test_reading_follows_its_recent_pace_and_counts_down_between_reads(cfg) -> None:
+    started = _started()
+    _status(cfg, state="running", pending=["full"])
+    # 400 turns in the first 100 s, then 100 in the next 200 s: it slowed down.
+    setup_extract.progress(cfg, started, T0 + 100, work=(600, 0, 400, 0))
+    view = setup_extract.progress(cfg, started, T0 + 300, work=(500, 0, 500, 0))
+    # The last 2 minutes and more: 100 turns in 200 s, so 500 more take 1000 s.
+    assert view["seconds_left"] == pytest.approx(1000 + 58)
+
+    view = setup_extract.progress(cfg, started, T0 + 330, work=(500, 0, 500, 0))
+    assert view["seconds_left"] == pytest.approx(1000 + 58 - 30)
+
+
+def test_local_reading_times_the_merges_by_its_own_calls(cfg, monkeypatch) -> None:
+    from varyz.resolution import local_reader
+
+    started = {"at": T0, "turns": 200, "runner": "local", "seconds": 260.0}
+    path = profile_path(cfg, "local").parent / "local_reader.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def status(left: int, merges: int, **fields: Any) -> None:
+        monkeypatch.setattr(local_reader, "work_left", lambda _cfg: (left, merges))
+        path.write_text(json.dumps({"state": "running", "reading_at": T0, **fields}),
+                        encoding="utf-8")
+
+    status(100, 4, call_seconds=8.0)
+    view = setup_extract.progress(cfg, started, T0 + 100)
+    # 100 turns in 100 s leaves 100 s to read, then 4 merges of 8 s.
+    assert (view["phase"], view["seconds_left"]) == ("reading", pytest.approx(100 + 32))
+
+    status(0, 10, call_seconds=8.0)
+    view = setup_extract.progress(cfg, started, T0 + 200)
+    assert (view["phase"], view["seconds_left"]) == ("merging", 80.0)
+
+    status(0, 10)  # no call timed yet: no figure rather than a wrong one
+    assert setup_extract.progress(cfg, started, T0 + 200)["seconds_left"] is None
+
+
 def test_with_every_turn_read_it_merges_then_is_done(cfg) -> None:
     started = _started()
     _status(cfg, state="running", pending=["full"])

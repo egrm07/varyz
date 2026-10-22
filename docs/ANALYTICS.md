@@ -90,8 +90,34 @@ contributions until they agree to the new text.
 With `network-v1` consent, the daemon also builds examples from archive rows created after
 opt-in and within the last 30 days: corrections (the agent's question, Varyz's answer,
 adopted/overridden/corrected and the owner's correction), answered escalations (tiers
-tried, urgency, seconds to answer), confirmed or revised rules, and rules rejected in
-review. Only `rule` principles are used; vision notes never leave.
+tried, urgency, seconds to answer), confirmed or revised rules (with the reader's or
+agent's one-line `agent_did` and `wanted` note when there is one), rules rejected in
+review, and rule checks: whether a confirmed rule `passed`, `failed` or was `corrected`
+in a task, its attempt number and `label_source` (`inspected` by Varyz, `agent_report`,
+or `owner`). Not-applicable and unchecked results, the check's evidence and the agent's
+output stay local. `rule_ref`, `replaces_ref` and `task_ref` are HMAC-SHA256 references
+under a secret made at opt-in and replaced on each new opt-in, so records link within one
+opt-in only. Only `rule` principles are used; vision notes never leave. Field meanings
+and known biases are in `NETWORK_DATA.md`.
+
+Checks and escalations also carry the model name when the agent gave one (allowlisted
+families only), the result before this one (`previous`, which shows a false "done"), the
+ask label, the agent's guess at the answer with hit or miss, and rule chain depth. The
+memory test is off by default; `[signals] memory_test = true` in `config.toml` turns it
+on, and `memory_test_rate` (default 0.02, at most 0.1) sets how often a low-stakes rule
+is held back. `varyz data signals` prints the local totals: false "done" claims, first-try
+pass rate by model, shown versus held-back pass rates, ask labels, guess hit rates and how
+long rules last.
+
+The export also holds answers Varyz gave that nobody labelled within 3 days (`answer`,
+`unlabelled`, linked to any later label by `ledger_ref`), choices the owner made outside a
+Varyz question (`decision`; Cloud-synced answers excluded), rules withdrawn in Varyz Cloud
+(`rule`, `rejected`, basis `withdrawn`), which confirmed rule a briefing showed for which
+task (`use`, references only) and the working agent's live end-of-task reports
+(`session`: the task line, up to 6 lines each of done, checks and pending, and complete,
+blocked or abandoned; never the project, artifacts, sensitive reports or reports mined
+from past chats). Escalations asked in away mode add the decision kind, the agent's
+proposed choice and whether it matched the answer.
 
 Scrubbing is local and fail-closed. Emails, links, file paths, IP addresses, phone-like
 numbers, handles and long hex or ULID identifiers become placeholders, then known project

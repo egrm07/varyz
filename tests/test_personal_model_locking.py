@@ -258,3 +258,33 @@ def test_stale_compile_claim_metadata_does_not_block_a_new_run(tmp_path):
     assert result.activated
     assert read_personal_model_compile_claim(cfg.data_dir)["claim_id"] != "dead-compile"
     conn.close()
+
+
+def test_saving_gives_the_archive_back_between_short_transactions(monkeypatch):
+    """Back-to-back transactions starved other writers: on one slow core they waited 8 s."""
+    from contextlib import contextmanager
+
+    from varyz.personal_model import compiler as compiler_mod
+
+    clock = [0.0]
+    events: list[str] = []
+    monkeypatch.setattr(compiler_mod.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(compiler_mod.time, "sleep", lambda s: events.append(f"pause {s}"))
+
+    @contextmanager
+    def batch():
+        events.append("begin")
+        yield
+        events.append("commit")
+
+    def write(item: int) -> None:
+        clock[0] += 0.4  # a slow laptop: 0.4 s a record
+        events.append(f"write {item}")
+
+    owner = type("Owner", (), {"_write_batch": staticmethod(batch)})()
+    compiler_mod.PersonalModelCompiler._write_all(owner, list(range(5)), write)
+
+    assert events == [
+        "begin", "write 0", "write 1", "write 2", "commit", "pause 0.1",
+        "begin", "write 3", "write 4", "commit",
+    ]

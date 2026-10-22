@@ -23,6 +23,9 @@ from varyz.resolution import local_reader, rule_reader
 from varyz.resolution.profile_reader import profile_path
 from varyz.resolution.usage import Usage, Window
 
+# Taken before conftest swaps it out, so the cooldown test reaches the real one.
+_REQUEST = local_reader.request
+
 
 def test_local_worker_waits_for_model_then_queues_real_candidates(
     tmp_path, daemon_client, monkeypatch  # noqa: F811
@@ -52,7 +55,10 @@ def test_local_worker_waits_for_model_then_queues_real_candidates(
     monkeypatch.setattr(rule_reader, "reader_from_config", lambda *a, **kw: model)
     local_reader.run(path, wait_model=True)
     assert checks == [0, 0]
-    assert local_reader.load_status(cfg)["state"] == "idle"
+    status = local_reader.load_status(cfg)
+    assert status["state"] == "idle"
+    # How long a call takes, for setup to time the merges by.
+    assert isinstance(status["call_seconds"], float) and status["call_seconds"] >= 0
     assert local_reader.work_left(cfg) == (0, 0)
     candidates = daemon_client.principles("candidate")
     assert {item["provenance"]["slot"] for item in candidates} == {"rule", "vision", "workflow"}
@@ -80,6 +86,70 @@ def test_local_worker_gives_up_on_a_model_that_never_arrives(tmp_path, monkeypat
     status = local_reader.load_status(cfg)
     assert status["state"] == "stopped"
     assert "did not arrive" in status["reason"]
+
+
+def _local_config(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        f'[storage]\ndata_dir = "{(tmp_path / "data").as_posix()}"\n'
+        '[workflows]\ninference_mode = "local"\n'
+        '[connectors.ai_conversations]\napproved = true\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(path)
+    open_db(cfg.db_path).close()
+    return path, cfg
+
+
+def test_local_worker_waits_through_a_config_it_cannot_read(tmp_path, monkeypatch):
+    """Setup rewrites the config while the worker waits; a half-written file once stopped it."""
+    path, cfg = _local_config(tmp_path)
+    reads = []
+
+    def load(config_file):
+        reads.append(config_file)
+        if len(reads) > 1:
+            raise ValueError("half-written config")
+        return load_config(config_file)
+
+    clock = iter(range(0, 10**9, 3600))
+    monkeypatch.setattr(local_reader, "load_config", load)
+    monkeypatch.setattr(local_reader.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(local_reader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(local_reader, "model_ready", lambda cfg: False)
+
+    local_reader.run(path, wait_model=True)
+
+    assert len(reads) > 2
+    assert "did not arrive" in local_reader.load_status(cfg)["reason"]
+
+
+def test_local_worker_says_why_the_model_could_not_read(tmp_path, monkeypatch):
+    path, cfg = _local_config(tmp_path)
+    monkeypatch.setattr(local_reader, "model_ready", lambda cfg: True)
+
+    def unavailable(*args, **kwargs):
+        raise rule_reader.ReaderUnavailable("the local model is not installed")
+
+    monkeypatch.setattr(rule_reader, "reader_from_config", unavailable)
+    local_reader.run(path, wait_model=True)
+    status = local_reader.load_status(cfg)
+    assert status == {**status, "state": "stopped",
+                      "reason": "the local model is not installed"}
+
+
+def test_owner_retry_skips_the_local_cooldown(tmp_path, monkeypatch):
+    path, cfg = _local_config(tmp_path)
+    (cfg.data_dir / "rules").mkdir(parents=True, exist_ok=True)
+    (cfg.data_dir / "rules" / "local_reader.json").write_text(
+        json.dumps({"started_at": time.time(), "state": "stopped"}), encoding="utf-8")
+    launched = []
+    monkeypatch.setattr(local_reader, "_allowed", lambda cfg: True)
+    monkeypatch.setattr(local_reader.subprocess, "Popen",
+                        lambda command, **kwargs: launched.append(command))
+    assert not _REQUEST(cfg, path, wait_model=True)
+    assert _REQUEST(cfg, path, wait_model=True, force=True)
+    assert len(launched) == 1 and launched[0][-1] == "--wait-model"
 
 
 def test_cloud_supervisor_reads_through_the_real_mcp_tools_and_reaches_idle(

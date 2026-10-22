@@ -165,3 +165,20 @@ def test_the_menu_answers_an_unanswerable_terminal_with_the_flag_that_needs_none
     output = console.export_text()
     assert "No settings changed." in output
     assert "varyz trust --summary" in output
+
+
+def test_a_build_without_the_graph_builder_offers_no_graph_review(
+    tmp_path, conn, cfg, monkeypatch
+):
+    """The alpha builds no graph, so the centre neither offers nor counts one."""
+    monkeypatch.setattr("varyz.trust.builder_is_shipped", lambda: False)
+    center, console = _center(tmp_path, conn, cfg, ["1", "0"])
+
+    center.run()
+
+    output = " ".join(console.export_text().split())
+    assert "Knowledge graph review" not in output
+    assert "3 Privacy, receipts, and consent" in output
+    assert "4 Delete or restore exclusions" in output
+    assert "Graph not built" not in output
+    assert "No recorded privacy failures." in output

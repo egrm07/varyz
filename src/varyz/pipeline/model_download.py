@@ -90,12 +90,12 @@ def wanted_models(cfg: Config) -> list[Wanted]:
     from fastembed import TextEmbedding
     from fastembed.rerank.cross_encoder import TextCrossEncoder
 
-    from varyz.retrieval.rerank import Reranker
+    from varyz.retrieval.rerank import Reranker, worth_fetching
 
     kinds: list[tuple[type, str]] = [(TextEmbedding, cfg.embedding.model)]
     reranker = Reranker(cfg)
     # The same conditions as `fetch_reranker`.
-    if cfg.retrieval.rerank != "off" and reranker.calibration is not None:
+    if reranker.calibration is not None and worth_fetching(cfg):
         kinds.append((TextCrossEncoder, reranker.model_name))
     wanted = []
     for kind, name in kinds:
