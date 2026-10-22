@@ -1364,7 +1364,8 @@ TOOLS: list[dict[str, Any]] = [
             "agent given the same task, so it need not work it out again. It is kept "
             "under 1,600 characters (about 400 tokens). When start_task served a "
             "recipe, record its outcome instead: recipe_id with 'worked' or 'failed', "
-            "or a corrected recipe with replaces=recipe_id. Never put secrets in it."
+            "or a corrected recipe with replaces=recipe_id. Never put secrets in it. "
+            + _UNTRUSTED_NOTE
         ),
         "inputSchema": _RECORD_RECIPE_SCHEMA,
         "annotations": {

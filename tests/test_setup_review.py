@@ -98,6 +98,7 @@ def test_setup_process_waits_for_an_open_review_to_close(machine, monkeypatch):
     snapshot = {
         "finished": True,
         "paused": False,
+        "steps": [],
         "extract": {"state": "accepted", "phase": "done"},
         "result": {"verdict": "GO", "summary": "Ready", "problems": [], "next": []},
     }
