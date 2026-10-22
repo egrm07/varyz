@@ -872,8 +872,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path == "/api/close":
-            self._json({"closed": True})
             self.server.closed.set()
+            self._json({"closed": True})
             return
         if path == "/api/review":
             try:
