@@ -14,11 +14,12 @@ from pathlib import Path
 
 
 def run(args: list[str], *, private: bool = False) -> str:
-    # Apple's ticket service can lag an Accepted response. Retry only stapling
-    # exit 68, with a bounded delay; never bypass validation or assessment.
+    # Apple's ticket service can lag an Accepted response or drop the connection.
+    # Retry only stapler exit 68 (staple or validate), with a bounded delay; never
+    # bypass validation or assessment.
     for attempt in range(4):
         result = subprocess.run(args, capture_output=True, text=True, timeout=1500)
-        if result.returncode != 68 or args[:3] != ["xcrun", "stapler", "staple"]:
+        if result.returncode != 68 or args[:2] != ["xcrun", "stapler"]:
             break
         if attempt < 3:
             time.sleep((10, 30, 60)[attempt])

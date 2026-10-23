@@ -128,6 +128,20 @@ def test_stapling_ticket_delay_is_retried_but_bounded(monkeypatch):
     assert delays == [10, 30, 60]
 
 
+
+def test_dropped_ticket_lookup_on_validate_is_retried(monkeypatch):
+    # Apple's ticket lookup can drop the connection; validate still has to pass.
+    results = iter([68, 0])
+    delays = []
+    monkeypatch.setattr(module.time, "sleep", delays.append)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=next(results), stdout="valid"),
+    )
+    assert module.run(["xcrun", "stapler", "validate", "synthetic.pkg"]) == "valid"
+    assert delays == [10]
+
 def test_gatekeeper_failure_is_never_retried_or_waived(monkeypatch):
     monkeypatch.setattr(module.time, "sleep", lambda *a: pytest.fail("must not retry assessment"))
     monkeypatch.setattr(
