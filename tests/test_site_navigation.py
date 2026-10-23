@@ -32,7 +32,7 @@ def test_account_navigation_build_is_idempotent_and_keeps_ownership_proofs(tmp_p
     assert (tmp_path / "index.html").read_text() == first
     assert first.count("data-account-signin") == 1
     assert 'href="https://cloud.varyzai.com/login">Sign in</a>' in first
-    assert 'data-account-menu hidden' in first and 'data-account-admin' in first
+    assert 'data-account-menu hidden' in first and 'data-account-admin' not in first
     assert '<script defer src="/account.js"></script>' in first
     assert 'data-account-signin' in (nested / "story.html").read_text()
     assert proof.read_text() == "google-site-verification: google123.html"

@@ -1978,6 +1978,81 @@ def dismiss_questions(
 
 @app.command("wrapped")
 def wrapped(
+    name: Annotated[
+        str | None,
+        typer.Option(
+            "--name",
+            help="Name for the card (default: the one used last, else your git first name)",
+        ),
+    ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", "-o", help="Folder for the files (default: <data dir>/wrapped)"),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show exactly what the card would say; write nothing")
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Write without asking after the preview")
+    ] = False,
+    config: ConfigOpt = None,
+) -> None:
+    """Monthly Varyz Wrapped: your AI type card, in yellow and in black.
+
+    Your AI type, read from all your rules, with how rare it is, then three short
+    lines your agents follow, from your own general rules. A card with
+    fewer than three gets starter lines, marked here; keep one from the card on
+    `varyz rules review` to make it your rule. Nothing leaves this machine: the
+    output is two PNG files.
+    """
+    from varyz.card import work_with as card
+    from varyz.card.rarity import BASIS, share_text
+    from varyz.card.source import load_owner_rules
+
+    cfg = _cfg(config)
+    if not cfg.db_path.exists():
+        console.print("[red]No varyz database found. Run: varyz setup[/red]")
+        raise typer.Exit(1)
+    # Read-only: the card never writes to the database.
+    owner = load_owner_rules(cfg.db_path)
+    statements = card.own_statements(owner)
+    kind = card.card_type(card.type_rules(owner))
+    own = card.owned(statements)
+    state = card.load_state(cfg.data_dir)
+    who = card.clean_name(name) if name is not None else (
+        str(state.get("name") or "") or card.git_first_name())
+    picked = card.valid_pick(state.get("lines")) or card.default_pick(own)
+    console.print(card.card_title(who, kind), markup=False, highlight=False)
+    console.print(f"  {kind.line} {share_text(kind.key)} of people.", markup=False,
+                  highlight=False)
+    console.print(f"  ({BASIS})", markup=False, highlight=False)
+    for number, key in enumerate(picked, 1):
+        mark = "" if key in own else "  (starter)"
+        console.print(f"  {number:02d}  {card.BY_KEY[key].plain}{mark}",
+                      markup=False, highlight=False)
+    console.print(f"{card.PAYOFF}  {card.SITE}", markup=False, highlight=False)
+    if any(key not in own for key in picked):
+        console.print("Starter lines are not your rules yet. Keep them from the card on "
+                      "`varyz rules review`, or add your own with `varyz rules add`.",
+                      markup=False, highlight=False)
+    target = out if out is not None else cfg.data_dir / "wrapped"
+    stem = card.file_stem(who)
+    if dry_run:
+        console.print("Dry run: nothing written. Would write:", markup=False)
+        for style in card.STYLES:
+            console.print(f"  {target / f'{stem}-{style}.png'}", markup=False, highlight=False)
+        return
+    if not yes and not typer.confirm(f"Write 2 PNG files to {target}?", default=False):
+        console.print("Nothing written.")
+        return
+    for path in card.write_pngs(who, kind, picked, target):
+        console.print(f"wrote {path}", markup=False, highlight=False)
+    card.mark_seen(state, who, statements, picked)
+    card.save_state(cfg.data_dir, state)
+
+
+@app.command("my-way", hidden=True)
+def my_way(
     handle: Annotated[
         str,
         typer.Option(

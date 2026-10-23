@@ -49,6 +49,9 @@ METRICS = frozenset(
         "setup_ready",
         "setup_failed",
         "collection_failed",
+        # A saved answer or rule used in a conversation after the one it came from.
+        "preference_reused",
+        "activated",
         *(f"setup_{step}_{state}" for step in range(7) for state in ("done", "failed", "skipped")),
     }
 )

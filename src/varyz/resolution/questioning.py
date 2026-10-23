@@ -47,3 +47,7 @@ QUESTION_POLICY = (
     "and facts. A short relay must preserve the original question's meaning and "
     "escalation_id; record only the owner's actual reply."
 )
+
+# An owner question left unanswered this long no longer bears on live work: the
+# daemon closes it as expired and briefings stop relaying it.
+QUESTION_TTL_DAYS = 7

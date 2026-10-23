@@ -10,6 +10,7 @@ import pytest
 
 from varyz.db.connection import open_db
 from varyz.mcp_server import TOOLS, VaryzServer
+from varyz.resolution import recipes
 from varyz.resolution.briefing import finish_check, render_markdown, start_task
 from varyz.resolution.models import Caller
 from varyz.resolution.recipes import MAX_TOTAL_CHARS, SQLiteRecipeStore, render
@@ -143,6 +144,84 @@ def test_the_projects_own_recipe_beats_a_general_one(store: SQLiteRecipeStore) -
 
     assert store.applicable("Release a new varyz version", project="varyz").id == own
     assert store.applicable("Release a new version", project="san7").id == general
+
+
+VIDEO = {
+    "name": "make a varyz demo video",
+    "steps": [
+        "record: a real session in OBS, notifications off",
+        "sound: one sound for every popup, music under the narration",
+        "title: logo title in Marcellus",
+        "cut: no pause over 2 seconds, silent end card",
+        "render: 1080p with imageio-ffmpeg",
+    ],
+    "check": "watch it through: every popup has a sound and the end card is silent",
+    "pitfalls": "a notification covered one take; check the frames before export",
+}
+SOCIAL = {
+    "name": "publish varyz videos on social",
+    "steps": [
+        "upload: X, Bluesky and LinkedIn through Chrome",
+        "captions: English captions on X",
+        "verify: open each live post and play the video",
+    ],
+    "check": "each live post plays to the end",
+    "pitfalls": "",
+}
+
+# Worded differently from the recipe's name, or named outright; None is no recipe.
+VIDEO_TASKS = [
+    ("Film a launch clip for varyz", "video", "similar"),
+    ("Make a short trailer showing away mode", "video", "similar"),
+    ("Record a screencast of the recipes feature", "video", "similar"),
+    ("Make a 20 second video of the setup steps", "video", "similar"),
+    ("Make a new demo video", "video", "named"),
+    ("Publish the new varyz demo video on X and Bluesky", "social", "named"),
+    ("Ship the next varyz version", "release", "similar"),
+    ("Fix the setup page layout", None, None),
+    ("Write a report on how video recipes are matched", None, None),
+    ("Deploy the Cloud worker", None, None),
+    ("Fix the bug where setup step 5 hangs", None, None),
+    ("Plan dinner for Saturday", None, None),
+]
+
+
+@pytest.mark.parametrize(("task", "expected", "match"), VIDEO_TASKS)
+def test_a_video_recipe_is_found_when_the_task_is_worded_differently(
+    store: SQLiteRecipeStore, task: str, expected: str | None, match: str | None
+) -> None:
+    ids = {
+        "video": _record(store, scope="varyz", **VIDEO),
+        "social": _record(store, scope="varyz", **SOCIAL),
+        "release": _record(store),
+    }
+
+    found = store.match(task, project="varyz")
+
+    if expected is None:
+        assert found is None, found
+        return
+    assert found is not None and (found[0].id, found[1]) == (ids[expected], match)
+
+
+def test_a_similar_recipe_says_it_is_for_similar_work(
+    conn: sqlite3.Connection, store: SQLiteRecipeStore
+) -> None:
+    recipe_id = _record(store, scope="varyz", **VIDEO)
+
+    recipe = start_task(conn, "Film a launch clip for varyz", project="varyz")["task_recipe"]
+
+    assert recipe["id"] == recipe_id and recipe["match"] == "similar"
+    assert "similar work, not this exact task" in recipe["guidance"]
+    assert "record_recipe" in recipe["guidance"]
+    # A synced payload, as the Cloud holds it: steps as {step, how}.
+    steps = [step.to_dict() for step in recipes.parse_recipe_steps(VIDEO["steps"])]
+    payload = {**VIDEO, "steps": steps, "scope": "varyz"}
+    hosted = recipes.hosted(
+        [{"id": recipe_id, "kind": "recipe", "payload": payload}],
+        "Film a launch clip for varyz", "varyz",
+    )
+    assert hosted is not None and hosted["id"] == recipe_id and hosted["match"] == "similar"
 
 
 def test_finish_check_offers_a_recipe_for_new_work_and_asks_how_a_served_one_went(

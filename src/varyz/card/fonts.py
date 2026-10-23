@@ -1,7 +1,8 @@
-"""The Taste Card's typefaces, in one place.
+"""The cards' typefaces, in one place.
 
 Source Serif 4 for titles and IBM Plex Sans for the small print, the same two
-families as the website (the owner's choice, 2026-09-25). The PNG is painted
+families as the website (the owner's choice, 2026-09-25), and Marcellus, the
+website's display face, for the AI type card. The PNG is painted
 with the cut-down copies bundled in ``fonts/`` (built by
 ``scripts/build_card_fonts.py``; OFL 1.1, licences alongside), so every machine
 draws the same card. The SVG carries a CSS stack instead, and the viewer's
@@ -23,12 +24,13 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from PIL.ImageFont import FreeTypeFont, ImageFont
 
-Role = Literal["serif", "serif_italic", "sans", "sans_bold"]
+Role = Literal["serif", "serif_italic", "sans", "sans_bold", "display"]
 
 # Each stack falls back to a generic family, so an SVG opened on a machine
 # without any named font still renders as serif or sans, never blank.
 SERIF_STACK = "'Source Serif 4', 'Palatino Linotype', Palatino, Georgia, 'DejaVu Serif', serif"
 SANS_STACK = "'IBM Plex Sans', 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif"
+DISPLAY_STACK = "Marcellus, 'Palatino Linotype', Palatino, Georgia, 'DejaVu Serif', serif"
 
 # The bundled cuts, found before any installed font.
 BUNDLED = Path(__file__).resolve().parent / "fonts"
@@ -107,6 +109,14 @@ ROLES: dict[Role, FontRole] = {
                "LiberationSans-Bold.ttf", "DejaVuSans-Bold.ttf"),
         em_ratio=0.55,
     ),
+    "display": FontRole(
+        family=DISPLAY_STACK,
+        style="normal",
+        weight=400,
+        files=("VaryzCardDisplay-Regular.ttf", "pala.ttf", "Palatino.ttc", "georgia.ttf",
+               "DejaVuSerif.ttf"),
+        em_ratio=0.52,
+    ),
 }
 
 
@@ -135,5 +145,6 @@ def raster_font(role: Role, size: int) -> FreeTypeFont | ImageFont:
 
 
 __all__ = [
-    "BUNDLED", "ROLES", "SANS_STACK", "SERIF_STACK", "FontRole", "Role", "font_file", "raster_font",
+    "BUNDLED", "DISPLAY_STACK", "ROLES", "SANS_STACK", "SERIF_STACK", "FontRole", "Role",
+    "font_file", "raster_font",
 ]

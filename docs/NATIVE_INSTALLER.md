@@ -94,4 +94,61 @@ SmartScreen reputation or a warning-free first download. See Microsoft's
 [SmartScreen guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)
 and [SignTool reference](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool).
 
+## Free signing through SignPath Foundation
+
+[SignPath Foundation](https://signpath.org) signs open source releases for free with
+its own certificate, so Windows names **SignPath Foundation** as the publisher, not
+Varyz or Egor Menshikov. Its [terms](https://signpath.org/terms) require the build to
+come from public source on GitHub-hosted runners, a person to approve every signing
+request, and a public code signing policy. That policy is
+[docs/website/code-signing.md](website/code-signing.md), published at
+varyzai.com/code-signing and linked from every page footer, the download page and
+the README.
+
+`.github/workflows/windows-signpath.yml` does the whole run on a fresh
+`windows-2025` runner: the same locked build as Windows native acceptance, the
+provenance check, upload of the unsigned EXE, the signing request (it waits up to an
+hour for approval), an Authenticode check that the signer is SignPath Foundation and
+the signature is timestamped, new checksums for the signed bytes, then the same
+isolated launch checks on the signed EXE. The signed EXE, `native-signature.json`,
+its provenance and the acceptance receipt are kept as the `Varyz-Windows-signed`
+artifact for 30 days. The job is skipped until the repository variable
+`SIGNPATH_ORGANIZATION_ID` is set. It has not run yet.
+
+Owner steps, in order:
+
+1. Turn on multi-factor authentication for GitHub (already required for the
+   release workflows) and, once the account exists, for SignPath.
+2. Apply at [signpath.org/apply](https://signpath.org/apply) for `egrm07/varyz`.
+   Plain answers: AGPL-3.0 only, with no commercial licence for sale and no
+   proprietary parts; the paid product is the optional hosted Varyz Cloud service,
+   whose code is in the same public repository. Released since 0.1.0 on
+   GitHub Releases; download page varyzai.com/download.
+3. After approval, in SignPath: create project `varyz`, signing policy
+   `release-signing` with manual approval by Egor Menshikov, and artifact
+   configuration `windows-installer` from
+   `scripts/windows/signpath-artifact-configuration.xml`. Connect the GitHub
+   repository as a trusted build system.
+4. In the public repository's settings, add secret `SIGNPATH_API_TOKEN` (a SignPath
+   CI user token) and variable `SIGNPATH_ORGANIZATION_ID`.
+5. Run **Windows signed installer** from the Actions tab, approve the request in
+   SignPath, then attach the signed EXE and its checksums to the release in place of
+   the unsigned one. Update the status line on the code signing page and the
+   unsigned notes in README, `scripts/site/build_site.py` and this file.
+
+Known gaps to settle before or during the application:
+
+- The uninstaller inside the installer stays unsigned. Inno Setup signs it only
+  while compiling, and SignPath signs the finished file that GitHub uploads.
+- SignPath asks that software which contacts a server the user did not choose
+  shows its privacy policy during installation, with a way to opt out. The hourly
+  news check to varyzai.com is on by default, so the installer may need a short
+  page that names it, says `varyz news off` turns it off and links the privacy
+  policy.
+- SignPath rejects projects that include proprietary components. The installer is
+  built with Inno Setup, whose own licence has commercial terms (see Reproducible
+  build above); mention it in the application.
+- Windows metadata: the installer's product name comes from Inno Setup's default,
+  `Varyz`, which matches the project name SignPath enforces.
+
 The website keeps **Coming soon** until the release EXE and checksums are anonymously accessible and verified. Separate [macOS PKG candidates](MACOS_INSTALLER.md) for Apple Silicon and Intel are signed, notarized and stapled, with signed-payload installation/removal checks; Installer GUI testing remains pending. Linux packaging is a separate deliverable.

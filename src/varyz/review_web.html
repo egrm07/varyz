@@ -185,6 +185,96 @@ button:disabled { opacity: 0.45; cursor: default; }
   #analytics-dialog .actions { display: grid; grid-template-columns: 1fr; }
   #analytics-dialog .actions button { width: 100%; }
 }
+/* The owner's card: shown after a save that keeps rules, and again on Done.
+   The card itself is the only colour; everything around it stays quiet. */
+#card-dialog { position: fixed; width: min(980px, calc(100% - 32px)); max-height: calc(100dvh - 32px);
+  padding: clamp(20px, 3.5vw, 44px); border: 1px solid var(--line); border-radius: 8px;
+  background: var(--night); color: var(--ink); overflow-y: auto; }
+#card-dialog::backdrop { background: rgba(0, 0, 0, 0.78); }
+#card-dialog:focus { outline: none; }
+#card-dialog[open] { animation: card-dialog-in 420ms cubic-bezier(.2, .8, .2, 1); }
+#card-dialog[open]::backdrop { animation: network-fade 520ms ease-out; }
+@keyframes card-dialog-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) {
+  #card-dialog[open], #card-dialog[open]::backdrop { animation: none; }
+}
+#card-close { position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--dim);
+  font: 400 22px/1 var(--sans); cursor: pointer; }
+#card-close:hover { color: var(--ink); }
+#card-close:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.card-panel { display: grid; grid-template-columns: auto minmax(240px, 320px); gap: clamp(28px, 4.5vw, 56px);
+  align-items: center; justify-content: center; }
+.card-figure { margin: 0; width: min(520px, calc((100dvh - 140px) * 0.8)); min-width: 240px; }
+.card-image { display: block; width: 100%; height: auto; aspect-ratio: 4 / 5; border-radius: 3px;
+  background: var(--glass); outline: 1px solid var(--line); }
+/* The reveal, once per page: "Varyz prepared this for you." appears alone in the
+   middle, then moves aside as the card arrives face down with the mark and turns
+   over; the rest follows. */
+/* While the title sits in the middle its full-width box reaches past the edge. */
+.card-panel { overflow-x: clip; }
+.card-figure { perspective: 1600px; }
+.card-turn { position: relative; transform-style: preserve-3d; }
+.card-turn > * { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.card-back { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 3px;
+  background: var(--night); outline: 1px solid var(--line); transform: rotateY(180deg); }
+.card-back svg { width: 22%; height: auto; fill: var(--signal); overflow: visible; }
+/* The fade sits on the figure: opacity on the turning element would flatten it,
+   and the card would show its face mirrored instead of its back. */
+.card-panel.reveal .card-figure { animation: network-fade 500ms ease-out var(--start, 0ms) both; }
+.card-panel.reveal .card-turn { animation: card-deal 1600ms var(--start, 0ms) both; }
+.card-panel.arrive .card-turn { animation: card-arrive 800ms cubic-bezier(.2, .8, .2, 1) var(--start, 0ms) both; }
+.card-panel.reveal .card-side > *, .card-panel.arrive .card-side > *, main.done > .closing {
+  animation: card-rise 650ms cubic-bezier(.2, .8, .2, 1) var(--at, 0ms) both; }
+@keyframes card-deal {
+  0% { transform: translateY(40px) rotateX(12deg) rotateY(180deg) scale(.9);
+    animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+  30% { transform: translateY(0) rotateX(0) rotateY(180deg) scale(.95); }
+  40% { transform: translateY(0) rotateX(0) rotateY(180deg) scale(.95);
+    animation-timing-function: cubic-bezier(.6, 0, .25, 1); }
+  86% { transform: translateY(0) rotateX(0) rotateY(-3deg) scale(1.005);
+    animation-timing-function: ease-out; }
+  100% { transform: translateY(0) rotateX(0) rotateY(0) scale(1); }
+}
+@keyframes card-arrive { from { opacity: 0; transform: translateY(24px) scale(.97); } }
+@keyframes card-rise { from { opacity: 0; transform: translateY(12px); } }
+@media (prefers-reduced-motion: reduce) {
+  .card-panel.reveal .card-figure { animation: none; }
+  .card-panel.reveal .card-turn, .card-panel.arrive .card-turn { animation: network-fade 300ms ease-out both; }
+  .card-panel.reveal .card-side > *, .card-panel.arrive .card-side > *, main.done > .closing {
+    animation: none; }
+}
+.card-side .label { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal);
+  margin: 0 0 14px; }
+.card-side h2 { font: 400 clamp(30px, 3.6vw, 40px)/1.08 var(--display); margin: 0 0 12px;
+  text-wrap: balance; }
+.card-sub { color: var(--muted); font-size: 16px; line-height: 1.5; margin: 0 0 26px; }
+.card-styles { display: flex; gap: 8px; margin-bottom: 14px; }
+.card-styles button { flex: 1; display: inline-flex; align-items: center; justify-content: center;
+  gap: 8px; min-height: 40px; }
+.card-styles button[aria-pressed="true"] { border-color: var(--ink); }
+.swatch { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--muted); }
+.swatch.yellow { background: var(--signal); border-color: var(--signal); }
+.swatch.black { background: var(--night); }
+.card-side .card-download { width: 100%; min-height: 46px; }
+.card-note { color: var(--dim); font-size: 14px; line-height: 1.45; margin: 14px 0 0; min-height: 1.45em; }
+.card-basis { color: var(--dim); font-size: 12px; line-height: 1.45; margin: 16px 0 0; }
+.card-edit { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.card-edit summary { color: var(--muted); cursor: pointer; font-size: 14px; }
+.card-edit summary:focus-visible { outline: 1px solid var(--signal); outline-offset: 3px; }
+.card-edit label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); margin-top: 12px; }
+.card-edit input, .card-edit select { width: 100%; padding: 9px 11px; border-radius: 8px; font: inherit;
+  font-size: 15px; border: 1px solid var(--line); color: var(--ink); background: var(--night); }
+.card-edit input:focus, .card-edit select:focus { outline: 1px solid var(--signal); }
+main.done { padding-bottom: var(--margin); }
+main.done .card-panel { margin-top: calc(var(--gap) * 1.2); justify-content: start; }
+main.done .card-figure { width: min(460px, max(340px, calc((100dvh - 300px) * 0.8))); }
+.closing { color: var(--dim); font-size: 14px; margin-top: var(--gap); }
+@media (max-width: 760px) {
+  .card-panel { grid-template-columns: 1fr; }
+  .card-figure, main.done .card-figure { width: min(100%, 440px); min-width: 0; }
+  #card-dialog .card-figure { margin: 40px auto 0; }
+}
 @media (max-width: 560px) {
   main { padding: 28px 16px 170px; }
   .row { flex-direction: column; }
@@ -243,6 +333,10 @@ button:disabled { opacity: 0.45; cursor: default; }
   <div class="actions">
     <button class="primary" id="analytics-share" type="button">Share anonymized data</button>
   </div>
+</dialog>
+<dialog id="card-dialog" aria-labelledby="card-title" tabindex="-1">
+  <button id="card-close" type="button" aria-label="Close">&times;</button>
+  <div id="card-slot"></div>
 </dialog>
 <script>
 "use strict";
@@ -598,7 +692,10 @@ async function saveDecisions(decisions) {
     showError(failed.length ? `${failed.length} not saved: ${failed[0]}` : "");
     $("notice").textContent = result.done.length ? `${result.done.length} change${result.done.length === 1 ? "" : "s"} saved. The status counts are updated.` : "";
     await load();
-    if (result.done.length) offerNetwork();
+    const keptSome = decisions.some((d) => d.action === "keep" && result.done.includes(d.id));
+    // The card first; the network offer waits until it is closed.
+    if (keptSome && await showCard()) networkAfterCard = true;
+    else if (result.done.length) offerNetwork();
   } catch (error) {
     showError(error.message);
     paint();
@@ -675,11 +772,218 @@ $("analytics-dialog").addEventListener("keydown", (event) => {
 });
 $("analytics-dialog").addEventListener("close", () => $("close").focus());
 
+// The owner's AI type card, made by the server from their rules. A
+// starter line fills a card with fewer than three; downloading keeps it as a rule.
+const STYLES = [["yellow", "Yellow"], ["black", "Black"]];
+let card = null;
+let cardStyle = "yellow";
+let cardShown = false;
+let cardRevealed = false;
+let networkAfterCard = false;
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// The first time the card appears the title comes first, alone, then the card
+// arrives and turns over; after that the card only rises in. Times are when each
+// line beside it fades up, in order, from `start`.
+const TITLE_HOLD = 2550;
+function reveal(panel, start) {
+  const full = !cardRevealed;
+  cardRevealed = true;
+  panel.classList.add(full ? "reveal" : "arrive");
+  panel.style.setProperty("--start", `${start + (full ? TITLE_HOLD : 0)}ms`);
+  const times = full ? [2800, 2800, 3900, 4000, 4070, 4130, 4190] : [160, 230, 300, 370, 430, 480, 530];
+  [...panel.querySelector(".card-side").children].forEach((node, i) => {
+    node.style.setProperty("--at", `${start + times[Math.min(i, times.length - 1)]}ms`);
+  });
+  if (full && !calm()) requestAnimationFrame(() => titleFirst(panel, start));
+  return panel;
+}
+
+// The title fades up in the middle of what is on screen of the panel, holds,
+// then glides to its place beside the card as the card arrives.
+function titleFirst(panel, start) {
+  const title = panel.querySelector("h2");
+  const box = title.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(title);
+  const text = range.getBoundingClientRect();
+  const area = panel.getBoundingClientRect();
+  const top = Math.max(area.top, 0);
+  const bottom = Math.min(area.bottom, innerHeight);
+  const dx = (area.left + area.right) / 2 - (text.left + text.right) / 2;
+  const dy = (top + bottom) / 2 - (text.top + text.bottom) / 2;
+  const scale = Math.min(1.2, (area.width - 32) / text.width);
+  title.style.animation = "none";
+  title.style.transformOrigin = `${(text.left + text.right) / 2 - box.left}px ${(text.top + text.bottom) / 2 - box.top}px`;
+  const centred = `translate(${dx}px, ${dy}px) scale(${scale})`;
+  title.animate([
+    { opacity: 0, transform: `translate(${dx}px, ${dy + 14}px) scale(${scale})`, easing: "cubic-bezier(.2, .8, .2, 1)" },
+    { opacity: 1, transform: centred, offset: 0.19 },
+    { opacity: 1, transform: centred, offset: 0.78, easing: "cubic-bezier(.6, 0, .25, 1)" },
+    { opacity: 1, transform: "none" },
+  ], { duration: 2700, delay: start + 100, fill: "backwards" });
+}
+
+async function loadCard(change) {
+  card = await api("/api/card", change || {});
+  return card;
+}
+
+const lineText = (key) => (card.choices.find((c) => c.key === key) || {}).text || key;
+const quoted = (keys) => keys.map((key) => `\u201c${lineText(key)}\u201d`).join(" and ");
+
+function cardPanel(onKept) {
+  const image = el("img", { class: "card-image", width: "1080", height: "1350", alt: "" });
+  const styles = el("div", { class: "card-styles", role: "group", "aria-label": "Card colour" });
+  const buttons = STYLES.map(([value, label]) => {
+    const button = el("button", { type: "button" }, el("span", { class: `swatch ${value}` }), label);
+    button.addEventListener("click", () => {
+      if (value === cardStyle) return;
+      cardStyle = value;
+      paintCard();
+      if (!calm()) image.animate([{ opacity: 0.2 }, { opacity: 1 }], { duration: 380, easing: "ease-out" });
+    });
+    styles.append(button);
+    return [value, button];
+  });
+  const download = el("button", { class: "primary card-download", type: "button" }, "Download");
+  const note = el("p", { class: "card-note", role: "status", "aria-live": "polite" });
+  const name = el("input", { type: "text", maxlength: "20", autocomplete: "given-name", spellcheck: "false" });
+  const selects = [0, 1, 2].map(() => el("select"));
+  const controls = [download, name, ...selects];
+
+  function own(key) { return (card.choices.find((c) => c.key === key) || {}).own; }
+  function starters() { return card.lines.filter((key) => !own(key)); }
+  function starterNote() {
+    const found = starters();
+    if (!found.length) return "";
+    return found.length === 1
+      ? `${quoted(found)} is a starter line. Downloading adds it to your rules.`
+      : `${quoted(found)} are starter lines. Downloading adds them to your rules.`;
+  }
+  function paintCard() {
+    image.src = card.images[cardStyle];
+    image.alt = `${card.title}: ${card.lines.map(lineText).join(" ")}`;
+    for (const [value, button] of buttons) button.setAttribute("aria-pressed", String(value === cardStyle));
+    if (document.activeElement !== name) name.value = card.name;
+    selects.forEach((select, i) => {
+      const group = (label, mine) => el("optgroup", { label }, ...card.choices
+        .filter((c) => Boolean(c.own) === mine)
+        .map((c) => el("option", { value: c.key }, c.text)));
+      select.replaceChildren(...[group("Your rules", true), group("Starters", false)]
+        .filter((g) => g.children.length));
+      select.value = card.lines[i];
+    });
+  }
+  async function change(update) {
+    controls.forEach((c) => { c.disabled = true; });
+    try {
+      await loadCard(update);
+      note.textContent = starterNote();
+      paintCard();
+    } catch (error) {
+      note.textContent = `The card was not updated: ${error.message}`;
+    } finally {
+      controls.forEach((c) => { c.disabled = false; });
+    }
+  }
+  selects.forEach((select, i) => select.addEventListener("change", () => {
+    const lines = [...card.lines];
+    const other = lines.indexOf(select.value);
+    if (other !== -1) lines[other] = lines[i];  // Picking a line already shown swaps the two.
+    lines[i] = select.value;
+    change({ name: card.name, lines });
+  }));
+  name.addEventListener("change", () => change({ name: name.value, lines: card.lines }));
+  download.addEventListener("click", async () => {
+    download.disabled = true;
+    try {
+      const found = starters();
+      let message = "Downloaded.";
+      if (found.length) {
+        await api("/api/card/keep", { lines: card.lines });
+        for (const choice of card.choices) if (found.includes(choice.key)) choice.own = true;
+        message = `Downloaded. ${quoted(found)} ${found.length === 1 ? "is" : "are"} now in your rules.`;
+        paintCard();
+        if (onKept) onKept();
+      }
+      const link = el("a", { href: card.images[cardStyle], download: `${card.file}-${cardStyle}.png` });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      note.textContent = message;
+    } catch (error) {
+      note.textContent = `Not downloaded: ${error.message}`;
+    } finally {
+      download.disabled = false;
+    }
+  });
+
+  note.textContent = starterNote();
+  paintCard();
+  return el("section", { class: "card-panel", "aria-labelledby": "card-title" },
+    el("figure", { class: "card-figure" }, el("div", { class: "card-turn" }, image,
+      el("div", { class: "card-back", "aria-hidden": "true" },
+        document.querySelector("header.brand svg").cloneNode(true)))),
+    el("div", { class: "card-side" },
+      el("p", { class: "label" }, "Your card"),
+      el("h2", { id: "card-title" }, "Varyz prepared this for you."),
+      el("p", { class: "card-sub" },
+        `Your AI type is ${card.type.title}, ${card.type.share} of people. A card to share.`),
+      styles, download, note,
+      el("details", { class: "card-edit" },
+        el("summary", {}, "Change name or lines"),
+        el("label", {}, "Name on the card", name),
+        ...selects.map((select, i) => el("label", {}, `Line ${i + 1}`, select))),
+      el("p", { class: "card-basis" }, card.basis)));
+}
+
+// After the first save that keeps rules. True when the card is on screen.
+async function showCard() {
+  if (cardShown) return false;
+  cardShown = true;
+  try { await loadCard(); } catch { return false; }
+  cardStyle = "yellow";
+  $("card-slot").replaceChildren(reveal(cardPanel(() => load()), 160));
+  $("card-dialog").showModal();
+  // The dialog takes focus itself, so it opens without a ring on the close button.
+  $("card-dialog").focus();
+  return true;
+}
+
+$("card-close").addEventListener("click", () => $("card-dialog").close());
+$("card-dialog").addEventListener("close", () => {
+  if (networkAfterCard) { networkAfterCard = false; offerNetwork(); }
+  else $("close").focus();
+});
+
 $("close").addEventListener("click", async () => {
   if (saving) return;
   if (choices.size && !confirm("Leave without saving what you picked?")) return;
-  await api("/api/close", {}).catch(() => {});
-  document.body.replaceChildren(el("main", {}, el("p", { class: "empty" }, "Rules view closed. You can close this tab.")));
+  clearInterval(pinger);
+  const brand = document.querySelector("header.brand").cloneNode(true);
+  // Done keeps the server up for the card; closing the tab stops it.
+  await api("/api/done", {}).catch(() => {});
+  let panel = null;
+  try {
+    await loadCard();
+    cardStyle = "yellow";
+    panel = reveal(cardPanel(null), 160);
+  } catch {
+    await api("/api/close", {}).catch(() => {});
+  }
+  document.body.replaceChildren(panel
+    ? el("main", { class: "done" }, brand, el("h1", {}, "All set."),
+      el("p", { class: "lede" }, "Your agents follow your rules from now on."),
+      panel, el("p", { class: "closing" }, "You can close this tab."))
+    : el("main", {}, el("p", { class: "empty" }, "Rules view closed. You can close this tab.")));
+  // The heading is there from the start; the closing line comes after the card.
+  document.querySelector("main.done > .closing")?.style.setProperty("--at", "4600ms");
+  if (panel) {
+    addEventListener("pagehide", () => {
+      fetch("/api/close", { method: "POST", headers: HEADERS, keepalive: true }).catch(() => {});
+    });
+  }
 });
 
 for (const [value, label] of SLOTS) $("kind").append(el("option", { value }, label));
@@ -694,7 +998,7 @@ $("refresh").addEventListener("click", async () => {
 });
 
 // The server stops after a while without a word from the page; reading is not idle.
-setInterval(() => { api("/api/ping").catch(() => {}); }, 60_000);
+const pinger = setInterval(() => { api("/api/ping").catch(() => {}); }, 60_000);
 load();
 </script>
 </body>

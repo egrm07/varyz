@@ -114,6 +114,10 @@ LOCAL_REPLY_TOKENS = 2_500
 CLOUD_REPLY_TOKENS = 8_000
 MAX_FAILURES_IN_A_ROW = 3
 RECHECK_EMPTY_MERGE = 3  # notes in a merge that is done again when it keeps nothing
+# Answers a merge may still fail after its correction before it is settled
+# with only the items that pass; without a bound one note a reader cannot
+# reword holds every later merge (and the whole reading) behind it.
+MERGE_FAILED_RETRIES = 2
 EVERY_PROJECT = "all projects"
 # Why a candidate an older reading queued was withdrawn: not the owner's
 # rejection, so the new reading may queue the same words again.
@@ -1210,41 +1214,65 @@ class Accepted:
     retry_reason: str = ""
 
 
+def _merge_by_number(state: ProfileState, task: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    return {number: note for number, n in enumerate(task["notes"], 1)
+            for note in state.notes if note["n"] == n}
+
+
+def _item_flaws(by_number: dict[int, dict[str, Any]], item: Any,
+                count: int) -> tuple[set[str], set[int]]:
+    """What is wrong with one merge item (empty when nothing) and the notes it accounts for."""
+    if not isinstance(item, dict) or not isinstance(item.get("notes"), list):
+        return {"unusable"}, set()
+    if any(type(number) is not int for number in item["notes"]):
+        return {"invalid"}, set()
+    numbers = {n for n in item["notes"] if 1 <= n <= count}
+    if "exclude" in item:
+        reason = str(item.get("exclude") or "").strip()
+        if len(reason.split()) < 4 or _fold(reason) in {
+            "not useful for the profile", "does not belong in profile",
+            "no useful information here", "nothing useful to keep here",
+        }:
+            return {"unusable"}, set()
+        return set(), numbers
+    group = [by_number[n] for n in numbers if n in by_number]
+    shaped = [_merged_item(item, slot, [note for note in group if note["slot"] == slot])
+              for slot in dict.fromkeys(note["slot"] for note in group)]
+    if not shaped or any(value is None for value in shaped):
+        return {"unusable"}, set()
+    flaws: set[str] = set()
+    if any(_OWNER_VOICE.search(str(value["statement"]).strip())
+           for value in shaped if value is not None):
+        flaws.add("wording")
+    evidence = [proof for note in group for proof in note["evidence"]]
+    if any(not _prohibition_conditions_preserved(value["statement"], evidence)
+           for value in shaped if value is not None):
+        flaws.add("conditions")
+    return flaws, numbers
+
+
+def _sound_merge_items(state: ProfileState, task: dict[str, Any], items: list[Any]) -> list[Any]:
+    """The items of a merge answer that pass every check on their own."""
+    by_number = _merge_by_number(state, task)
+    return [item for item in items
+            if not _item_flaws(by_number, item, len(task["notes"]))[0]]
+
+
 def _merge_problem(state: ProfileState, task: dict[str, Any], items: list[Any]) -> str:
     """A partial summary is not evidence that the omitted notes were rejected."""
     covered: set[int] = set()
     bad_wording: list[int] = []
     lost_conditions: list[int] = []
     invalid_reference = False
-    by_number = {number: note for number, n in enumerate(task["notes"], 1)
-                 for note in state.notes if note["n"] == n}
+    by_number = _merge_by_number(state, task)
     for item in items:
-        if not isinstance(item, dict) or not isinstance(item.get("notes"), list):
-            continue
-        if any(type(number) is not int for number in item["notes"]):
+        flaws, numbers = _item_flaws(by_number, item, len(task["notes"]))
+        if "invalid" in flaws:
             invalid_reference = True
-            continue
-        numbers = {n for n in item["notes"] if 1 <= n <= len(task["notes"])}
-        if "exclude" in item:
-            reason = str(item.get("exclude") or "").strip()
-            if len(reason.split()) < 4 or _fold(reason) in {
-                "not useful for the profile", "does not belong in profile",
-                "no useful information here", "nothing useful to keep here",
-            }:
-                continue
-        else:
-            group = [by_number[n] for n in numbers if n in by_number]
-            shaped = [_merged_item(item, slot, [note for note in group if note["slot"] == slot])
-                      for slot in dict.fromkeys(note["slot"] for note in group)]
-            if not shaped or any(value is None for value in shaped):
-                continue
-            if any(_OWNER_VOICE.search(str(value["statement"]).strip())
-                   for value in shaped if value is not None):
-                bad_wording.extend(sorted(numbers))
-            evidence = [proof for note in group for proof in note["evidence"]]
-            if any(not _prohibition_conditions_preserved(value["statement"], evidence)
-                   for value in shaped if value is not None):
-                lost_conditions.extend(sorted(numbers))
+        if "wording" in flaws:
+            bad_wording.extend(sorted(numbers))
+        if "conditions" in flaws:
+            lost_conditions.extend(sorted(numbers))
         covered.update(numbers)
     missing = sorted(set(by_number) - covered)
     problems = []
@@ -1298,13 +1326,22 @@ def accept(
         if problem:
             # Validate the whole answer before forwarding/queuing anything. A
             # failed reconciliation remains pending instead of erasing notes.
-            if task.get("coverage_retry"):
+            if not task.get("coverage_retry"):
+                task["coverage_retry"] = True
+                task["retry_reason"] = problem
+                result.redo = True
+                result.retry_reason = problem
+                return result
+            failed = int(task.get("failed_retries") or 0) + 1
+            if failed < MERGE_FAILED_RETRIES:
+                task["failed_retries"] = failed
                 raise ValueError("The merge is still incomplete: " + problem)
-            task["coverage_retry"] = True
-            task["retry_reason"] = problem
-            result.redo = True
-            result.retry_reason = problem
-            return result
+            # The bounded retries are spent: keep only what passes. The other
+            # notes stay in the reading and are merged again in the project's
+            # next pass, once a new note makes it dirty.
+            sound = _sound_merge_items(state, task, items)
+            result.dropped += len(items) - len(sound)
+            items = sound
     if task["kind"] == "read":
         _accept_read(state, conn, task, items, tier, result)
     else:

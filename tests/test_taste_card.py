@@ -157,7 +157,7 @@ def _owner(*rules: CardRule) -> OwnerRules:
 
 
 def _run(tmp_path: Path, *args: str) -> tuple[int, str]:
-    result = CliRunner().invoke(app, ["wrapped", *args, "--config", str(_config(tmp_path))])
+    result = CliRunner().invoke(app, ["my-way", *args, "--config", str(_config(tmp_path))])
     return result.exit_code, result.output
 
 
@@ -294,11 +294,11 @@ def test_every_pairing_has_its_own_title() -> None:
     keys = [signal.key for signal in SIGNALS]
     pairs = {frozenset(pair) for pair in itertools.combinations(keys, 2)}
     assert set(PAIRS) == pairs
-    assert len(set(PAIRS.values())) == len(pairs) == 21
-    # 7 single streaks + 21 pairings + the fallback, all different.
-    assert len(ARCHETYPES) == 29
-    assert len({item.title for item in ARCHETYPES.values()}) == 29
-    assert len({item.line for item in ARCHETYPES.values()}) == 29
+    assert len(set(PAIRS.values())) == len(pairs) == 36
+    # 9 single streaks + 36 pairings + the fallback, all different.
+    assert len(ARCHETYPES) == 46
+    assert len({item.title for item in ARCHETYPES.values()}) == 46
+    assert len({item.line for item in ARCHETYPES.values()}) == 46
     for families, key in PAIRS.items():
         first, second = sorted(families)
         rules = [
@@ -319,7 +319,7 @@ def test_a_pairing_needs_both_families_to_run_level() -> None:
         _rule(5, "Every change needs tests."),
         _rule(6, "Measure against a baseline."),
     ]
-    # 5 about privacy against 2 about proof is not level: the Gatekeeper, not the Auditor.
+    # 5 about privacy against 2 about proof is not level: the Bodyguard, not the Auditor.
     assert classify(rules).archetype == ARCHETYPES["guard"]
 
 
@@ -332,6 +332,8 @@ _SAMPLE = {
     "autopilot": ("It runs unattended", "A watchdog restarts it overnight"),
     "lean": ("Keep it simple", "Prefer the stdlib"),
     "craft": ("Pick the fonts with care", "Check the layout on mobile"),
+    "speed": ("Reply right away", "Iterate quickly"),
+    "money": ("Watch the budget", "Nothing expensive"),
 }
 
 
@@ -641,7 +643,7 @@ def test_dry_run_shows_everything_and_writes_nothing(
 def test_declining_the_prompt_writes_nothing(tmp_path: Path, ids: dict[str, str]) -> None:
     out = tmp_path / "cards"
     result = CliRunner().invoke(
-        app, ["wrapped", "--out", str(out), "--config", str(_config(tmp_path))], input="n\n"
+        app, ["my-way", "--out", str(out), "--config", str(_config(tmp_path))], input="n\n"
     )
     assert result.exit_code == 0, result.output
     assert "Nothing written." in result.output

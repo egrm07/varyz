@@ -6,6 +6,8 @@ step. It removes only what is safe to remove and says how much it left out:
 
 - rules for another kind of work (a website checklist on a video task);
 - rules that name another of the owner's projects, unless the task names it too;
+- rules for a situation the task is not in ("When preparing creator outreach, ..."
+  on a bug fix);
 - formatting-only copies of the same rule (the newest copy stays);
 
 then ranks what is left the way the local briefing always has, and fills places
@@ -33,6 +35,25 @@ _CONTRACTIONS = {
     "shouldn't": "should not", "never": "do not ever",
 }
 _VERSION = re.compile(r"(?:[.\-_ ]v?|v)\d+(?:\.\d+)*$")
+# "When preparing creator outreach, ..." holds only in that situation: the words
+# before the first comma or colon.
+_CONDITION = re.compile(
+    r"^\s*(?:when|whenever|if|for|in|before|after|during|while)\s+([^,:;]{3,160})[,:;]", re.I)
+# A situation every task is in ("When you finish a task") does not narrow a rule,
+# and a bare verb ("When testing ...") says too little to rule one out.
+_ANY_WORK = _terms(
+    "work task code coding engineering change finish done report reply answer respond "
+    "write writing ask question agent session anything everything something owner user "
+    "every each any all new existing unsure unclear uncertain doubt ambiguous possible "
+    "needed necessary blocked stuck error failure wrong missing problem mistake correct "
+    "correction instruction request project app application tool program product feature "
+    "choice decision next step explain result describe summary")
+_VERBS = _terms(
+    "make making prepare preparing create creating build building test testing use using "
+    "run running add adding update updating fix fixing send sending show showing keep "
+    "keeping do doing work working handle handling start starting declare declaring call "
+    "calling say saying claim claiming give giving get getting tell telling extend "
+    "extending review reviewing offer offering help helping")
 
 
 class RuleLike(Protocol):
@@ -82,6 +103,21 @@ class Selection:
     # Kept rule id -> ids of formatting copies left out.
     merged: dict[str, list[str]] = field(default_factory=dict)
     other_project: int = 0
+    off_situation: int = 0
+
+
+def other_situation(statement: str, task_terms: set[str], project_terms: set[str]) -> bool:
+    """A conditional rule whose situation the task shares no word with.
+
+    Only the condition decides, never the instruction after it, and project names
+    and bare verbs do not count as a shared word: "When preparing Varyz creator
+    outreach" stays out of a Varyz bug fix even though both say "Varyz".
+    """
+    found = _CONDITION.match(unicodedata.normalize("NFKC", statement))
+    if found is None or not task_terms:
+        return False
+    situation = _terms(found.group(1)) - project_terms - _ANY_WORK - _VERBS
+    return bool(situation) and not situation & task_terms
 
 
 def _words(statement: str) -> set[str]:
@@ -170,6 +206,8 @@ def select(
     budget_chars: int | None = None,
     known_projects: Iterable[str] = (),
     normalize_scope: Any = None,
+    exclude: Collection[str] = (),
+    context: str = "",
 ) -> Selection:
     """Standing rules that bear on a task, newest first within equal rank.
 
@@ -177,16 +215,23 @@ def select(
     scope, rules sharing terms with the task come first; standing rules with no
     shared term still fill the remaining places, because "dry-run first" governs
     a task that never says "dry-run". At least half of ``limit`` goes to rules for
-    every project when there are that many. With ``budget_chars``, places past
-    ``limit`` keep filling in rank order while the shown statements fit.
+    every project when there are that many. ``exclude`` names rules the briefing
+    shows in a section of their own (``writing_rules``). With ``budget_chars``, places past
+    ``limit`` keep filling in rank order while the shown statements fit. A rule for
+    a situation the task is not in stays out (``other_situation``); ``context`` adds
+    words that describe the task without being part of it (its kinds of work).
     """
     project_scope = (normalize_scope or (lambda value: value))(project) if project else None
     lowered = unicodedata.normalize("NFKC", task).casefold()
     wanted = set(domains)
     known = list(known_projects)
     candidates: list[RuleLike] = []
-    other_project = 0
+    other_project = off_situation = 0
+    situation = _terms(f"{task} {context}") if task.strip() else set()
+    project_terms = _terms(f"{project or ''} {project_scope or ''}")
     for rule in rules:
+        if rule.id in exclude:
+            continue
         if rule.domain and rule.domain not in wanted:
             continue
         if not _in_scope(rule, project_scope, lowered):
@@ -195,6 +240,9 @@ def select(
             rule.statement, project_scope, task, known
         ):
             other_project += 1
+            continue
+        if rule.kind != "vision" and other_situation(rule.statement, situation, project_terms):
+            off_situation += 1
             continue
         candidates.append(rule)
     candidates, merged = collapse(candidates)
@@ -247,11 +295,12 @@ def select(
         merged={key: ids for key, ids in merged.items()
                 if any(rule.id == key for rule, _ in chosen)},
         other_project=other_project,
+        off_situation=off_situation,
     )
 
 
 __all__ = [
     "RULE_OVERHEAD", "RuleLike", "RuleView", "Selection", "collapse", "cost",
-    "names_other_project",
+    "names_other_project", "other_situation",
     "project_base", "same_rule", "select",
 ]

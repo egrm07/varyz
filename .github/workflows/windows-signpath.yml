@@ -1,0 +1,91 @@
+name: Windows signed installer
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  sign:
+    # Stays off until the SignPath Foundation project exists; see docs/NATIVE_INSTALLER.md.
+    if: github.repository == 'egrm07/varyz' && vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      UV_MANAGED_PYTHON: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: 0.11.2
+          enable-cache: false
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - name: Build from locked inputs on the clean runner
+        run: uv run --no-sync python scripts/windows/ci_build.py
+      - name: Check the unsigned candidate against its source provenance
+        shell: pwsh
+        run: |
+          $proof = Get-Content dist/native-ci/native-release-provenance.json -Raw | ConvertFrom-Json
+          if ($proof.revision -ne $env:GITHUB_SHA -or $proof.working_tree_dirty) { throw 'Unexpected source provenance' }
+          $exe = Get-Item dist/native-ci/VaryzSetup-*-windows-x64.exe
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe.FullName).Hash.ToLowerInvariant()
+          if ($actualHash -ne $proof.artifacts.PSObject.Properties[$exe.Name].Value) { throw 'Installer changed after provenance capture' }
+      - id: unsigned
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Varyz-Windows-unsigned
+          path: dist/native-ci/VaryzSetup-*-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Ask SignPath to sign it (an approver confirms by hand)
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: varyz
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-installer
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: dist/native-signed
+      - name: Verify the SignPath Foundation signature
+        shell: pwsh
+        run: |
+          $exe = Get-Item dist/native-signed/VaryzSetup-*-windows-x64.exe
+          $signature = Get-AuthenticodeSignature -LiteralPath $exe.FullName
+          if ($signature.Status -ne 'Valid') { throw "Installer signature is $($signature.Status)" }
+          if ($signature.SignerCertificate.Subject -notmatch 'SignPath Foundation') { throw 'Unexpected signer' }
+          if (-not $signature.TimeStamperCertificate) { throw 'Signature has no timestamp' }
+          [ordered]@{
+            artifact = $exe.Name
+            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe.FullName).Hash.ToLowerInvariant()
+            subject = $signature.SignerCertificate.Subject
+            thumbprint = $signature.SignerCertificate.Thumbprint
+            timestamped_by = $signature.TimeStamperCertificate.Subject
+            source_commit = $env:GITHUB_SHA
+          } | ConvertTo-Json | Set-Content -Encoding utf8 dist/native-signed/native-signature.json
+      # Signing changes the bytes, so the release checksums come from the signed file.
+      - name: Record checksums of the signed installer
+        run: uv run --no-sync python scripts/release_manifest.py --package-dir dist/native-signed --output dist/native-signed/native-release-provenance.json
+      - name: Launch the exact signed EXE in isolated paths
+        shell: pwsh
+        run: |
+          $exe = Get-Item dist/native-signed/VaryzSetup-*-windows-x64.exe
+          $signature = Get-AuthenticodeSignature -LiteralPath $exe.FullName
+          $env:EXPECTED_EXE_SHA256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe.FullName).Hash.ToLowerInvariant()
+          $env:EXPECTED_SOURCE_COMMIT = $env:GITHUB_SHA
+          $env:INSTALLER_SIGNATURE = "signed by SignPath Foundation; thumbprint $($signature.SignerCertificate.Thumbprint)"
+          uv run --no-sync python scripts/windows/ci_acceptance.py $exe.FullName
+      - name: Retain the signed installer and its receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Varyz-Windows-signed
+          path: |
+            dist/native-signed/native-release-provenance.json
+            dist/native-signed/native-signature.json
+            dist/native-signed/VaryzSetup-*-windows-x64.exe
+            ${{ runner.temp }}/varyz-native-acceptance/verified.json
+          if-no-files-found: warn
+          retention-days: 30

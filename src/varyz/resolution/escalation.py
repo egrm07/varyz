@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from varyz.domain import new_id, utc_now
@@ -23,6 +23,7 @@ from varyz.resolution.knowledge import (
 )
 from varyz.resolution.models import Caller, Resolution, ResolutionRequest
 from varyz.resolution.ports import Notifier
+from varyz.resolution.questioning import QUESTION_TTL_DAYS
 from varyz.resolution.scope import suggest_scope
 
 
@@ -266,6 +267,14 @@ class SQLiteEscalationQueue:
                 )
                 count += 1
         return count
+
+    def expire_stale(self) -> int:
+        """Close questions left unanswered for ``QUESTION_TTL_DAYS`` as expired.
+
+        Nothing is learned from them and the rows stay in the audit trail; the
+        agent that asked has long moved on, so no briefing relays them again.
+        """
+        return self.expire(before=self._clock() - timedelta(days=QUESTION_TTL_DAYS))
 
     def dismiss(self, escalation_id: str) -> bool:
         """Close a pending question without an answer; nothing is learned from it.

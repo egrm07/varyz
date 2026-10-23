@@ -35,7 +35,7 @@ from varyz.resolution.briefing import finish_check, render_markdown, start_task
 from varyz.resolution.client import ResolutionClient
 from varyz.resolution.daemon import build_resolution_daemon
 from varyz.resolution.domains import detect_domains
-from varyz.resolution.escalation import NullNotifier
+from varyz.resolution.escalation import NullNotifier, SQLiteEscalationQueue
 from varyz.resolution.knowledge import SQLiteKnowledgeStore
 from varyz.resolution.models import Caller
 from varyz.resolution.principles import SQLitePrincipleStore
@@ -503,6 +503,34 @@ def test_the_owner_can_dismiss_questions_without_teaching_anything(
     assert server.call("ask", {"question": question, "project": "scratch"})["basis"] == "escalated"
 
 
+def test_only_this_conversations_recent_questions_are_relayed(
+    server: VaryzServer, daemon_client: ResolutionClient, db: sqlite3.Connection
+) -> None:
+    def ask(question: str, conversation: str) -> str:
+        return server.call("ask", {"question": question, "project": "lumen",
+                                   "conversation_id": conversation})["ask_owner"]["escalation_id"]
+
+    here = ask("Which headline should the hero use?", "c-here")
+    ask("Which font for the logo?", "c-other")
+    old = ask("Which colour for the footer?", "c-here")
+    db.execute("UPDATE resolution_escalations SET created_at = ? WHERE id = ?",
+               ("2026-01-01T00:00:00+00:00", old))
+    db.commit()
+
+    check = finish_check(db, "Build a landing page", project="lumen", conversation_id="c-here")
+    assert [item["escalation_id"] for item in check["open_owner_questions"]] == [here]
+    briefing = start_task(db, "Build a landing page", project="lumen", conversation_id="c-here")
+    assert [item["escalation_id"] for item in briefing["pending_owner_questions"]] == [here]
+    # No conversation, no backlog: earlier tasks' questions are not this task's.
+    assert finish_check(db, "Build a landing page", project="lumen")["open_owner_questions"] == []
+
+    queue = SQLiteEscalationQueue(db, SQLiteKnowledgeStore(db), device_id=DEVICE)
+    assert queue.expire_stale() == 1
+    assert old not in {item["id"] for item in daemon_client.pending()}
+    assert db.execute("SELECT status FROM resolution_escalations WHERE id = ?",
+                      (old,)).fetchone()[0] == "expired"  # kept, not deleted
+
+
 def test_start_task_and_finish_check_through_the_server(
     server: VaryzServer, daemon_client: ResolutionClient
 ) -> None:
@@ -637,6 +665,34 @@ def test_the_first_task_is_briefed_and_later_prompts_only_add_new_kinds_of_work(
     assert "Add a favicon" not in added
 
 
+def test_first_briefing_after_session_start_leaves_out_the_policy_it_already_gave(
+    tmp_path: Path, config_path: Path, db: sqlite3.Connection, monkeypatch
+) -> None:
+    from varyz import handoff, news
+    from varyz.resolution import prompt_kind
+    from varyz.resolution.questioning import QUESTION_POLICY
+
+    _website_owner(db)
+    cfg = _cfg(config_path)
+    for module, name in ((install, "refresh_managed_instructions"),
+                         (hooks, "_start_daemon_if_down"), (prompt_kind, "warm_for_session"),
+                         (news, "maybe_check_on_use"), (handoff, "warm")):
+        monkeypatch.setattr(module, name, lambda *a, **k: None)
+    prompt = "Build the landing page for persona"
+    cwd = str(tmp_path / "persona")
+    started = hooks.session_start(cfg, {"session_id": "started", "cwd": cwd})
+    assert QUESTION_POLICY in started["hookSpecificOutput"]["additionalContext"]
+
+    short = hooks.user_prompt(cfg, {"session_id": "started", "cwd": cwd, "prompt": prompt})
+    full = hooks.user_prompt(cfg, {"session_id": "no-start", "cwd": cwd, "prompt": prompt})
+    short = short["hookSpecificOutput"]["additionalContext"]
+    full = full["hookSpecificOutput"]["additionalContext"]
+    assert QUESTION_POLICY in full and QUESTION_POLICY not in short
+    for kept in ("Add a favicon in every size.", "finish_check", "remember_owner_workflow"):
+        assert kept in short
+    assert len(short) < len(full)
+
+
 def test_live_rules_reach_existing_sessions_on_short_non_task_prompts(
     tmp_path: Path, config_path: Path, db: sqlite3.Connection, monkeypatch
 ) -> None:
@@ -767,7 +823,7 @@ def test_the_done_gate_fires_once_per_task_and_only_after_edits(
     tmp_path: Path, config_path: Path, db: sqlite3.Connection
 ) -> None:
     _website_owner(db)
-    cfg = _cfg(config_path)
+    cfg = _cfg(config_path, done_gate=True)
     event = {"session_id": "s2", "cwd": str(tmp_path / "persona")}
     hooks.user_prompt(cfg, {**event, "prompt": "Build the landing page for persona"})
 
@@ -794,7 +850,7 @@ def test_the_done_gate_lets_an_agent_that_checked_itself_report_once(
     tmp_path: Path, config_path: Path, db: sqlite3.Connection
 ) -> None:
     _website_owner(db)
-    cfg = _cfg(config_path)
+    cfg = _cfg(config_path, done_gate=True)
     event = {"session_id": "s4", "cwd": str(tmp_path / "persona")}
     hooks.user_prompt(cfg, {**event, "prompt": "Build the landing page for persona"})
 
@@ -808,6 +864,22 @@ def test_the_done_gate_lets_an_agent_that_checked_itself_report_once(
     hooks.user_prompt(cfg, {**event, "prompt": "Build the landing page for persona"})
     stale = _transcript(tmp_path / "stale.jsonl", PROMPT, CHECK, EDIT, RESULT)
     assert hooks.stop(cfg, {**event, "transcript_path": stale})["decision"] == "block"
+
+
+def test_by_default_the_stop_hook_shows_the_owner_nothing(
+    tmp_path: Path, config_path: Path, db: sqlite3.Connection
+) -> None:
+    # The client prints a blocking Stop note under the reply the owner just read.
+    _website_owner(db)
+    _rule(db, "Do not use em dashes in anything you write.")
+    cfg = load_config(config_path)
+    assert not cfg.agent.done_gate and not cfg.agent.writing_check
+    event = {"session_id": "s6", "cwd": str(tmp_path / "persona")}
+    hooks.user_prompt(cfg, {**event, "prompt": "Build the landing page for persona"})
+    said = {"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "Done — the page is live."}]}}
+    edited = _transcript(tmp_path / "edit.jsonl", PROMPT, EDIT, RESULT, said)
+    assert hooks.stop(cfg, {**event, "transcript_path": edited}) is None
 
 
 def test_varyz_texts_ask_for_exceptions_not_a_walkthrough() -> None:

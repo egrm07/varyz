@@ -230,7 +230,8 @@ def test_a_rule_learned_in_two_projects_is_queued_once_for_every_project(
 
     store.confirm(lifted, caller=OWNER, device_id=DEVICE)
     briefing = start_task(conn, "Write the launch copy", project="persona")
-    assert [rule["statement"] for rule in briefing["how_owner_works"]] == [
+    # A rule on how text reads has a section of its own (``writing_rules``).
+    assert [rule["statement"] for rule in briefing["writing_rules"]] == [
         "never use em dashes!"]
 
 
@@ -253,7 +254,7 @@ def test_rules_for_every_project_reach_a_project_with_many_rules_of_its_own(
 ) -> None:
     for number in range(6):
         _add(store, f"Shop pages rule {number}: keep shop pages light.", scope="shop")
-    everywhere = _add(store, "Never use em-dashes.")
+    everywhere = _add(store, "Never create git commits unless I ask.")
 
     chosen, left_out = store.applicable("Build the shop pages", project="shop", limit=4)
     assert len(chosen) == 4 and left_out == 3

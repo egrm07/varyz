@@ -15,6 +15,9 @@ from urllib.parse import parse_qs, urlsplit
 SOURCES = frozenset({"direct", "internal", "search", "social", "ai", "referral"})
 TIMINGS = frozenset({"lt100", "100-299", "300-999", "1000-2999", "gte3000"})
 STATUSES = frozenset({"2xx", "3xx", "4xx", "5xx"})
+PLATFORMS = frozenset(
+    {"Windows", "macOS", "macOS (Apple Silicon)", "macOS (Intel)", "Linux"}
+)
 
 
 class Counters:
@@ -29,12 +32,43 @@ class Counters:
                 "bucket TEXT NOT NULL, total INTEGER NOT NULL, "
                 "PRIMARY KEY(day,kind,dimension,bucket)) WITHOUT ROWID"
             )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS downloads ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "at TEXT NOT NULL, platform TEXT NOT NULL, asset TEXT NOT NULL)"
+            )
             db.commit()
 
     def connect(self):
         return sqlite3.connect(self.path, timeout=5)
 
     def record(self, value: object):
+        if isinstance(value, dict) and value.get("kind") == "download":
+            if set(value) - {"kind", "platform", "asset"} or not {
+                "kind",
+                "platform",
+                "asset",
+            } <= set(value):
+                raise ValueError("Invalid download metric")
+            platform = value["platform"]
+            asset = value["asset"]
+            if (
+                not isinstance(platform, str)
+                or platform not in PLATFORMS
+                or not isinstance(asset, str)
+                or not 1 <= len(asset) <= 80
+            ):
+                raise ValueError("Invalid download metric")
+            now = datetime.now(UTC)
+            at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+            cutoff = (now - timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            with closing(self.connect()) as db, db:
+                db.execute(
+                    "INSERT INTO downloads(at,platform,asset) VALUES (?,?,?)",
+                    (at, platform, asset),
+                )
+                db.execute("DELETE FROM downloads WHERE at < ?", (cutoff,))
+            return
         if not isinstance(value, dict) or set(value) != {
             "page",
             "source",
@@ -70,12 +104,18 @@ class Counters:
             )
 
     def summary(self, days: int, kind: str = "traffic"):
-        start = (datetime.now(UTC).date() - timedelta(days=days - 1)).isoformat()
+        now = datetime.now(UTC)
+        start = (now.date() - timedelta(days=days - 1)).isoformat()
+        cutoff_30d = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
         with closing(self.connect()) as db:
             rows = db.execute(
                 "SELECT day,dimension,bucket,total FROM counts WHERE day>=? AND kind=? "
                 "ORDER BY day,dimension,bucket",
                 (start, kind),
+            ).fetchall()
+            dl_rows = db.execute(
+                "SELECT at,platform,asset FROM downloads WHERE at>=? ORDER BY at DESC",
+                (cutoff_30d,),
             ).fetchall()
         totals: dict[str, dict[str, int]] = {k: {} for k in ("page", "source", "status", "timing")}
         daily: dict[str, int] = {}
@@ -89,6 +129,11 @@ class Counters:
             "requests": sum(daily.values()),
             "daily": daily,
             "totals": totals,
+            "downloads_30d": len(dl_rows),
+            "downloads_recent": [
+                {"at": at, "platform": platform, "asset": asset}
+                for at, platform, asset in dl_rows[:50]
+            ],
             "note": (
                 "Public HTML requests, not unique visitors. "
                 "Known bots and privacy signals excluded."

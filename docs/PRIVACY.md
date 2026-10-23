@@ -72,7 +72,8 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
   Varyz. Closing the popup means no; after a no it is offered again at most once, no
   sooner than 30 days later. If you opt in, Varyz sends two things to
   Egor Menshikov, Varyz's creator, at cloud.varyzai.com. The first is daily usage and
-  reliability counts (UTC day, app version and OS family, no content); received count
+  reliability counts (UTC day, app version and OS family, no content), such as how many
+  conversations used an answer or rule you saved in an earlier one; received count
   reports expire after 30 days.
 - The second is anonymized examples created after you opt in: questions your agents asked
   Varyz and the answers they got, whether you adopted, overrode or corrected them and the
@@ -178,6 +179,25 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
   expiry; this is not an exact per-entry deletion deadline. The accounting-record
   retention arrangement remains a public-launch check. Immediate erasure from
   every backup or a provider's retained records is not promised.
+
+## Google sign-in and Gmail
+
+- Signing in to Varyz Cloud with Google asks only for your basic identity (`openid` and
+  `email`). Varyz receives your Google account identifier and email address and uses them
+  only to create your account and sign you in. It does not receive your contacts, files,
+  calendar or messages.
+- The Gmail permission requested through Varyz Cloud is send-only (`gmail.send`). It is
+  used only by the operator's own outreach tool, connected to the operator's own
+  varyzai.com mailbox, to send individual messages the operator has reviewed and approved.
+  It cannot read, search, change or delete mail, and no Gmail content is downloaded or
+  stored. The resulting access token is stored encrypted on the Cloud server and can be
+  revoked at any time under Security, Third-party connections in the Google Account.
+- Varyz's use and transfer to any other app of information received from Google APIs will
+  adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
+  including the Limited Use requirements. Google user data is not sold, not used for
+  advertising, not used to train AI models and not transferred to others except as needed
+  to provide the features above, for security, or as required by law. People do not read
+  it except with your permission, for security, or as required by law.
 
 ## Optional approved Cloud history: private deployment 2026-10-05
 

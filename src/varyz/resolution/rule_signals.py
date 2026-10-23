@@ -15,7 +15,7 @@ Only unambiguous signals are kept, all local and append-only:
   this computer.
 - the agent and model behind each check, so rules holding can be compared by model;
   a ``corrected`` row right after a ``passed`` one is a false "done".
-- the memory test, opt-in (``[signals] memory_test``): a small random share of
+- the memory test, on by default (``[signals] memory_test``): a small random share of
   low-stakes rules is held back from a task's briefing and revealed at its check,
   with each draw kept in ``rule_exposures``. Rules reached outside a conversation
   (advise without one) are never held back, which only understates the effect.
@@ -208,8 +208,8 @@ def memory_test_rate(cfg: Any) -> float:
 
 
 def held_back(principles: Iterable[Any], conversation_id: str | None, cfg: Any) -> set[str]:
-    """Rules this task's briefing leaves out for the memory test. Empty unless the
-    owner turned it on and the task has an id."""
+    """Rules this task's briefing leaves out for the memory test. Empty when the
+    owner turned it off or the task has no id."""
     rate = memory_test_rate(cfg)
     if not rate or not conversation_id:
         return set()

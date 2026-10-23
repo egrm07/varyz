@@ -354,6 +354,7 @@ def test_hook_collects_without_changing_context(archive, monkeypatch):
     add(store, "Never commit unless asked.")
     monkeypatch.setattr(hooks, "_reading_offer", lambda *a, **k: None)
     monkeypatch.setattr(hooks, "_record_trial_uses", lambda *a, **k: None)
+    monkeypatch.setattr(hooks, "_left_off", lambda *a, **k: "")
     monkeypatch.setattr(hooks, "is_task", lambda *a: True)
     monkeypatch.setattr(hooks, "_state_path", lambda *a: None)
     monkeypatch.setattr("varyz.resolution.prompt_kind.prompt_classifier_from_config",

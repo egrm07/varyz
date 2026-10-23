@@ -1,4 +1,7 @@
-"""The "My Way" card (`varyz wrapped`): how the owner wants things done.
+"""The "My Way" card (`varyz my-way`): how the owner wants things done.
+
+Monthly Varyz Wrapped (`varyz wrapped` and the review page) uses the shorter
+AI type card in ``card.work_with`` instead.
 
 Built only from the owner's own explicit rules (``owner_principles`` and
 ``owner_knowledge``), general rules only unless the owner names a project rule,

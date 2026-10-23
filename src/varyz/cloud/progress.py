@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from varyz.cloud.session_reports import Change, Identity, Report
-from varyz.session_progress import PROGRESS_POLICY, Checkpoint
+from varyz.session_progress import PROGRESS_POLICY, Checkpoint, left_open
 
 
 class HostedCheckpoint(Checkpoint):
@@ -208,14 +208,14 @@ class HostedProgress:
 
     def _states(self, db, account, project):
         # One CURRENT report per session; historical matching snapshots cannot reopen work.
+        # The newest report wins, so turns captured at stop time supersede an older
+        # live checkpoint; a live checkpoint wins a tie.
         rows = db.execute(
             "SELECT payload FROM (SELECT r.*,ROW_NUMBER() OVER "
-            "(PARTITION BY conversation ORDER BY occurred DESC,source_seq DESC,id DESC) "
+            "(PARTITION BY conversation ORDER BY occurred DESC,"
+            "(origin='agent_report') DESC,source_seq DESC,id DESC) "
             "AS rank FROM cloud_session_reports r WHERE account=? AND project=? "
-            "AND payload!='null' AND (origin='agent_report' OR NOT EXISTS "
-            "(SELECT 1 FROM cloud_session_reports live WHERE live.account=r.account "
-            "AND live.project=r.project AND live.conversation=r.conversation "
-            "AND live.origin='agent_report' AND live.payload!='null'))) "
+            "AND payload!='null') "
             "current WHERE rank=1 ORDER BY occurred DESC LIMIT 200",
             (account, self.reports.key(account, project.casefold())),
         ).fetchall()
@@ -253,12 +253,12 @@ class HostedProgress:
             }
             candidates = []
             for root, report in self._states(db, account, project).items():
-                if report["status"] not in {"working", "blocked"}:
+                if not left_open(report):
                     continue
                 text = " ".join([report["task"], *report["done"], *report["pending"]])
                 score = len(words & set(re.findall(r"[^\W_]{3,}", text.casefold())))
-                if not score:
-                    continue
+                if report["conversation_id"] == conversation_id:
+                    continue  # the asking session's own thread is not earlier work
                 claim = db.execute(
                     "SELECT holder,expires FROM session_work_claims WHERE account=? AND thread=?",
                     (account, self.reports.key(account, root)),
@@ -281,6 +281,9 @@ class HostedProgress:
                 }
                 entry["thread_id"] = root
                 entry["claimed"] = bool(claim and claim["expires"] > datetime.now(UTC).isoformat())
+                # A vague prompt ("continue") matches nothing: the most recent
+                # unfinished threads still come back, after any that match.
+                entry["match"] = "topic" if score else "recent"
                 candidates.append((score, report["occurred_at"], entry))
         result = []
         for _, _, entry in sorted(candidates, key=lambda item: item[:2], reverse=True):

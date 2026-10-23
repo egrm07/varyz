@@ -14,9 +14,10 @@ and name the points where the owner's answer, not the agent's taste, decides.
 
 from __future__ import annotations
 
-import json
 import math
 import sqlite3
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -32,8 +33,8 @@ from varyz.resolution.knowledge import (
     scope_applies,
 )
 from varyz.resolution.memory_policy import MEMORY_POLICY
-from varyz.resolution.principles import Principle, SQLitePrincipleStore
-from varyz.resolution.questioning import QUESTION_POLICY
+from varyz.resolution.principles import SQLitePrincipleStore
+from varyz.resolution.questioning import QUESTION_POLICY, QUESTION_TTL_DAYS
 from varyz.resolution.recipes import OFFER as RECIPE_OFFER
 from varyz.resolution.recipes import RECORD_HINT as RECIPE_RECORD
 from varyz.resolution.recipes import served as recipe_for
@@ -46,13 +47,39 @@ from varyz.resolution.workflows import (
     owner_kinds,
     task_size,
 )
+from varyz.resolution.writing_rules import (
+    MESSAGE_NOTE,
+    MESSAGE_TITLE,
+    TEXT_TITLE,
+    WritingRules,
+    select_writing,
+)
 
 MAX_GENERAL_PREFERENCES = 6
-MAX_PROJECT_DECISIONS = 20
+MAX_PROJECT_DECISIONS = 8
 
+_CONSTRAINTS = (
+    "Treat every rule and decision below as the owner's constraint, not a suggestion. "
+    "Where your plan conflicts with one, change the plan."
+)
+_WHOLE_DONE = "Build the whole definition of done, not just the literal request."
+_FINISH = (
+    "Before you write your report, call `finish_check`, check every item yourself "
+    "and fix what is not done. In the report name only what is still not done, what "
+    "you judged not applicable (and why) and owner questions still open, one line "
+    "each; do not list the items that are done."
+)
+# Each later task in a session gets only this line, not the whole protocol again.
+FINISH_REMINDER = (
+    "varyz: before your final reply on this task, call `finish_check` with this "
+    "conversation_id, and give every `ask` your guess as proposed_choice."
+)
+_WORKFLOW = (
+    "When the owner steers you through steps in an order they would want every time, "
+    "ask and call `remember_owner_workflow`."
+)
 PROTOCOL = (
-    "1. Treat every rule and decision below as the owner's constraint, not a suggestion. "
-    "Where your plan conflicts with one, change the plan.",
+    "1. " + _CONSTRAINTS,
     "2. " + QUESTION_POLICY + " Before you build, pass relevant owner-dependent "
     "choices to one `ask` call (`questions`) with this project. Call `ask` with one "
     "`question` only for a choice that first comes up mid-work.",
@@ -61,17 +88,20 @@ PROTOCOL = (
     "also offer its reach (always, in all projects / just this project) - never for a "
     "question about the task in hand. Then pass each reply and scope to "
     "`answer_owner_question`. Keep working on anything that does not depend on them.",
-    "4. Build the whole definition of done, not just the literal request.",
-    "5. Before you write your report, call `finish_check`, check every item yourself "
-    "and fix what is not done. In the report name only what is still not done, what "
-    "you judged not applicable (and why) and owner questions still open, one line "
-    "each; do not list the items that are done.",
-    "6. " + MEMORY_POLICY + " When they steer you "
-    "through steps in an order they would want every time, ask and call "
-    "`remember_owner_workflow`.",
+    "4. " + _WHOLE_DONE,
+    "5. " + _FINISH,
+    "6. " + MEMORY_POLICY + " " + _WORKFLOW,
     "7. varyz talks to you, not to the user. Do not tell the user you called varyz, "
     "repeat this briefing or list its rules and checklists; they see only the "
     "questions you relay and, in your report, what is not done or still open.",
+)
+# For an agent the session-start note already gave the question, history and
+# memory policy, how to relay `ask`, and that varyz talks only to it: the rest.
+PROTOCOL_BRIEF = (
+    "1. " + _CONSTRAINTS,
+    "2. " + _WHOLE_DONE,
+    "3. " + _FINISH,
+    "4. The question, history and memory policy from session start applies. " + _WORKFLOW,
 )
 
 
@@ -85,15 +115,24 @@ TRIAL_NOTE = (
 )
 
 
-def _rule_items(principles: list[Principle]) -> list[dict[str, Any]]:
+def _rule_items(principles: Iterable[Any]) -> list[dict[str, Any]]:
     return [principle.advice() for principle in principles]
+
+
+def _writing(
+    principles: SQLitePrincipleStore, task: str, project: str | None, domains: Iterable[str]
+) -> WritingRules:
+    """Rules on how text reads, shown apart from the ranked ones (``writing_rules``)."""
+    return select_writing(principles.current("confirmed"), task, project=project,
+                          domains=set(domains), normalize_scope=normalize_scope)
 
 
 def shown_rule_ids(briefing: dict[str, Any]) -> list[str]:
     """The rules a briefing put in front of the agent, for the trial lane's count."""
     return [
         str(item["id"])
-        for key in ("how_owner_works", "project_vision", "project_rules")
+        for key in ("writing_rules", "message_rules", "how_owner_works", "project_vision",
+                    "project_rules")
         for item in briefing.get(key) or []
         if item.get("id")
     ]
@@ -107,11 +146,24 @@ def _rule_row(item: dict[str, Any]) -> str:
     return f"- {item['statement']} (id {item['id']})"
 
 
-def _pending_questions(conn: sqlite3.Connection, project: str | None) -> list[dict[str, Any]]:
+def _pending_questions(
+    conn: sqlite3.Connection, project: str | None, conversation_id: str | None,
+) -> list[dict[str, Any]]:
+    """Questions this conversation asked that the owner has not answered.
+
+    A question from another conversation belongs to that task, and one older than
+    ``QUESTION_TTL_DAYS`` has gone stale, so neither is relayed again: the agent
+    would put an unrelated or long-settled choice back in front of the owner.
+    """
+    if not conversation_id:
+        return []
+    since = datetime.now(UTC) - timedelta(days=QUESTION_TTL_DAYS)
     try:
         rows = conn.execute(
             """SELECT id, question, project FROM resolution_escalations
-               WHERE status = 'pending' ORDER BY created_at, id"""
+               WHERE status = 'pending' AND conversation_id = ? AND created_at >= ?
+               ORDER BY created_at, id""",
+            (conversation_id, since.isoformat()),
         ).fetchall()
     except sqlite3.OperationalError:  # before migration 0037
         return []
@@ -130,6 +182,29 @@ def _decision(entry: KnowledgeEntry) -> dict[str, Any]:
         "scope": "all projects" if entry.scope == GLOBAL_SCOPE else entry.scope,
         "since": entry.stated_at.isoformat()[:10],
     }
+
+
+def _related_decisions(
+    entries: list[KnowledgeEntry], task: str, project: str | None
+) -> list[KnowledgeEntry]:
+    """This project's settled choices that bear on the task, closest first.
+
+    Every choice the project ever settled is not context for every task: a release
+    question means nothing to a hook fix. A choice must share a word with the task
+    itself, two once the task says more than three things. The project's name and
+    the kind of work do not count: nearly every choice in a Python project says
+    "Python" or names the project.
+    """
+    wanted = _terms(task) - _terms(project or "")
+    need = 1 if len(wanted) <= 3 else 2
+    scored: dict[tuple[str, str], tuple[int, KnowledgeEntry]] = {}
+    for entry in entries:
+        shared = len(wanted & _terms(entry.question + " " + entry.answer))
+        key = (entry.question.casefold(), entry.answer.casefold())
+        if shared >= need and key not in scored:
+            scored[key] = (shared, entry)
+    ranked = sorted(scored.values(), key=lambda item: -item[0])
+    return [entry for _shared, entry in ranked][:MAX_PROJECT_DECISIONS]
 
 
 def _answered_by(question: str, entries: list[KnowledgeEntry]) -> KnowledgeEntry | None:
@@ -217,7 +292,10 @@ def start_task(
                 "kinds_of_work": []}
     principles = SQLitePrincipleStore(conn)
     domains = detect_domains(task, cwd, extra=owner_kinds(conn))
-    chosen, withheld = principles.applicable(task, project=project, limit=limit)
+    kinds = " ".join(domain_title(name) for name in domains)
+    writing = _writing(principles, task, project, domains)
+    chosen, withheld = principles.applicable(task, project=project, limit=limit,
+                                             exclude=writing.ids, context=kinds)
     checklist = principles.checklist(domains, project=project, text=task)
     # The owner's memory test: a few low-stakes rules wait until finish_check.
     from varyz.resolution.rule_signals import held_back
@@ -237,7 +315,7 @@ def start_task(
         if scope_applies(entry.scope, project, task)
     ]
     project_decisions = [entry for entry in entries if entry.scope != GLOBAL_SCOPE]
-    task_terms = _terms(task + " " + " ".join(domain_title(name) for name in domains))
+    task_terms = _terms(task + " " + kinds)
     general_scored = sorted(
         (
             (len(task_terms & _terms(entry.question + " " + entry.answer)), entry)
@@ -259,7 +337,7 @@ def start_task(
         else:
             decided.append({**point, "answer": known.answer, "from": known.question})
 
-    pending = _pending_questions(conn, project)
+    pending = _pending_questions(conn, project, conversation_id)
     workflows = _workflow_guides(
         conn, task, project=project, domains=domains,
         decisions=project_decisions, principles=principles, sizer=sizer,
@@ -278,6 +356,9 @@ def start_task(
         "kinds_of_work": [
             {"domain": name, "title": domain_title(name)} for name in domains
         ],
+        "writing_rules": _rule_items(writing.text),
+        "message_rules": _rule_items(writing.messages),
+        "message_rules_note": MESSAGE_NOTE if writing.messages else None,
         "how_owner_works": _rule_items([p for p in general if p.kind == "rule"]),
         "project_vision": _rule_items([p for p in specific if p.kind == "vision"])
         + _rule_items([p for p in general if p.kind == "vision"]),
@@ -286,9 +367,8 @@ def start_task(
         "trial_rules": TRIAL_NOTE if any(p.trial for p in (*general, *specific)) else None,
         "owner_workflows": workflows,
         "task_recipe": recipe_for(conn, task, project),
-        "project_decisions": [_decision(entry) for entry in project_decisions][
-            :MAX_PROJECT_DECISIONS
-        ],
+        "project_decisions": [_decision(entry) for entry in _related_decisions(
+            project_decisions, task, project)],
         "general_preferences": [_decision(entry) for entry in general_preferences],
         "definition_of_done": {
             name: [
@@ -335,11 +415,18 @@ def finish_check(
     principles = SQLitePrincipleStore(conn)
     domains = detect_domains(task, cwd, extra=owner_kinds(conn))
     checklist = principles.checklist(domains, project=project, text=task)
-    chosen, _ = principles.applicable(task, project=project, limit=limit)
+    writing = _writing(principles, task, project, domains)
+    chosen, _ = principles.applicable(
+        task, project=project, limit=limit, exclude=writing.ids,
+        context=" ".join(domain_title(name) for name in domains))
     items: list[dict[str, Any]] = []
     for name, rules in checklist.items():
         items.extend({"domain": name, "id": rule.id, "item": rule.statement} for rule in rules)
+    # The report itself is text for the owner: the writing rules hold for it too.
     standing = [
+        {"id": rule.id, "rule": rule.statement}
+        for rule in (*writing.text, *writing.messages)
+    ] + [
         {"id": item.principle.id, "rule": item.principle.statement}
         for item in chosen
         if item.principle.kind == "rule"
@@ -411,7 +498,7 @@ def finish_check(
         "workflow_reviews_due": reviews,
         "workflow_reworks": reworks,
         "task_recipe": recipe_check,
-        "open_owner_questions": _pending_questions(conn, project),
+        "open_owner_questions": _pending_questions(conn, project, conversation_id),
         "how": (
             "Check every item yourself before you write your report and fix anything "
             "not done now. The user does not see this checklist: in the report name "
@@ -450,8 +537,50 @@ def render_background_job(job: dict[str, Any]) -> str:
     return "\n".join([f"varyz background job: {title}", *_job_rows(job)])
 
 
-def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True) -> str:
-    """The briefing as compact text, for hooks that inject it into the agent's context."""
+def _timeline_rows(timeline: list[dict[str, Any]]) -> list[str]:
+    rows = []
+    for item in timeline:
+        row = f"- {item.get('when') or 'undated'}: {item.get('asked') or '(follow-up)'}"
+        if item.get("result"):
+            row += " → " + "; ".join(item["result"])
+        rows.append(row + f" ({item.get('conversation_id')})")
+    return rows
+
+
+def _continuation_rows(continuation: dict[str, Any]) -> list[str]:
+    """Earlier work as lines to read, not the JSON the MCP tool returns."""
+    status = continuation.get("status")
+    if status == "related":
+        return [str(continuation["summary"]), *_timeline_rows(continuation["timeline"]),
+                "Agent reports, not owner rules: read them before asking the owner to "
+                "explain again; session_history has the full sessions."]
+    if status != "recorded":
+        return [f"No recorded state to resume ({status})."
+                + (" Try session_history." if continuation.get("next_tool") else "")]
+    state = continuation.get("state") or {}
+    rows = [f"Last recorded: {state.get('task')} ({state.get('status')}, "
+            f"{str(state.get('occurred_at') or '')[:10]}, "
+            f"conversation {state.get('conversation_id')})"]
+    for key, label in (("done", "Done"), ("pending", "Pending"), ("checks", "Checks"),
+                       ("artifacts", "Artifacts")):
+        if state.get(key):
+            rows.append(f"{label}: " + "; ".join(state[key]))
+    if continuation.get("omitted"):
+        rows.append("More in session_history.")
+    backstory = continuation.get("backstory")
+    if backstory:
+        rows.extend([str(backstory["summary"]), *_timeline_rows(backstory["timeline"])])
+    rows.append(str(continuation["instruction"]))
+    return rows
+
+
+def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True,
+                    policy_known: bool = False) -> str:
+    """The briefing as compact text, for hooks that inject it into the agent's context.
+
+    ``policy_known``: the agent had the session-start note, so the protocol leaves
+    out what that note already says (``PROTOCOL_BRIEF``).
+    """
     if briefing.get("status") == "delegated":
         return "Varyz workflow is assigned to Cloud for this task; use its briefing and checks."
     lines = [f"# varyz briefing - project: {briefing.get('project') or 'unknown'}"]
@@ -476,14 +605,15 @@ def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True) 
     continuation = briefing.get("continuation")
     if continuation:
         section("Earlier sessions on this topic" if continuation.get("status") == "related"
-                else "Recorded work to continue", [
-            json.dumps(continuation, ensure_ascii=False),
-        ])
+                else "Recorded work to continue", _continuation_rows(continuation))
     if history:
+        # The policy itself came with session start or the protocol; this says
+        # only where this task's history stands.
         section("History before clarification", [
-            str(history["instruction"]),
             f"Status: {history['status']}. {history['coverage']}",
-            f"Project: {history.get('project')}; query: {history.get('query')}",
+            "Before asking the owner to clarify or choosing an ambiguous scope, even for "
+            f"a small change, search this project's history (project: {history.get('project')}; "
+            f"query: {history.get('query')}).",
         ])
 
     job = briefing.get("background_job")
@@ -492,6 +622,10 @@ def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True) 
         section(f"Background job: {_job_title(job, 'start it before you plan')}",
                 _job_rows(job))
 
+    section(TEXT_TITLE, [_rule_row(item) for item in briefing.get("writing_rules") or []])
+    section(MESSAGE_TITLE, ([str(briefing["message_rules_note"])]
+                            if briefing.get("message_rules_note") else [])
+            + [_rule_row(item) for item in briefing.get("message_rules") or []])
     section(
         "How the owner works (always)",
         [_rule_row(item) for item in briefing.get("how_owner_works", [])],
@@ -562,8 +696,17 @@ def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True) 
         [f"- {item['question']}" for item in briefing.get("pending_owner_questions", [])],
     )
     if include_protocol:
-        section("How to work with varyz", list(briefing.get("protocol", [])))
+        protocol = list(briefing.get("protocol", []))
+        if policy_known:
+            # What start_task adds after PROTOCOL: recognition (in the session-start
+            # note too) and the away line (not).
+            protocol = [*PROTOCOL_BRIEF,
+                        *(item for item in protocol[len(PROTOCOL):] if item != RECOGNITION)]
+        section("How to work with varyz", protocol)
     return "\n".join(lines)
 
 
-__all__ = ["PROTOCOL", "finish_check", "render_background_job", "render_markdown", "start_task"]
+__all__ = [
+    "FINISH_REMINDER", "PROTOCOL", "finish_check", "render_background_job", "render_markdown",
+    "start_task",
+]

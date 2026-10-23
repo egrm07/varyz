@@ -41,6 +41,19 @@ PROGRESS_POLICY = (
     "cover each prompt's last response; use paged history to inspect the session's exchanges."
 )
 
+# Every mined report carries this pending note; it alone does not make work open.
+MINED_QUALIFIER = "Overall completion unknown; historical claims are unverified."
+
+
+def left_open(report: dict[str, Any]) -> bool:
+    """Unfinished work worth picking up: working or blocked, and a mined report
+    only when it names something still to do."""
+    if report.get("status") not in {"working", "blocked"}:
+        return False
+    if report.get("provenance") != "mined_report":
+        return True
+    return any(item != MINED_QUALIFIER for item in report.get("pending") or [])
+
 
 class Checkpoint(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
@@ -254,11 +267,14 @@ def history(
             values.extend([approval_scope(cfg), privacy_scope(cfg)])
     # Rank whole sessions before privacy filtering: a withheld newest snapshot
     # must never silently fall back to an older, falsely current personal one.
-    # A backfill cannot replace a firsthand current snapshot of the same chat.
+    # The newest snapshot of a chat is current, whichever origin wrote it: a turn
+    # captured at stop time supersedes an older live checkpoint, and a live one
+    # wins a tie. An older backfill never replaces a firsthand snapshot.
     clauses.append(
-        "(p.origin='agent_report' OR NOT EXISTS (SELECT 1 FROM session_progress live "
-        "WHERE live.project=p.project AND live.conversation_id=p.conversation_id "
-        "AND live.origin='agent_report'))"
+        "NOT EXISTS (SELECT 1 FROM session_progress other "
+        "WHERE other.project=p.project AND other.conversation_id=p.conversation_id "
+        "AND other.origin<>p.origin AND (other.occurred_at>p.occurred_at "
+        "OR (other.occurred_at=p.occurred_at AND other.origin='agent_report')))"
     )
     where = " AND ".join(clauses)
     current = (
@@ -499,5 +515,21 @@ TOOLS.append({
         "required": ["project", "conversation_id", "thread_id"],
         "additionalProperties": False},
     "annotations": {"readOnlyHint": False, "destructiveHint": False,
+                    "idempotentHint": True, "openWorldHint": False},
+})
+
+
+TOOLS.append({
+    "name": "catch_up",
+    "description": "What earlier sessions left unfinished in this project, on any computer: "
+                   "task, done, still open, artifacts, newest and most related first. Call "
+                   "it before asking the owner what they were doing, and when they say "
+                   "continue or resume. project defaults to the working folder; task "
+                   "ranks related work first. Uses Cloud when approved, else this computer.",
+    "inputSchema": {"type": "object", "properties": {
+        "project": {"type": "string"}, "task": {"type": "string", "maxLength": 240},
+        "conversation_id": {"type": "string"}},
+        "additionalProperties": False},
+    "annotations": {"readOnlyHint": True, "destructiveHint": False,
                     "idempotentHint": True, "openWorldHint": False},
 })

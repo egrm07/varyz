@@ -31,13 +31,13 @@ from varyz.connectors.base import expand
 from varyz.domain import iso, utc_now
 from varyz.pipeline.sensitivity import SensitivityGate
 from varyz.privacy.secrets_scan import redact
-from varyz.session_progress import Checkpoint, pause_path, record
+from varyz.session_progress import MINED_QUALIFIER, Checkpoint, pause_path, record
 
 VERSION = "extractive-v3"
 MAX_LINE_BYTES = 2_000_000
 MAX_FILE_BYTES = 256_000_000
 MAX_STATEMENTS = 60
-MISSING = "Overall completion unknown; historical claims are unverified."
+MISSING = MINED_QUALIFIER
 
 
 def _hash(value: str) -> str:
@@ -87,7 +87,9 @@ def _checkpoint_key(
     return "mine:" + _hash(content)
 
 
-def _paths(cfg: Config, adapter_id: str | None) -> Iterator[tuple[Adapter, Path]]:
+def _paths(
+    cfg: Config, adapter_id: str | None, only: Path | None = None
+) -> Iterator[tuple[Adapter, Path]]:
     options = cfg.connectors.get("ai_conversations", {})
     if approval_scope(cfg) is None:
         raise ValueError("Approve AI conversation history first: varyz connect ai-conversations")
@@ -112,6 +114,9 @@ def _paths(cfg: Config, adapter_id: str | None) -> Iterator[tuple[Adapter, Path]
                     continue
                 resolved = path.resolve()
                 if not resolved.is_relative_to(root.resolve()):
+                    continue
+                # One transcript, still only from an approved folder.
+                if only is not None and resolved != only:
                     continue
                 if adapter.adapter_id == "claude_code" and (
                     path.name.startswith("rollout-") or "subagents" in path.parts
@@ -357,15 +362,15 @@ def _report(
         "personal" if str(label) in {"personal", "public"} and not held else "sensitive"
     )
     occurred = (assistant.turn.occurred if assistant else None) or user.turn.occurred
-    checkpoint = Checkpoint(
-        project=user.turn.project or "unknown",
-        conversation_id=user.turn.session,
-        checkpoint_id=_checkpoint_key(user, assistant, cfg, method),
-        task=task,
-        status="working",
-        sensitivity=sensitivity,
+    checkpoint = Checkpoint.model_validate({
+        "project": user.turn.project or "unknown",
+        "conversation_id": user.turn.session,
+        "checkpoint_id": _checkpoint_key(user, assistant, cfg, method),
+        "task": task,
+        "status": "working",
+        "sensitivity": sensitivity,
         **fields,
-    )
+    })
     metadata: dict[str, Any] = {
         "method": method,
         "version": VERSION,
@@ -398,8 +403,13 @@ def mine(
     method: Literal["extractive", "local"] = "extractive",
     select: Callable | None = None,
     permit: Callable[[], bool] | None = None,
+    transcript: Path | None = None,
 ) -> dict[str, Any]:
-    """Dry-run by default; interrupted files resume via immutable report keys."""
+    """Dry-run by default; interrupted files resume via immutable report keys.
+
+    ``transcript`` limits the run to that one file, when it lies in an approved
+    folder: the stop-time capture of a single chat.
+    """
     if not 1 <= limit <= 1000:
         raise ValueError("limit must be between 1 and 1000 reports")
     if method not in {"extractive", "local"}:
@@ -459,7 +469,8 @@ def mine(
             sort_keys=True,
         )
     )
-    for adapter, path in _paths(cfg, adapter_id):
+    only = transcript.resolve() if transcript is not None else None
+    for adapter, path in _paths(cfg, adapter_id, only):
         if paused():
             stats["paused"] = True
             break
@@ -505,11 +516,14 @@ def mine(
                 ).fetchone():
                     stats["erased"] += 1
                     return True
-                # Existing firsthand snapshots are authoritative for this chat.
+                # A firsthand snapshot written during or after this turn is
+                # authoritative for it; turns the agent did not record are mined.
                 if conn.execute(
                     "SELECT 1 FROM session_progress WHERE project=? "
-                    "AND conversation_id=? AND origin='agent_report' LIMIT 1",
-                    (project.casefold(), user.turn.session),
+                    "AND conversation_id=? AND origin='agent_report' "
+                    "AND (? IS NULL OR occurred_at>=?) LIMIT 1",
+                    (project.casefold(), user.turn.session,
+                     iso(user.turn.occurred), iso(user.turn.occurred)),
                 ).fetchone():
                     return True
                 if paused():

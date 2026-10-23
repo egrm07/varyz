@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import secrets
@@ -107,8 +108,6 @@ class ResolutionService:
             latency(self.shadow_config, time.perf_counter() - started)
         if self.shadow_config is not None:
             # Never let an experiment suppress or alter the current answer.
-            import contextlib
-
             with contextlib.suppress(Exception), self.lock:
                 from varyz.resolution.shadow import observe_answer
 
@@ -447,6 +446,7 @@ class ResolutionDaemon:
         # Reads the AI chats' new messages a moment after a prompt (`/v1/live/nudge`).
         self.live: LiveIngest | None = None
         self.computer_connection: ComputerConnection | None = None
+        self._questions_swept = float("-inf")
 
     @property
     def address(self) -> tuple[str, int]:
@@ -522,6 +522,7 @@ class ResolutionDaemon:
         # them as long, when the daemon served one request at a time.
         class Server(ThreadingHTTPServer):
             def service_actions(self) -> None:
+                daemon.expire_stale_questions()
                 if daemon.service.shadow_config is not None:
                     from varyz.analytics import tick
 
@@ -535,6 +536,14 @@ class ResolutionDaemon:
         server.daemon_threads = True
         self._server = server
         return self._server
+
+    def expire_stale_questions(self) -> None:
+        """Hourly: owner questions left a week unanswered close as expired."""
+        if time.monotonic() - self._questions_swept < 3600:
+            return
+        self._questions_swept = time.monotonic()
+        with contextlib.suppress(Exception), self.service.lock:
+            self.service.escalations.expire_stale()
 
     def _close_owned_connection(self) -> None:
         connection = self._owned_connection

@@ -111,7 +111,7 @@ def gate(
     tmp_path: Path, config_path: Path, db: sqlite3.Connection
 ) -> Iterator[tuple[Any, dict[str, str], str]]:
     wf._website_owner(db)
-    cfg = wf._cfg(config_path)
+    cfg = wf._cfg(config_path, done_gate=True)
     event = {"session_id": "g1", "cwd": str(tmp_path / "persona")}
     hooks.user_prompt(cfg, {**event, "prompt": "Build the landing page for persona"})
     edited = wf._transcript(tmp_path / "edit.jsonl", wf.PROMPT, wf.EDIT, wf.RESULT)

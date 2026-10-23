@@ -95,6 +95,7 @@ def test_empty_standards_do_not_finish_working_task(tmp_path):
 
 def test_readonly_task_repompt_is_bounded_per_checkpoint_not_task_text(tmp_path, monkeypatch):
     cfg = Config(base_dir=tmp_path)
+    cfg.agent.done_gate = True
     monkeypatch.setattr(hooks, "nudge_live_reading", lambda cfg: None)
     state_file = hooks._state_path(cfg, "task-a")
     hooks._save_state(state_file, {"task": "Resume", "project": "acorn", "cwd": str(tmp_path),
@@ -122,6 +123,7 @@ def test_readonly_task_repompt_is_bounded_per_checkpoint_not_task_text(tmp_path,
 ])
 def test_handoffs_and_closed_tasks_do_not_restart(tmp_path, monkeypatch, status, pending):
     cfg = Config(base_dir=tmp_path)
+    cfg.agent.done_gate = True
     monkeypatch.setattr(hooks, "nudge_live_reading", lambda cfg: None)
     hooks._save_state(hooks._state_path(cfg, "task-a"), {"task": "Resume", "project": "acorn"})
     with closing(open_db(cfg.db_path)) as conn:

@@ -159,9 +159,12 @@ def account_label() -> str | None:
 class OpenAIOAuthProvider:
     """Calls the ChatGPT backend Responses API with subscription tokens."""
 
-    def __init__(self, model: str, *, max_tokens: int = 2048):
+    def __init__(
+        self, model: str, *, max_tokens: int = 2048, timeout_seconds: float = 120
+    ):
         self.model = model
         self.max_tokens = max_tokens
+        self.timeout_seconds = timeout_seconds
 
     def _headers(self) -> dict:
         store = token_store()
@@ -195,7 +198,7 @@ class OpenAIOAuthProvider:
     def stream(self, system: str, user: str) -> Iterator[str]:
         with httpx.stream(
             "POST", RESPONSES_URL, headers=self._headers(),
-            json=self._payload(system, user), timeout=120,
+            json=self._payload(system, user), timeout=self.timeout_seconds,
         ) as resp:
             if resp.status_code != 200:
                 body = resp.read().decode("utf-8", "replace")[:300]

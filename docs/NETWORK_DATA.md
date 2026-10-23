@@ -47,7 +47,7 @@ same answer share `ledger_ref`; keep the newest.
 | `attempt` | `check` only: 1 for the first result for a rule in a task, 2 after it changed, and so on. `failed` at 1 then `passed` at 2 is a self-repair. |
 | `previous` | `check` only: the rule's result just before this one in the same task (`passed`, `failed`, `unchecked`, ...), or empty for the first. `passed` followed by `corrected` is a false "done": the agent said the rule held and the owner then corrected it. |
 | `model` | The model that did the work, when the agent named it, for example `claude-opus-5-5` or `gpt-6.1-sol`. Only names from a known list of model families leave; anything else is empty. |
-| `arm` | `check` only, from the optional memory test: `shown` when the rule was in the agent's briefing, `held_out` when Varyz held it back at random for that task. Empty when the test is off. |
+| `arm` | `check` only, from the memory test (on by default): `shown` when the rule was in the agent's briefing, `held_out` when Varyz held it back at random for that task. Empty when the test is off. |
 | `ask_label` | `escalation`: `needed` (the owner answered with a real choice), `unneeded` (the owner said the question was unnecessary or handed the choice back), `dropped` (nobody answered). `rule`: `should_have_asked` when the owner said the agent should have asked before acting. |
 | `agent_guess`, `agent_guess_hit` | `escalation` only: the agent's own guess at the answer, made before the question was relayed (scrubbed, up to 300 characters), and `hit` or `miss` against the owner's answer. Empty when there was no guess or no real answer. |
 | `memory_guess_hit` | `escalation` only: whether the answer Varyz would have guessed from the owner's earlier answers was right, `hit` or `miss`. |
@@ -98,7 +98,7 @@ same answer share `ledger_ref`; keep the newest.
 - `answer` rows are unlabelled on purpose: most answers are never labelled. Use them as
   the base rate for how often answers get corrected, not as implicit acceptance.
 - `model` is what the agent said it was. It is empty for agents that do not say.
-- `held_out` rows exist only for contributors who turned the memory test on, and only for
+- `held_out` rows exist only for contributors who left the memory test on, and only for
   low-stakes rules; high-stakes rules are always shown. Compare arms within that subset.
 - Guess scoring uses a normalised text match, so a right answer worded very differently
   can count as a `miss`. Treat hit rates as lower bounds.

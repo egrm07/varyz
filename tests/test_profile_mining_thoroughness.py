@@ -326,6 +326,25 @@ def test_conversational_copy_gets_bounded_rewrite_then_keeps_adapted_rule(conn, 
     assert item.evidence[0]["quote"] == "I like clear reports that lead with the observable result."
 
 
+def test_merge_that_keeps_failing_its_correction_settles_with_sound_items(conn, tmp_path):
+    """A reader that never rewords one note cannot hold the whole reading behind it."""
+    state = _two_notes(conn, tmp_path)
+    task = reader.next_task(state, conn, tier="cloud", reader="agent")
+    answer = [
+        _merged("rule", "For Shop, run the focused tests before reporting success.", 1),
+        _merged("rule", "I prefer reports to include the observable result.", 2),
+    ]
+    assert reader.accept(state, conn, task.id, answer, tier="cloud").redo
+    for _ in range(reader.MERGE_FAILED_RETRIES - 1):
+        with pytest.raises(ValueError, match="still incomplete"):
+            reader.accept(state, conn, task.id, answer, tier="cloud")
+    result = reader.accept(state, conn, task.id, answer, tier="cloud")
+    assert not result.redo and result.dropped >= 1 and task.id not in state.tasks
+    assert all(not reader._OWNER_VOICE.search(item.statement) for item in result.items)
+    assert not state.dirty
+    assert reader.next_task(state, conn, tier="cloud", reader="agent") is None
+
+
 @pytest.mark.parametrize(
     "statement",
     [

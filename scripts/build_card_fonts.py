@@ -1,22 +1,25 @@
-"""Cut the Taste Card's bundled fonts from the upstream variable fonts.
+"""Cut the cards' bundled fonts from the upstream fonts.
 
-The card PNG is painted by Pillow, which needs font files, so Varyz ships four small
-static TTFs under src/varyz/card/fonts/: Source Serif 4 (roman and italic) and IBM Plex
-Sans (regular and semibold), the same two families as the website. Each is pinned to one
-weight and cut down to Latin and Latin Extended, which keeps all four under half a
-megabyte instead of 2.6 MB of variable fonts.
+The card PNGs are painted by Pillow, which needs font files, so Varyz ships five small
+static TTFs under src/varyz/card/fonts/: Source Serif 4 (roman and italic), IBM Plex
+Sans (regular and semibold) and Marcellus, the display face of the website. Each is
+pinned to one weight and cut down to Latin and Latin Extended, which keeps them all
+around half a megabyte instead of 2.6 MB of variable fonts.
 
-Both fonts are under the SIL Open Font License 1.1. IBM Plex reserves the name "Plex",
-so a cut-down version must be renamed: the files are named "Varyz Card Serif" and
-"Varyz Card Sans" inside. The licences are copied next to them.
+All three fonts are under the SIL Open Font License 1.1. IBM Plex reserves the name
+"Plex" and Marcellus its own name, so a cut-down version must be renamed: the files are
+named "Varyz Card Serif", "Varyz Card Sans" and "Varyz Card Display" inside. The
+licences are copied next to them.
 
 Download the upstream files from github.com/google/fonts (ofl/sourceserif4,
-ofl/ibmplexsans) into one folder, then run once, and again only if the fonts change:
+ofl/ibmplexsans, ofl/marcellus) into one folder, then run once, and again only if the
+fonts change:
 
-    uv run --no-project --with fonttools python scripts/build_card_fonts.py <folder>
+    uv run --no-project --with fonttools --with brotli python scripts/build_card_fonts.py <folder>
 
 The folder must hold SourceSerif4.ttf, SourceSerif4-Italic.ttf, IBMPlexSans.ttf,
-OFL-SourceSerif4.txt and OFL-IBMPlexSans.txt.
+Marcellus-Regular.ttf (or the website's marcellus-400.woff2 saved under that name),
+OFL-SourceSerif4.txt, OFL-IBMPlexSans.txt and OFL-Marcellus.txt.
 """
 
 from __future__ import annotations
@@ -52,8 +55,11 @@ CUTS = (
      "Varyz Card Sans", "Regular"),
     ("VaryzCardSans-SemiBold.ttf", "IBMPlexSans.ttf", {"wght": 600, "wdth": 100},
      "Varyz Card Sans", "SemiBold"),
+    # Marcellus has one weight and no axes: nothing to pin, only to cut and rename.
+    ("VaryzCardDisplay-Regular.ttf", "Marcellus-Regular.ttf", {},
+     "Varyz Card Display", "Regular"),
 )
-LICENCES = ("OFL-SourceSerif4.txt", "OFL-IBMPlexSans.txt")
+LICENCES = ("OFL-SourceSerif4.txt", "OFL-IBMPlexSans.txt", "OFL-Marcellus.txt")
 
 
 def _parse_ranges(text: str) -> list[int]:
@@ -95,7 +101,10 @@ def main(argv: list[str]) -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     unicodes = _parse_ranges(UNICODES)
     for out_name, src_name, axes, family, style in CUTS:
-        font = instancer.instantiateVariableFont(TTFont(source / src_name), axes)
+        font = TTFont(source / src_name)
+        if axes:
+            font = instancer.instantiateVariableFont(font, axes)
+        font.flavor = None  # A WOFF2 source is saved as a plain TTF.
         options = subset.Options()
         options.layout_features = ["*"]
         options.name_IDs = ["*"]

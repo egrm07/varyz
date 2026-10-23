@@ -129,11 +129,13 @@ class ClaudeProvider:
         api_key: str | None = None,
         oauth: bool = False,
         max_tokens: int = 2048,
+        timeout: float = 30,
     ):
         self.model = model
         self.api_key = api_key
         self.oauth = oauth
         self.max_tokens = max_tokens
+        self.timeout = timeout
 
     def _client(self):
         from anthropic import Anthropic
@@ -142,8 +144,9 @@ class ClaudeProvider:
             return Anthropic(
                 auth_token=token_store().access_token(),
                 default_headers={"anthropic-beta": OAUTH_BETA_HEADER},
+                timeout=self.timeout,
             )
-        return Anthropic(api_key=self.api_key)
+        return Anthropic(api_key=self.api_key, timeout=self.timeout)
 
     def stream(self, system: str, user: str) -> Iterator[str]:
         with self._client().messages.stream(

@@ -84,13 +84,14 @@ once per version.
 |---|---|
 | `SessionStart` | starts the loopback daemon if it is down; reminds the agent of the workflow |
 | `UserPromptSubmit` | first task of a session: injects the full `start_task` briefing; later prompts: only the definition of done for kinds of work not yet briefed |
-| `Stop` | once per task, and only after files were edited and the agent did not call `finish_check` after its last edit: blocks with the `finish_check` items and open owner questions, and tells the agent not to repeat the report it already gave |
+| `Stop` | silent unless `[agent] done_gate = true`: then once per task, only after files were edited and the agent did not call `finish_check` after its last edit, it sends the agent back with a short note to call `finish_check` |
 
 Hooks are appended to `~/.claude/settings.json` or `~/.codex/hooks.json`; other groups
 (for example Orca's) are kept in place, and the previous file is saved next to it as
 `.varyz-backup`. The commands run launchers in `data/hooks/`. Codex asks the owner to
 trust new hooks the first time. `[agent] briefing_hooks = false` skips installing and
-running them; `done_gate = false` keeps the briefing but not the stop check. Every hook
+running them. The stop check (`done_gate`) and the writing check (`writing_check`) are
+off by default, because the client shows their note under the finished reply. Every hook
 fails open. Preview the briefing without an agent: `varyz task "..." [--finish]`.
 
 ```powershell

@@ -6,9 +6,12 @@ You open Claude Code, Codex or any MCP agent and give it a task. Varyz briefs th
 
 ## Quickstart
 
-Local Varyz is free and needs no account. Native downloads are being prepared;
-check [download availability](https://varyzai.com/download). To install from source,
-with uv and Git installed:
+Local Varyz is free and needs no account. Download the installer for Windows or
+macOS (Apple Silicon or Intel) from [varyzai.com/download](https://varyzai.com/download),
+or from [GitHub Releases](https://github.com/egrm07/varyz/releases/latest) with its
+checksums. The Windows installer is not yet signed, so Windows may show a warning;
+see the [code signing policy](https://varyzai.com/code-signing). To install from
+source instead, with uv and Git installed:
 
 ```powershell
 uv tool install git+https://github.com/egrm07/varyz
@@ -295,10 +298,10 @@ classifier: `qwen3.5:4b` through Ollama.
 Step 3 runs `varyz connect <agent>` for each agent it connects. That registers a named
 caller with a bounded capability, writes the MCP server entry, and installs the routing
 skill and the briefing hooks (`SessionStart` starts the daemon if it is down,
-`UserPromptSubmit` briefs, `Stop` checks). Other hooks in the client's settings are kept
+`UserPromptSubmit` briefs, `Stop` stays silent unless you turn its check on). Other hooks in the client's settings are kept
 in place, and the previous file is saved as `.varyz-backup`. Codex asks you to trust new
-hooks the first time they run. Turn hooks off with `[agent] briefing_hooks = false` (or
-only the stop check with `done_gate = false`); `varyz uninstall` removes them.
+hooks the first time they run. Turn hooks off with `[agent] briefing_hooks = false`; the
+stop check (`done_gate = true`) is opt-in. `varyz uninstall` removes them.
 `varyz doctor` checks operational state; `varyz doctor --fix` tries a stopped local
 daemon and reconnects broken agent credentials/hooks, then checks again. It does
 not override pauses, replace another archive's daemon or repair damaged archives.
@@ -434,7 +437,7 @@ Learned rules stay on trial until an explicit keep or correction. Seeing a rule 
 briefings, or hearing no objection, no longer confirms it. Historical automatic promotions
 remain auditable and are labeled `learned_unconfirmed`; stored owner confirmations stay intact.
 
-Every answer and rule has a scope. `*` is a **general preference** — how you do things,
+Every answer and rule has a scope. `*` is a **general preference**: how you do things,
 applied in every project ("every site gets a favicon", "dry-run first"). A project name
 is a **one-off choice** for that product only ("lumen's accent colour is #6d5efc"), and
 never reaches another project. When the agent relays a question it asks you which one it
@@ -512,7 +515,9 @@ done once it had worked it out: a release that needed three tries, a deploy with
 nobody wrote down. When such a task ends, `finish_check` offers the agent
 `record_recipe`, and it saves up to 8 short steps, how to tell it worked and the trap to
 avoid. The next agent given the same kind of task, in that project (or anywhere, for a
-general recipe), gets it in its briefing and starts where the last one finished. Then it
+general recipe), gets it in its briefing and starts where the last one finished, even
+when the task is worded differently: a recipe for "make a demo video" also comes back for
+"film a launch clip", marked as for similar work so the agent uses only the steps that fit. Then it
 reports whether the recipe worked; a corrected recipe replaces the old one, and a recipe
 that fails twice in a row is no longer handed out.
 
@@ -626,7 +631,8 @@ receipt, or an escalation id.
 | `varyz update status/check/apply/pause/resume` | Bring Varyz up to date: a git checkout to the latest commit of its branch (fast-forward only), an installed copy reinstalled from where it came from (GitHub or its folder). `apply` works any time; automatic checks are off unless `[update] mode` is `notify` or `auto`, and then run once a day on first use. The database is backed up before a migration, new code that fails to import is rolled back or reported, and the connected agents' Varyz files are refreshed. Every attempt is logged in `data/autosync/updates.jsonl` |
 | `varyz news [off/on/check]` | News from varyzai.com/news, checked once an hour while Varyz is in use and passed on by your agent, each post once. On by default; `off` stops the check and the notices |
 | `varyz cloud promotions [status/off/on]` | Inspect, disable or reset local Cloud-offer dismissal. Offers remain inactive until service launch and integration review; resetting does not enable those gates |
-| `varyz wrapped [--handle @you] [--dry-run] [--exclude id] [--include-project id]` | "My Way": a shareable card (SVG + PNG) made from your own general rules, previewed before anything is written |
+| `varyz wrapped [--name You] [--dry-run] [--out folder]` | Monthly Varyz Wrapped: your AI type card (your type, how rare it is, and three short lines your agents follow), as two PNGs (yellow and black), previewed before anything is written. The rules page shows it after you save, and once a month your agent ends a reply with one line saying it is ready (with news, so `varyz news off` stops it) |
+| `varyz my-way [--handle @you] [--dry-run] [--exclude id] [--include-project id]` | The older "My Way" card (SVG + PNG) made from your own general rules |
 | `varyz questions` / `answer [--scope]` / `dismiss` | The durable owner queue |
 | `varyz hooks doctor/pause/resume` | Workflow preflight and kill switch |
 | `varyz resolve "..."` | Resolve an owner-specific question through the daemon |

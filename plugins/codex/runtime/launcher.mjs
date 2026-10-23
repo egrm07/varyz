@@ -57,7 +57,7 @@ if (args[1] === '--install') {
     if (msg.id === undefined) return;
     let result;
     if (msg.method === 'initialize') result = { protocolVersion: '2024-11-05', capabilities:{tools:{}},
-      serverInfo:{name:'varyz-setup',version:'0.1.2'}, instructions:status.action };
+      serverInfo:{name:'varyz-setup',version:'0.1.3'}, instructions:status.action };
     else if (msg.method === 'ping') result = {};
     else if (msg.method === 'tools/list') result = { tools:[{name:'plugin_status',description:'Read local installation readiness and setup instructions. Does not install or upload anything.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}}] };
     else if (msg.method === 'tools/call' && msg.params?.name === 'plugin_status') result = {content:[{type:'text',text:JSON.stringify(status)}]};

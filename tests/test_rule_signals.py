@@ -300,10 +300,12 @@ def test_the_new_signals_flow_through_the_tools(tmp_path):
             # A task where the memory test holds at least one rule back.
             conv = next(f"task-{n}" for n in range(500) if any(
                 rule_signals.arm(i, f"task-{n}", 0.1) == "held_out" for i in ids.values()))
-            brief = json.dumps(server.call("start_task", {"task": task, "conversation_id": conv}))
+            # The model is given once, at the start, and reused by the checks.
+            brief = json.dumps(server.call("start_task", {
+                "task": task, "conversation_id": conv, "model": "claude-opus-5-5"}))
             held = {s for s, i in ids.items() if rule_signals.arm(i, conv, 0.1) == "held_out"}
             assert held and not any(s in brief for s in held)
-            check = {"task": task, "conversation_id": conv, "model": "claude-opus-5-5"}
+            check = {"task": task, "conversation_id": conv}
             receipts = server.call("finish_check", check)["verification"]["receipts"]
             assert {r["rule_id"] for r in receipts} >= {ids[s] for s in held}  # Revealed.
             server.call("finish_check", {**check, "evidence": [
@@ -375,12 +377,14 @@ def test_checks_show_false_done_claims_and_first_tries_per_model(conn):
     }
 
 
-def test_the_memory_test_is_off_by_default_and_never_hides_high_stakes_rules(conn, cfg):
+def test_the_memory_test_is_on_by_default_and_never_hides_high_stakes_rules(conn, cfg):
     safe = [rule(conn, f"Name helper number {n} in snake case") for n in range(40)]
     risky = [rule(conn, f"Ask before deleting folder {n}") for n in range(40)]
     store = SQLitePrincipleStore(conn)
     principles = [store.get(pid) for pid in safe + risky]
-    assert rule_signals.held_back(principles, "task-1", cfg) == set()
+    assert cfg.signals.memory_test and cfg.signals.memory_test_rate == 0.02
+    cfg.signals.memory_test = False
+    assert all(rule_signals.held_back(principles, f"task-{n}", cfg) == set() for n in range(20))
     cfg.signals.memory_test, cfg.signals.memory_test_rate = True, 0.1
     assert rule_signals.held_back(principles, None, cfg) == set()
     hidden = set().union(*(rule_signals.held_back(principles, f"task-{n}", cfg)

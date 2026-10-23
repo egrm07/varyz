@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import platform
 import random
@@ -56,6 +57,7 @@ TABLES = {
     "resolution_outcomes": "recorded_at",
     "owner_principles": "created_at",
     "owner_principle_retractions": "retracted_at",
+    "rule_checks": "checked_at",
 }
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -63,6 +65,7 @@ CREATE TABLE IF NOT EXISTS counters(day TEXT,metric TEXT,value INTEGER NOT NULL,
  PRIMARY KEY(day,metric));
 CREATE TABLE IF NOT EXISTS pending(id TEXT PRIMARY KEY,payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS contributions(id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS reused(conversation TEXT PRIMARY KEY,day TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY,at TEXT NOT NULL,action TEXT NOT NULL);
 CREATE TRIGGER IF NOT EXISTS analytics_audit_no_update BEFORE UPDATE ON audit
  BEGIN SELECT RAISE(ABORT,'analytics audit is append-only'); END;
@@ -142,6 +145,7 @@ def consent(cfg: Config, enabled: bool) -> None:
         db.execute("DELETE FROM counters")
         db.execute("DELETE FROM pending")
         db.execute("DELETE FROM contributions")
+        db.execute("DELETE FROM reused")
         db.execute("DELETE FROM state")
         if keys := " ".join(dict.fromkeys(k for k in erase if k)):
             _put(db, "erase_keys", keys)
@@ -230,21 +234,77 @@ def latency(cfg: Config, elapsed: float) -> None:
     )
 
 
+def _first_conversation(archive: sqlite3.Connection, kind: str, item: str) -> str | None:
+    """The earliest conversation a saved answer or rule appeared in."""
+    if kind == "rule":
+        sql = (
+            "SELECT conversation_id FROM rule_checks WHERE principle_id=? "
+            "ORDER BY checked_at,rowid LIMIT 1"
+        )
+        row = archive.execute(sql, (item,)).fetchone()
+        return str(row[0]) if row else None
+    # An owner's answer belongs to the conversation whose question it answered.
+    row = None
+    if archive.execute("SELECT 1 FROM sqlite_master WHERE name='owner_knowledge'").fetchone():
+        row = archive.execute(
+            "SELECT l.conversation_id FROM owner_knowledge k JOIN resolution_ledger l "
+            "ON l.escalation_id=k.escalation_id WHERE k.id=? AND l.conversation_id IS NOT NULL "
+            "ORDER BY l.rowid LIMIT 1",
+            (item,),
+        ).fetchone()
+    if row is None:
+        row = archive.execute(
+            "SELECT conversation_id FROM resolution_ledger WHERE disposition='answered' "
+            "AND conversation_id IS NOT NULL AND instr(citations_json,?)>0 ORDER BY rowid LIMIT 1",
+            (json.dumps(item),),
+        ).fetchone()
+    return str(row[0]) if row else None
+
+
+def _reused(
+    db: sqlite3.Connection,
+    archive: sqlite3.Connection,
+    use: tuple[str, str],
+    conversation: str,
+    day: str,
+    origins: dict[tuple[str, str], str | None],
+) -> None:
+    """Count a conversation once when it uses an answer or rule first seen in another one.
+
+    The first such conversation also marks the installation activated, once ever: the
+    append-only audit keeps that mark when sharing is turned off and on again.
+    """
+    if use not in origins:
+        origins[use] = _first_conversation(archive, *use)
+    if origins[use] in (None, conversation):
+        return
+    key = hashlib.sha256(conversation.encode()).hexdigest()[:32]
+    if not db.execute("INSERT OR IGNORE INTO reused VALUES(?,?)", (key, day)).rowcount:
+        return
+    _add(db, "preference_reused", day=day)
+    if not db.execute("SELECT 1 FROM audit WHERE action='activated'").fetchone():
+        _add(db, "activated", day=day)
+        _audit(db, "activated")
+
+
 def _collect(db: sqlite3.Connection, cfg: Config) -> None:
     """Read at most 2,000 new rows per table. All text matching remains local."""
     if not cfg.db_path.exists():
         return
     archive = sqlite3.connect(cfg.db_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
     archive.row_factory = sqlite3.Row
+    origins: dict[tuple[str, str], str | None] = {}
     try:
         for table, stamp in TABLES.items():
             columns = {
                 "resolution_ledger": (
-                    "disposition,basis,normalized_question,purpose,conversation_id,request_json"
+                    "disposition,basis,normalized_question,purpose,conversation_id,request_json,"
+                    "citations_json"
                 ),
                 "resolution_outcomes": "outcome,source",
                 "owner_principles": "status,supersedes_id,provenance_json",
                 "owner_principle_retractions": "reason",
+                "rule_checks": "principle_id,conversation_id,status",
             }[table]
             if not archive.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
                 continue
@@ -281,6 +341,15 @@ def _collect(db: sqlite3.Connection, cfg: Config) -> None:
                             and (prior["conversation_id"] != row["conversation_id"])
                         ):
                             _add(db, "repeated_questions", day=day)
+                    if row["disposition"] == "answered" and row["conversation_id"]:
+                        for cite in json.loads(row["citations_json"] or "[]"):
+                            if (
+                                isinstance(cite, dict)
+                                and cite.get("generation_id") == "owner_knowledge"
+                                and cite.get("record_id")
+                            ):
+                                use = ("answer", str(cite["record_id"]))
+                                _reused(db, archive, use, row["conversation_id"], day, origins)
                 elif table == "resolution_outcomes":
                     _add(db, "outcome_" + row["outcome"], day=day)
                     if row["outcome"] == "corrected" and row["source"].startswith(
@@ -304,6 +373,9 @@ def _collect(db: sqlite3.Connection, cfg: Config) -> None:
                         _add(db, "trial_dropped", day=day)
                     elif row["reason"] == "rejected in review":
                         _add(db, "rules_rejected", day=day)
+                elif table == "rule_checks" and row["status"] == "passed":
+                    use = ("rule", str(row["principle_id"]))
+                    _reused(db, archive, use, row["conversation_id"], day, origins)
             if rows:
                 _put(db, table, str(rows[-1]["analytics_row"]))
     finally:
@@ -314,6 +386,7 @@ def _prepare(db: sqlite3.Connection, cfg: Config) -> None:
     cutoff = (datetime.now(UTC).date() - timedelta(days=30)).isoformat()
     db.execute("DELETE FROM counters WHERE day<?", (cutoff,))
     db.execute("DELETE FROM pending WHERE json_extract(payload,'$.day')<?", (cutoff,))
+    db.execute("DELETE FROM reused WHERE day<?", (cutoff,))
     _collect(db, cfg)
     if db.execute("SELECT COUNT(*) FROM pending").fetchone()[0] >= 30:
         return

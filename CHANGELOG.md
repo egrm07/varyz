@@ -9,6 +9,82 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-23
+
+### Added
+
+- **Monthly Varyz Wrapped.** A card to share: your AI type ("Egor's AI type: The
+  Editor", one of 46, read from all your rules by fixed word lists) with how rare it
+  is among 1,109 public AI rule files on GitHub, then three short lines your agents
+  follow ("Say less.", "Talk normal.", "If it can be undone, don't ask."), signed
+  "My AI got the memo." It comes in yellow and in black. Lines come from
+  your own confirmed general rules; a card with fewer than three gets starter lines,
+  and downloading the card on the rules page keeps each starter as a real rule, so
+  the card you share never says something your agents were not told.
+- The rules page shows the card as soon as you save or keep all, yellow first with a
+  switch to black, a download button and a way to change the name or lines. Done shows
+  it again; the page stays up while it is open and stops when the tab closes.
+- `varyz wrapped` previews the card and writes both PNGs. Once a month your agent
+  ends one reply with a single line, set apart from the rest: "Btw, Varyz prepared
+  your monthly Varyz Wrapped: you are The Editor, 1% of people. Run `varyz wrapped`
+  to see it." It comes with Varyz news (so `varyz news off` turns it off and a new
+  install waits a month), and that reply carries no news post, so it stays one line.
+- **Data signals on every task (2026-10-23).** The memory test is now on by default
+  (`[signals] memory_test = false` turns it off; 2% of low-stakes rules are held back
+  until the finish check). Each later task in a session gets a one-line reminder to run
+  `finish_check`, the `ask` tool asks for the agent's guess on every question (required
+  on each batched question), and the model id given once on `start_task` is reused on
+  later asks and checks in the session.
+- **Activation count (2026-10-22).** With sharing on, the daily counts now include
+  `preference_reused`, the conversations that got an answer from a saved owner answer or
+  passed a saved rule's check when that answer or rule first appeared in another
+  conversation, and `activated`, sent once per installation at its first such
+  conversation. Each conversation counts once; the local list that prevents double
+  counting holds hashed conversation ids, is pruned after 30 days and is never sent. The
+  admin dashboard shows activated installations, activated / ready setups and sessions
+  with a reused preference. Deploy Cloud before releasing clients that send the new names.
+- **Code signing policy (2026-10-22).** varyzai.com/code-signing, linked from every page
+  footer and the download page, covers the planned free Windows signing by SignPath
+  Foundation, the signed and notarized Mac packages, team roles and privacy. A manual
+  `Windows signed installer` workflow builds, submits, verifies and launch-tests a signed
+  EXE; it stays off until the SignPath project exists. See `docs/NATIVE_INSTALLER.md`.
+
+### Changed
+
+- The older "My Way" card moved to `varyz my-way`.
+- The bundled card fonts add Marcellus (OFL), cut to a static Regular.
+- **The stop hook is silent by default (2026-10-22).** The client showed the stop check
+  and the writing check under the agent's finished reply, so both are now opt-in
+  (`[agent] done_gate = true`, `writing_check = true`). When on, the stop check is a short
+  note to call `finish_check` instead of the whole list.
+- **Owner questions stay with their conversation (2026-10-22).** A briefing lists only the
+  open questions asked in the current conversation in the last 7 days. An unanswered
+  question older than 7 days is marked expired by the daemon's hourly sweep; nothing is
+  deleted, and the owner can still answer it.
+- **Briefings carry only what fits the task (2026-10-22).** Rules written for another
+  situation ("when writing a reply ...") stay out of unrelated work, a project briefing
+  lists at most 8 decisions related to the task, and earlier sessions and history are
+  short lines instead of raw records. An earlier session counts as related only when it
+  shares two distinctive words with the task, not chat words such as "dont" or "see". A
+  session that got the session-start note gets a first briefing without the policy that
+  note already gave, and later prompts carry a one-line correction reminder instead of
+  the whole memory policy. A typical first briefing is about a third smaller.
+- **Recipes are found for differently worded tasks (2026-10-22).** A recipe used to come
+  back only when the task repeated most of its name. Now a task naming the same kind of
+  work also gets it: a "make a varyz demo video" recipe reaches "Film a launch clip",
+  "Make a short trailer" and "Record a screencast". Such a recipe is marked
+  `"match": "similar"` (a named one `"named"`) and tells the agent to use the steps that
+  fit. To stop false matches, a task naming another kind of work too needs a word in
+  common with the recipe, and broad kinds such as release or docs always need one, so
+  "Deploy the Cloud worker" gets no release recipe. Matching stays lexical, with no AI or
+  embedding call, and hosted `start_task` matches the same way. Video work now also
+  covers film, screencast and clip, and "launch video" is no longer read as a release.
+  Measured on 12 video, release and unrelated tasks: all 12 right; a task with no word in
+  common and a broad kind (such as "ship varyz 0.1.3") still gets no recipe.
+- **Download copy says Varyz is released (2026-10-22).** The home page and README still
+  said downloads were being prepared after 0.1.0, 0.1.1 and 0.1.2 were public. They now
+  link the latest GitHub release and the code signing policy.
+
 ## [0.1.2] - 2026-10-22
 
 ### Added

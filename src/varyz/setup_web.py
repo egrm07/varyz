@@ -11,7 +11,7 @@ A download (the search models, Ollama, the classifier's model) can be paused
 from the page and resumed, there or by a later `varyz setup`: each keeps what
 has arrived.
 
-The page is dressed like the Taste Card (`varyz wrapped`): its colours, its two
+The page is dressed like the Taste Card (`varyz my-way`): its colours, its two
 typefaces from the bundled cuts, and its bird mark.
 
 What reaches the server is guarded as tightly as a local page can be. It
@@ -696,11 +696,9 @@ class SetupServer(ThreadingHTTPServer):
 
     @property
     def review_active(self) -> bool:
-        from varyz.review_web import IDLE_LIMIT as REVIEW_IDLE_LIMIT
-
         review = self._review
         return (review is not None and not review.closed.is_set()
-                and time.monotonic() - review.last_request < REVIEW_IDLE_LIMIT)
+                and time.monotonic() - review.last_request < review.idle_limit())
 
     def open_review(self) -> str:
         """Reuse the normal rules review on this setup's exact config and identity."""

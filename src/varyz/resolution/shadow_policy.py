@@ -163,7 +163,8 @@ def _project_records(conn: sqlite3.Connection, *, max_records: int) -> list[Reco
 
 
 def packet_ids(packet: dict[str, Any]) -> list[str]:
-    keys = ("how_owner_works", "project_vision", "project_rules", "standing_rules",
+    keys = ("writing_rules", "message_rules", "how_owner_works", "project_vision",
+            "project_rules", "standing_rules",
             "owner_workflows", "project_decisions", "general_preferences")
     ids = {str(item["id"]) for key in keys for item in packet.get(key, []) if "id" in item}
     checklist = packet.get("definition_of_done", [])

@@ -4,8 +4,11 @@ A workflow is the order the owner settles things in. A recipe is narrower: the
 steps that got one task done after the agent worked out how (a failed first try,
 a search, a fix to its first approach), how to tell it worked, and the trap that
 cost the time. The agent writes it at finish_check, once the task is done and
-verified; the next start_task whose task names it gets it back, so the next agent
-starts where this one finished instead of working it out again.
+verified; the next start_task whose task names it, or names the same kind of
+work in other words ("film a launch clip" for "make a demo video"), gets it back,
+so the next agent starts where this one finished instead of working it out again.
+Matching is lexical plus the kind-of-work triggers, with no model or embedding,
+so the local and the hosted start_task find the same recipe.
 
 A recipe is small on purpose: at most eight steps and 1,600 characters, about
 400 tokens, so it costs a briefing little. Each use appends an outcome. 'changed'
@@ -31,6 +34,7 @@ from datetime import datetime
 from typing import Any
 
 from varyz.domain import new_id, utc_now
+from varyz.resolution.domains import detect_domains
 from varyz.resolution.knowledge import (
     GLOBAL_SCOPE,
     _datetime,
@@ -182,17 +186,82 @@ def validated(
     return name, parsed, check, pitfalls, normalize_scope(scope)
 
 
-def best_match(recipes: Iterable[Any], text: str, project: str | None) -> Any | None:
-    """The recipe a task names, the project's own before a general one.
+NAMED = "named"
+SIMILAR = "similar"
+# Kinds of work named by a thing made ('a video', 'a cover letter'): the kind
+# alone says what the task is. The others are named by verbs every developer
+# task uses ('deploy', 'docs', 'script'), so a similar match there also needs a
+# word the task shares with the recipe.
+_TELLING_KINDS = frozenset({
+    "video", "writing", "social-post", "job-application", "travel", "cooking",
+    "shopping", "events", "study",
+})
 
-    Each recipe has ``name`` and ``scope``. It applies when the task carries most
-    of its name's terms (all of them for a name of one or two terms) and its
-    scope is general, the project, or a project the task names.
+
+def _full_text(recipe: Any) -> str:
+    """A recipe's name, steps, check and trap as one text, from a row or a payload."""
+    parts = [str(recipe.name)]
+    for step in getattr(recipe, "steps", ()) or ():
+        if isinstance(step, Step):
+            parts += [step.step, step.how]
+        elif isinstance(step, Mapping):
+            parts += [str(step.get("step") or ""), str(step.get("how") or "")]
+        else:
+            parts.append(str(step))
+    parts += [str(getattr(recipe, "check", "") or ""), str(getattr(recipe, "pitfalls", "") or "")]
+    return " ".join(parts)
+
+
+def _fit(
+    recipe: Any, task_terms: set[str], task_kinds: set[str]
+) -> tuple[int, int, int, int, float] | None:
+    """How a task fits a recipe, or None.
+
+    The fit is (2 named or 1 similar, name terms shared, terms shared with the
+    whole recipe, minus the kinds of work the name has and the task lacks, share
+    of the name). Named: the task carries most of the name's
+    terms (all of them for a name of one or two terms). Similar: the task is the
+    kind of work the name is ('film a launch clip' for 'make a demo video'), with
+    one shared word for each other kind of work the task names and the recipe
+    never mentions, and at least one when the kind is not a telling one.
+    """
+    wanted = _terms(recipe.name)
+    named = len(task_terms & wanted)
+    text = _full_text(recipe)
+    shared = len(task_terms & _terms(text))
+    name_kinds = set(detect_domains(recipe.name))
+    extra = -len(name_kinds - task_kinds)
+    need = len(wanted) if len(wanted) <= 2 else math.ceil(len(wanted) * 0.6)
+    if wanted and named >= need:
+        return (2, named, shared, extra, named / len(wanted))
+    kinds = task_kinds & name_kinds
+    if not kinds:
+        return None
+    evidence = len(task_kinds - set(detect_domains(text)))
+    if not kinds & _TELLING_KINDS:
+        evidence = max(evidence, 1)
+    if shared < evidence:
+        return None
+    return (1, named, shared, extra, named / len(wanted) if wanted else 0.0)
+
+
+def best_match(
+    recipes: Iterable[Any], text: str, project: str | None
+) -> tuple[Any, str] | None:
+    """The recipe for a task and how it matched: ``named`` or ``similar``.
+
+    Each recipe has ``name``, ``scope`` and, when known, ``steps``, ``check``
+    and ``pitfalls``. Its scope must be general, the project, or a project the
+    task names. A named match beats a similar one; then the project's own beats
+    a general one; then more shared terms win. Matching is lexical and costs no
+    model call: a task that shares no words and no kind of work with a recipe
+    does not find it.
     """
     project_scope = normalize_scope(project) if project else None
     lowered = unicodedata.normalize("NFKC", text).casefold()
     task_terms = _terms(text)
-    best: tuple[tuple[int, float, int], Any] | None = None
+    task_kinds = set(detect_domains(text))
+    best: tuple[tuple[int, int, int, int, int, float], Any] | None = None
     for recipe in recipes:
         scope = normalize_scope(recipe.scope)
         specific = scope != GLOBAL_SCOPE
@@ -200,17 +269,15 @@ def best_match(recipes: Iterable[Any], text: str, project: str | None) -> Any | 
             rf"(?<!\w){re.escape(scope)}(?!\w)", lowered
         ):
             continue
-        wanted = _terms(recipe.name)
-        if not wanted:
+        fit = _fit(recipe, task_terms, task_kinds)
+        if fit is None:
             continue
-        shared = len(task_terms & wanted)
-        need = len(wanted) if len(wanted) <= 2 else math.ceil(len(wanted) * 0.6)
-        if shared < need:
-            continue
-        rank = (1 if specific else 0, shared / len(wanted), shared)
+        rank = (fit[0], 1 if specific else 0, *fit[1:])
         if best is None or rank > best[0]:
             best = (rank, recipe)
-    return best[1] if best else None
+    if best is None:
+        return None
+    return best[1], NAMED if best[0][0] == 2 else SIMILAR
 
 
 class SQLiteRecipeStore:
@@ -341,11 +408,12 @@ class SQLiteRecipeStore:
         return counts
 
     def applicable(self, text: str, *, project: str | None = None) -> Recipe | None:
-        """The one recipe this task names, the project's own before a general one.
+        """The one recipe for this task (see ``best_match``), not one whose last uses failed."""
+        found = self.match(text, project=project)
+        return found[0] if found else None
 
-        A recipe applies when the task carries most of its name's terms (all of
-        them for a name of one or two terms), and not when its last uses failed.
-        """
+    def match(self, text: str, *, project: str | None = None) -> tuple[Recipe, str] | None:
+        """The recipe for this task and whether the task named it or is similar work."""
         usable = [recipe for recipe in self.current() if not self._failing(recipe.id)]
         return best_match(usable, text, project)
 
@@ -480,9 +548,18 @@ OFFER = (
 )
 
 
+GUIDANCE = {
+    NAMED: "A past agent worked this task out; follow these steps unless the task differs. ",
+    SIMILAR: (
+        "A past agent worked out similar work, not this exact task; use the steps that "
+        "fit and skip the rest. "
+    ),
+}
+
+
 def _brief(
     recipe_id: str, name: str, scope: str, steps: Iterable[Any], check: str,
-    pitfalls: str, worked: int,
+    pitfalls: str, worked: int, match: str = NAMED,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "id": recipe_id,
@@ -499,10 +576,8 @@ def _brief(
         item["pitfalls"] = pitfalls
     if worked:
         item["worked_before"] = worked
-    item["guidance"] = (
-        "A past agent worked this task out; follow these steps unless the task "
-        "differs. " + RECORD_HINT
-    )
+    item["match"] = match
+    item["guidance"] = GUIDANCE[match] + RECORD_HINT
     return item
 
 
@@ -517,12 +592,13 @@ def hosted(
         for record in records
         if record.get("kind") == "recipe" and isinstance(record.get("payload"), Mapping)
     ]
-    match = best_match(candidates, task, project)
-    if match is None:
+    found = best_match(candidates, task, project)
+    if found is None:
         return None
+    recipe, match = found
     return _brief(
-        match.id, match.name, match.scope, match.steps, match.check,
-        getattr(match, "pitfalls", ""), 0,
+        recipe.id, recipe.name, recipe.scope, recipe.steps, recipe.check,
+        getattr(recipe, "pitfalls", ""), 0, match,
     )
 
 
@@ -530,13 +606,14 @@ def served(conn: sqlite3.Connection, task: str, project: str | None) -> dict[str
     """The recipe for start_task, compact; ``None`` when there is none or no table."""
     try:
         store = SQLiteRecipeStore(conn)
-        recipe = store.applicable(task, project=project)
-        if recipe is None:
+        found = store.match(task, project=project)
+        if found is None:
             return None
+        recipe, match = found
         uses = store.uses(recipe.id)
     except sqlite3.OperationalError:  # a database not yet migrated to 0051
         return None
     return _brief(
         recipe.id, recipe.name, recipe.scope, recipe.steps, recipe.check,
-        recipe.pitfalls, uses["worked"],
+        recipe.pitfalls, uses["worked"], match,
     )

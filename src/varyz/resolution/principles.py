@@ -487,6 +487,8 @@ class SQLitePrincipleStore:
         project: str | None = None,
         limit: int = 12,
         domains: Collection[str] = (),
+        exclude: Collection[str] = (),
+        context: str = "",
     ) -> tuple[tuple[Applicable, ...], int]:
         """Confirmed rules that bear on a task, and how many were left out.
 
@@ -494,14 +496,17 @@ class SQLitePrincipleStore:
         scope, rules sharing terms with the task come first; standing rules with
         no shared term still fill the remaining places, because "dry-run first"
         governs a task that never says "dry-run". Relevance orders; it does not
-        judge — the agent weighs each rule against its own plan.
+        judge: the agent weighs each rule against its own plan. Rules in
+        ``exclude`` are shown in a section of their own (``writing_rules``).
 
         A domain rule ('website': add a favicon) applies only when the task is that
         kind of work; ``domains`` names the kinds detected for this task. At least
         half of ``limit`` goes to rules for every project when there are that many.
         A rule saved twice in near-identical words is shown once, and a rule for
         every project that is about another of the owner's projects stays out
-        unless the task names that project (``rule_selection``).
+        unless the task names that project (``rule_selection``), as does a rule for a
+        situation the task is not in. ``context`` (the kinds of work, say) counts
+        as part of the task for that test.
         """
         from varyz.resolution.rule_selection import select
 
@@ -514,6 +519,8 @@ class SQLitePrincipleStore:
             limit=limit,
             known_projects={p.scope for p in current},
             normalize_scope=normalize_scope,
+            exclude=exclude,
+            context=context,
         )
         chosen = tuple(Applicable(rule, matched) for rule, matched in selection.chosen)
         return chosen, selection.withheld

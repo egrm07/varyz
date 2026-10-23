@@ -103,6 +103,9 @@ DOMAINS: tuple[Domain, ...] = (
             r"videos?", r"promo(?: video)?s?", r"footage", r"trailers?", r"shorts",
             r"reels?", r"screen ?recordings?", r"voice-?overs?", r"narrat(?:ion|ed|or)",
             r"remotion", r"b-?roll", r"demo video", r"tiktoks?",
+            r"films?", r"filming", r"filmed", r"screencasts?",
+            # Not "paper clip" or "clip art".
+            r"(?<!paper )clips?(?! art)",
         ),
         (
             "Whose voice narrates this video, and in which language?",
@@ -183,7 +186,9 @@ DOMAINS: tuple[Domain, ...] = (
         "Release, deploy or publish",
         _words(
             r"releas(?:e|ing)", r"ship(?:ping)?", r"deploy(?:ing|ment)?", r"publish(?:ing)?",
-            r"launch(?:ing)?", r"version bump", r"go live", r"production", r"submission",
+            # "A launch video" is a video, not a release.
+            r"launch(?:ing)?(?! (?:videos?|clips?|films?|trailers?|teasers?)(?![\w-]))",
+            r"version bump", r"go live", r"production", r"submission",
         ),
         (
             "Is this release allowed to go out without the owner's final look?",

@@ -216,8 +216,11 @@ Sensitive checkpoints stay local. Hosted writes require an existing report grant
 respect archive/project pauses and revocations, and use encrypted report storage.
 They do not enter preference knowledge.
 
-`start_task.open_threads` shows up to three unfinished matching threads, within
-4000 characters, without requiring a resume keyword. Matching uses whole current
+`start_task.open_threads` shows up to three unfinished threads, within 4000
+characters, without requiring a resume keyword. Threads whose words match the task
+come first (`match: "topic"`); the most recent unfinished ones fill the rest
+(`match: "recent"`), so a vague "continue" still finds work. The asking session's
+own conversation is left out. Matching uses whole current
 session snapshots from at most 200 recent sessions; a completed pickup closes its
 root thread. Search remains bounded: absence is not proof that no unfinished work
 exists. `session_history` provides the full checkpoint timeline for a known chat.
@@ -237,3 +240,41 @@ privacy each batch. No account login, payment, transcript upload or new project
 approval is inferred from enabling this feature. The 2026-10-16 owner instruction
 authorized report upload for existing selected project scopes; future unselected
 projects still require approval.
+
+
+## Automatic hand-offs (2026-10-22)
+
+The owner should never have to brief an agent on earlier work, so neither half
+depends on the agent remembering to journal.
+
+**Capture.** After every turn the stop hook starts `python -m varyz.handoff capture`
+in a hidden background process, scoped to this chat's own transcript. It mines the
+turns the agent did not journal (a turn with a live checkpoint at or after it is
+skipped), stores them as mined reports and, when the project is approved for Cloud
+reports, sends them up at once through the usual `ReportSync`. It needs approved
+chats and no pause; it never blocks the turn, and a busy lock defers to the next one.
+
+**Current state.** For each conversation the newest report wins, whatever its
+origin; a live checkpoint wins a tie. So a turn captured after the agent's last
+checkpoint becomes the thread's current state, and an older backfill can never
+replace live work. Locally (`history`) and in Cloud (`_states`) the rule is the same.
+A mined report counts as unfinished only when it lists real open items beyond the
+standard "completion unknown" qualifier (`left_open`), so ordinary chat turns do not
+show up as open work.
+
+**Pickup.** The first briefing of every session, including a vague first prompt,
+carries a "Where you left off" section: up to three unfinished threads with what was
+done, what is open, checks, artifacts and ids. `handoff.open_work` takes Cloud's
+threads first (every computer's work), drops any this computer has moved on since,
+then fills in from the local journal; with no Cloud, no approval or no network it is
+local only. Cloud can take seconds to answer `open` (12 s before the 2026-10-22
+deploy, 1 to 3 s after), so the briefing never waits for it: it reads a local copy of Cloud's last answer
+(`data/runtime/handoff/<project hash>.json`, ignored after three days) in well
+under a second, and a hidden `python -m varyz.handoff refresh` renews the copy when
+it is over two minutes old. Session start and every capture that sends reports also
+renew it. The section is shown once per session. Agents can ask again any time with the read-only MCP tool
+`catch_up(project, task?)`; `start_task.open_threads` uses the same source.
+
+The recency fallback and newest-wins rule went live in Cloud on 2026-10-22: a
+vague "continue" now returns the three most recent open threads (`match: "recent"`).
+Tests: `tests/test_handoff.py`, `tests/test_cloud_progress.py`.

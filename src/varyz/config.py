@@ -567,12 +567,18 @@ class AgentConfig(Settings):
     # owner works, this project's decisions, the definition of done) with the
     # user's first prompt, so it arrives even when the agent forgets to ask.
     briefing_hooks: bool = True
-    # Before the agent ends a turn in which it changed files, it is sent back once
-    # to walk the owner's definition of done. Off turns the gate, not the briefing, off.
-    done_gate: bool = True
+    # On: before the agent ends a turn in which it changed files, it is sent back
+    # once to walk the owner's definition of done. Off by default, because the
+    # client shows that note to the owner under the finished reply; the briefing
+    # carries the definition of done and the agent calls finish_check itself.
+    done_gate: bool = False
     # A small change to work already there (a fix, a tweak, a wording) skips the
     # gate; `check` walks the definition of done after every edit turn as before.
     done_gate_small_changes: Literal["skip", "check"] = "skip"
+    # On: a finished reply that used a mark an owner rule forbids (an em dash, an
+    # emoji) is sent back once to be corrected. Off by default for the same
+    # reason; the briefing and every later prompt carry the writing rules.
+    writing_check: bool = False
 
 
 class WorkflowsConfig(Settings):
@@ -793,13 +799,13 @@ class RuleShadowConfig(Settings):
 
 
 class SignalsConfig(Settings):
-    """The memory test: off unless the owner turns it on.
+    """The memory test: on by default; ``memory_test = false`` turns it off.
 
-    With it on, a small share of low-stakes rules is held back from a task's
+    A small share of low-stakes rules is held back from a task's
     briefing and shown only at finish_check, so whether a shown rule changes what
     agents do can be measured against the same rule unshown."""
 
-    memory_test: bool = False
+    memory_test: bool = True
     memory_test_rate: float = Field(default=0.02, gt=0, le=0.1)
 
 

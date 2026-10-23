@@ -16,6 +16,11 @@ suggestions and withdrawn rules. Terminal review retains the trial spot-check.
 
 The page is served the way `varyz setup` serves its own: on 127.0.0.1, with a
 token that exists only in the link opened here, dressed like the Taste Card.
+
+After a save that keeps rules, and again on Done, the page shows the owner's
+AI type card (``card.work_with``), yellow first. Done leaves the
+server up while that card is open, so it can be changed and downloaded; closing
+the tab stops it, and so does a few minutes without a word from the page.
 """
 
 from __future__ import annotations
@@ -37,6 +42,8 @@ from varyz.resolution.trials import TRIAL_DROPPED
 
 PAGE = Path(__file__).resolve().parent / "review_web.html"
 IDLE_LIMIT = 30 * 60.0
+# After Done the page only shows the card: it stops pinging, and this much quiet ends it.
+DONE_IDLE_LIMIT = 5 * 60.0
 _MAX_BODY = 256 * 1024
 _TOKEN_HEADER = "X-Varyz-Review"
 _CSP = (
@@ -310,6 +317,90 @@ class ReviewSession:
             return {"done": done, "errors": errors}
 
 
+    def _own_statements(self) -> list[str]:
+        from varyz.card.work_with import own_statements_from_principles
+
+        return own_statements_from_principles(self.client.principles("confirmed"))
+
+    def card(self, name: object = None, lines: object = None) -> dict[str, Any]:
+        """The owner's card in both styles, as the page shows it.
+
+        ``name`` and ``lines`` are what the owner changed on the page; both are
+        remembered for next time. Showing the card counts as the owner having seen
+        its lines, which is what Monthly Varyz Wrapped compares against.
+        """
+        from varyz.card import work_with as card
+        from varyz.card.rarity import BASIS, share_text
+
+        statements = self._own_statements()
+        own = card.owned(statements)
+        data_dir = Path(self.cfg.data_dir) if self.cfg is not None else None
+        with self._lock:
+            state = card.load_state(data_dir) if data_dir is not None else {}
+            if isinstance(name, str):
+                who = card.clean_name(name)
+            else:
+                who = str(state.get("name") or "") or card.git_first_name()
+            picked = card.valid_pick(lines) or card.valid_pick(state.get("lines")) \
+                or card.default_pick(own)
+            if data_dir is not None:
+                card.mark_seen(state, who, statements, picked)
+                if card.valid_pick(lines):
+                    state["lines"] = picked
+                card.save_state(data_dir, state)
+        kind = card.card_type(self._type_rules())
+        return {
+            "name": who,
+            "title": card.card_title(who, kind),
+            "type": {"key": kind.key, "title": kind.title, "line": kind.line,
+                     "share": share_text(kind.key)},
+            "basis": BASIS,
+            "lines": picked,
+            "choices": [{"key": line.key, "text": line.plain, "own": line.key in own}
+                        for line in card.LINES],
+            "images": {style: card.data_url(card.render_png(who, kind, picked, style))
+                       for style in card.STYLES},
+            "file": card.file_stem(who),
+        }
+
+    def _type_rules(self) -> list[Any]:
+        """All the owner's rules, from the archive when it can be read."""
+        from varyz.card import work_with as card
+        from varyz.card.source import load_owner_rules
+
+        if self.cfg is not None and Path(self.cfg.db_path).is_file():
+            try:
+                return card.type_rules(load_owner_rules(Path(self.cfg.db_path)))
+            except Exception:  # a locked or older archive falls back to the daemon's rows
+                pass
+        return card.type_rules_from_principles(self.client.principles("confirmed"))
+
+    def keep_card_lines(self, lines: object) -> list[str]:
+        """Keep the card's starter lines as the owner's rules; the keys added.
+
+        A card must not say what the owner's agents were not told, so a starter
+        becomes a confirmed general rule when the owner keeps the card.
+        """
+        from varyz.card import work_with as card
+
+        picked = card.valid_pick(lines)
+        if picked is None:
+            raise ValueError("expected three card lines")
+        with self._lock:
+            own = card.owned(self._own_statements())
+            added: list[str] = []
+            for key in picked:
+                if key in own:
+                    continue
+                self.client.add_principle(
+                    statement=card.BY_KEY[key].rule, scope=GLOBAL_SCOPE, kind="rule",
+                    source=card.CARD_SOURCE,
+                    provenance={"card_line": key, "applies_to": "work"},
+                    caller=self.caller, device_id=self.device_id,
+                )
+                added.append(key)
+            return added
+
     def network_offer(self) -> dict[str, str] | None:
         """The Varyz network popup, once a save has shown what reviewing is worth.
 
@@ -408,6 +499,11 @@ class ReviewServer(ThreadingHTTPServer):
         self.session = session
         self.last_request = time.monotonic()
         self.closed = threading.Event()
+        # Done was pressed: the page shows the card and no longer pings.
+        self.done = False
+
+    def idle_limit(self, limit: float = IDLE_LIMIT) -> float:
+        return min(limit, DONE_IDLE_LIMIT) if self.done else limit
 
     @property
     def url(self) -> str:
@@ -465,6 +561,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._text(HTTPStatus.FORBIDDEN,
                            "Open the link `varyz rules review` printed; this one has no key.")
                 return
+            self.server.done = False  # The page opened again: it pings again.
             self._send(HTTPStatus.OK, render_page(self.server.session.token),
                        "text/html; charset=utf-8")
             return
@@ -503,6 +600,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"closed": True})
             self.server.closed.set()
             return
+        if path == "/api/done":
+            self.server.done = True
+            self._json({"done": True})
+            return
+        if path in {"/api/card", "/api/card/keep"}:
+            self._card(path)
+            return
         if path == "/api/network/offer":
             try:
                 offer = self.server.session.network_offer()
@@ -533,6 +637,22 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(self.server.session.decide(decisions))
         except Exception as exc:
             self._json({"error": f"varyz could not save them: {exc}"},
+                       HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _card(self, path: str) -> None:
+        body = self._body()
+        if not isinstance(body, dict):
+            self._text(HTTPStatus.BAD_REQUEST, "expected a JSON object")
+            return
+        try:
+            if path == "/api/card/keep":
+                self._json({"kept": self.server.session.keep_card_lines(body.get("lines"))})
+            else:
+                self._json(self.server.session.card(body.get("name"), body.get("lines")))
+        except ValueError as exc:
+            self._text(HTTPStatus.BAD_REQUEST, str(exc))
+        except Exception as exc:
+            self._json({"error": f"varyz could not make the card: {exc}"},
                        HTTPStatus.SERVICE_UNAVAILABLE)
 
     def _body(self) -> Any:
@@ -566,8 +686,9 @@ def serve(session: ReviewSession, *, open_browser: bool = True,
             console.print("Could not open a browser; open the link above yourself.")
     try:
         while not server.closed.wait(1.0):
-            if time.monotonic() - server.last_request > idle_limit:
-                console.print("Nothing heard from the page for a while; stopping.")
+            if time.monotonic() - server.last_request > server.idle_limit(idle_limit):
+                if not server.done:
+                    console.print("Nothing heard from the page for a while; stopping.")
                 break
     except KeyboardInterrupt:
         console.print("Stopped.")

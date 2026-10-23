@@ -13,6 +13,14 @@ REALTIME_CORRECTION_POLICY = (
     "unless they changed it. Verify the write succeeded; an outage is not a saved rule."
 )
 
+# Said with every later prompt of a briefed session: the agent already has the
+# whole policy from session start, so one line keeps it in mind without repeating it.
+REALTIME_CORRECTION_REMINDER = (
+    "If this message corrects your work, apply it now; if it states a reusable "
+    "preference, save it now with remember_owner_rule (replaces for a corrected rule) "
+    "and do not ask whether to."
+)
+
 MEMORY_POLICY = REALTIME_CORRECTION_POLICY + " " + (
     "Before offering to remember a correction, the working agent must judge whether "
     "the owner's words clearly express a reusable rule for future work. "

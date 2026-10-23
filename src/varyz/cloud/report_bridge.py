@@ -5,7 +5,7 @@ from varyz.config import find_config_file
 from varyz.scopes import normalize_scope
 
 
-def call(config: Path | None, action: str, arguments: dict):
+def call(config: Path | None, action: str, arguments: dict, *, timeout: float | None = None):
     from varyz.cloud.client import CloudClient, credential_name, load_tokens
     from varyz.cloud.session_report_sync import journal_path, read_journal
 
@@ -23,6 +23,7 @@ def call(config: Path | None, action: str, arguments: dict):
     name = credential_name(resolved, journal["url"])
     client = CloudClient(journal["url"], load_tokens(name), credential=name)
     try:
-        return client.request("POST", "/api/reports/" + action, json=arguments)
+        extra = {} if timeout is None else {"timeout": timeout}
+        return client.request("POST", "/api/reports/" + action, json=arguments, **extra)
     finally:
         client.close()

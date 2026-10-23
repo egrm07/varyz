@@ -241,13 +241,17 @@ citations = "minimal"
 # Agents connected with `varyz connect` receive the owner's briefing with the
 # first prompt of a session (and again when the kind of work changes).
 briefing_hooks = true
-# Before an agent finishes a turn in which it changed files, send it back once
-# to walk the owner's definition of done for that kind of work.
-done_gate = true
+# true: before an agent finishes a turn in which it changed files, send it back
+# once to walk the owner's definition of done for that kind of work. Off by
+# default: the client shows that note under the finished reply.
+done_gate = false
 # skip: a small change to work already there (a fix, a tweak) is not sent
 # back, but only when the local model below is already loaded and says small;
 # a cold or absent model never skips it. check: every edit turn is sent back.
 done_gate_small_changes = "skip"
+# true: a finished reply that used a mark an owner rule forbids (an em dash, an
+# emoji) is sent back once to be corrected. Off by default for the same reason.
+writing_check = false
 
 [workflows]
 # Setup assesses memory, free disk, CPU and GPU headroom before any Qwen download.

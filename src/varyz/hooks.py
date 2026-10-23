@@ -7,13 +7,22 @@ same shape):
 * ``session-start`` starts the resolution daemon if it is down, without waiting,
   and tells the agent how to work with varyz.
 * ``user-prompt`` hands the agent its briefing with the first real task of the
-  session — how the owner works, this project's decisions, the definition of
-  done — with rule changes delivered on later prompts, including short corrections.
-* ``stop`` sends the agent back once per current working checkpoint, including
-  tasks with no file edits. It also checks the owner's completion standards
-  after edits unless a successful finish result followed the last edit. A small
-  change to work already there is let through
-  (``[agent] done_gate_small_changes``).
+  session (how the owner works, this project's decisions, the definition of
+  done), with rule changes delivered on later prompts, including short corrections.
+  Every later prompt repeats the owner's writing rules (``writing_rules``): a
+  draft often comes from a short follow-up long after the briefing.
+* ``stop`` prints nothing by default. A client shows a blocking Stop note to
+  the owner under the reply they just read, so the definition of done and the
+  writing rules travel in the briefing instead. Two opt-in checks remain:
+  ``[agent] done_gate`` sends the agent back once per working checkpoint and
+  after edits that no successful finish result followed (a small change is let
+  through, ``[agent] done_gate_small_changes``), and ``[agent] writing_check``
+  sends back a reply that used a mark an owner rule forbids (an em dash, an
+  emoji).
+* ``stop`` always starts a background capture of the turn (``varyz.handoff``):
+  what was done and what is open, so the next session, on any computer, picks
+  up without the owner re-briefing it. The first prompt of every session gets
+  that unfinished work as "where you left off", from Cloud when it is set up.
 
 ``session-start`` and ``user-prompt`` also start the hourly news check when it is
 due, and ``user-prompt`` hands the agent any news post the owner has not seen yet
@@ -22,7 +31,7 @@ due, and ``user-prompt`` hands the agent any news post the owner has not seen ye
 
 Every hook fails open: an error, a missing archive or a slow disk prints nothing
 and exits 0, so varyz can never block the user's session. The archive is opened
-read-only; nothing here writes owner data.
+read-only; nothing here writes owner data (the capture runs in its own process).
 """
 
 from __future__ import annotations
@@ -42,7 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from varyz.onboarding import GUIDANCE as ONBOARDING_GUIDANCE
-from varyz.resolution.memory_policy import MEMORY_POLICY, REALTIME_CORRECTION_POLICY
+from varyz.resolution.memory_policy import MEMORY_POLICY, REALTIME_CORRECTION_REMINDER
 from varyz.resolution.questioning import QUESTION_POLICY
 from varyz.session_progress import PROGRESS_POLICY
 
@@ -237,6 +246,19 @@ def session_start(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
         from varyz.news import maybe_check_on_use
 
         maybe_check_on_use(cfg, _config_file())
+    with contextlib.suppress(Exception):
+        # Warm the copy of Cloud's open work that the first briefing reads.
+        from varyz.handoff import warm
+
+        project = _project(event)[0]
+        if project:
+            warm(cfg, _config_file(), project)
+    session_id = str(event.get("session_id") or "")
+    if session_id:
+        # The first briefing then leaves out the policy this note already gives.
+        with contextlib.suppress(OSError):
+            state_file = _state_path(cfg, session_id)
+            _save_state(state_file, {**_load_state(state_file), "policy_shown": True})
     return _context("SessionStart", SESSION_START_CONTEXT + "\n\n" + RECOGNITION)
 
 
@@ -352,7 +374,7 @@ def _preference_updates(cfg: Any, event: dict[str, Any], *, was_briefed: bool) -
                 text += ", ".join(removed)
     state["preference_snapshot"] = current
     _save_state(state_file, state)
-    return _joined(text, REALTIME_CORRECTION_POLICY)
+    return _joined(text, REALTIME_CORRECTION_REMINDER)
 
 
 def _with_news(cfg: Any, result: dict[str, Any] | None, *,
@@ -373,10 +395,19 @@ def _with_news(cfg: Any, result: dict[str, Any] | None, *,
     with contextlib.suppress(Exception):
         if found := update.agent_notice(cfg):
             notices.append(found)
+    wrapped = None
     with contextlib.suppress(Exception):
-        if not learning_failure and (found := news.agent_notice(
+        if not learning_failure:
+            from varyz import wrapped_monthly
+
+            wrapped = wrapped_monthly.agent_notice(cfg, conversation_id=conversation_id)
+    # A Wrapped month holds the news posts for the next prompt: one line, not more.
+    with contextlib.suppress(Exception):
+        if not learning_failure and not wrapped and (found := news.agent_notice(
                 cfg, conversation_id=conversation_id)):
             notices.append(found)
+    if wrapped:
+        notices.append(wrapped)  # Last, so it ends the reply.
     if not notices:
         return result
     notice = "\n\n".join(notices)
@@ -443,7 +474,7 @@ def _joined(*parts: str) -> str:
 def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
     from varyz.resolution.away import RECOGNITION
     from varyz.resolution.away import status as away_status
-    from varyz.resolution.briefing import render_markdown, start_task
+    from varyz.resolution.briefing import FINISH_REMINDER, render_markdown, start_task
     from varyz.resolution.prompt_kind import prompt_classifier_from_config
     from varyz.resolution.task_size import sizer_from_config
 
@@ -469,12 +500,18 @@ def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | No
     if prompt.strip().startswith("/away"):
         return _context("UserPromptSubmit", mode_text + "\n" + RECOGNITION)
     if not is_task(prompt, prompt_classifier_from_config(cfg)):
-        text = _joined(mode_text if mode.get("active") else "", _live_job_text(cfg, prompt))
+        # "continue" on a new computer is exactly when the earlier work is needed.
+        session_task = (_load_state(_state_path(cfg, session_id)).get("task")
+                        if session_id else None)
+        text = _joined(mode_text if mode.get("active") else "", _live_job_text(cfg, prompt),
+                       _left_off(cfg, project, session_id, prompt),
+                       _writing_reminder(cfg, project, cwd, prompt, session_task))
         return _context("UserPromptSubmit", text) if text else None
     task = task_focus(prompt)
     state_file = _state_path(cfg, session_id) if session_id else None
     state = _load_state(state_file) if state_file else {}
     first = not state.get("briefed")
+    session_task = state.get("task")
 
     if not cfg.db_path.exists():
         return None
@@ -524,9 +561,11 @@ def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | No
     if first:
         text = (
             "varyz briefing for this task (start_task was run for you; its result "
-            "follows). Treat it as the owner's constraints.\n\n" + render_markdown(briefing)
+            "follows). Treat it as the owner's constraints.\n\n"
+            + render_markdown(briefing, policy_known=bool(state.get("policy_shown")))
         )
-        return _context("UserPromptSubmit", text)
+        return _context("UserPromptSubmit",
+                        _joined(text, _left_off(cfg, project, session_id, task)))
     if new_domains:
         partial = {
             **briefing,
@@ -549,7 +588,7 @@ def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | No
             "varyz: this prompt adds a new kind of work. The owner's expectations "
             "for it:\n\n" + render_markdown(partial, include_protocol=False)
         )
-        return _context("UserPromptSubmit", text)
+        return _context("UserPromptSubmit", _joined(text, FINISH_REMINDER))
     from varyz.resolution.briefing import render_background_job
 
     text = _joined(
@@ -557,8 +596,71 @@ def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | No
         render_background_job(job) if job is not None else "",
         render_markdown({"project": project, "history_check": briefing["history_check"]},
                         include_protocol=False),
+        _writing_reminder(cfg, project, cwd, prompt, session_task),
+        FINISH_REMINDER,
     )
     return _context("UserPromptSubmit", text) if text else None
+
+
+def _writing_reminder(
+    cfg: Any, project: str | None, cwd: Path | None, prompt: str, session_task: Any
+) -> str:
+    """The owner's writing rules, again on every later prompt: a draft often comes
+    from a short follow-up ("make it kinder") long after the briefing. Rules for
+    emails and messages ride along when the prompt or the session's task involves
+    one. '' when there are none or the archive cannot be read."""
+    if not cfg.db_path.exists():
+        return ""
+    from varyz.resolution.domains import detect_domains
+    from varyz.resolution.knowledge import normalize_scope
+    from varyz.resolution.principles import SQLitePrincipleStore
+    from varyz.resolution.writing_rules import reminder, select_writing
+
+    context = [session_task] if isinstance(session_task, str) else []
+    try:
+        with contextlib.closing(_open_readonly(cfg.db_path)) as conn:
+            found = select_writing(
+                SQLitePrincipleStore(conn).current("confirmed"), task_text(prompt)[:8000],
+                project=project, domains=detect_domains(" ".join([prompt, *context]), cwd),
+                context=context, normalize_scope=normalize_scope,
+            )
+    except (sqlite3.Error, OSError):
+        return ""
+    return reminder(found)
+
+
+def _left_off(cfg: Any, project: str | None, session_id: str, task: str) -> str:
+    """Unfinished work from earlier sessions, once per session; '' if none or unknown."""
+    if not project or not session_id:
+        return ""
+    state_file = _state_path(cfg, session_id)
+    state = _load_state(state_file)
+    if state.get("left_off_shown"):
+        return ""
+    try:
+        from varyz.handoff import open_work, render
+
+        text = render(open_work(cfg, _config_file(), project=project, task=task[:240],
+                                conversation_id=session_id, cloud="cached"))
+    except Exception:
+        return ""
+    state["left_off_shown"] = True
+    with contextlib.suppress(OSError):
+        _save_state(state_file, state)
+    return text
+
+
+def _capture_turn(cfg: Any, event: dict[str, Any]) -> None:
+    """Journal this turn in the background, whether or not the agent did."""
+    from varyz.handoff import can_capture, capture_in_background
+
+    session_id = str(event.get("session_id") or "")
+    transcript = event.get("transcript_path")
+    if not session_id or not isinstance(transcript, str) or not transcript:
+        return
+    project = _project(event)[0] or _load_state(_state_path(cfg, session_id)).get("project")
+    if isinstance(project, str) and project and can_capture(cfg):
+        capture_in_background(_config_file(), project, session_id, transcript)
 
 
 def edited_since_last_prompt(transcript_path: str | None) -> bool | None:
@@ -709,13 +811,118 @@ def _completion_ready(value: Any, depth: int = 0) -> bool | None:
 
 
 def stop(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
+    # The turn is in the transcript now: what the owner said in it is read at once.
+    nudge_live_reading(cfg)
+    with contextlib.suppress(Exception):
+        _capture_turn(cfg, event)
+    if event.get("stop_hook_active"):
+        return None
+    breach = ""
+    if cfg.agent.writing_check:
+        with contextlib.suppress(Exception):
+            breach = _writing_breach(cfg, event)
+    gate = _done_gate(cfg, event) if cfg.agent.done_gate else None
+    if not breach:
+        return gate
+    reason = breach if gate is None else breach + "\n\n" + str(gate["reason"])
+    return {"decision": "block", "reason": reason}
+
+
+def last_reply(transcript_path: str | None) -> str:
+    """Everything the agent wrote to the user since their last prompt; '' if unknown.
+
+    Reads Claude transcripts and native Codex rollouts, like ``turn_activity``.
+    """
+    if not transcript_path:
+        return ""
+    try:
+        lines = Path(transcript_path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ""
+    texts: list[str] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        payload = entry.get("payload")
+        if entry.get("type") == "response_item" and isinstance(payload, dict):
+            if payload.get("type") != "message":
+                continue
+            blocks = payload.get("content")
+            if payload.get("role") == "user":
+                texts.clear()
+            elif payload.get("role") == "assistant" and isinstance(blocks, list):
+                texts.extend(str(b.get("text", "")) for b in blocks if isinstance(b, dict)
+                             and b.get("type") in {"output_text", "text"})
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if entry.get("type") == "user" and not entry.get("isMeta"):
+            if isinstance(content, str) or (
+                isinstance(content, list)
+                and not any(isinstance(b, dict) and b.get("type") == "tool_result"
+                            for b in content)
+            ):
+                texts.clear()
+        elif entry.get("type") == "assistant" and isinstance(content, list):
+            texts.extend(str(b.get("text", "")) for b in content
+                         if isinstance(b, dict) and b.get("type") == "text")
+    return "\n".join(texts)
+
+
+def _writing_breach(cfg: Any, event: dict[str, Any]) -> str:
+    """Why the reply goes back: it used a mark an owner rule forbids. Once per
+    reply; '' when it is clean, no rule forbids a mark, or nothing can be read."""
+    from varyz.resolution.knowledge import normalize_scope
+    from varyz.resolution.principles import SQLitePrincipleStore
+    from varyz.resolution.writing_rules import breaches, forbidden_marks, select_writing
+
+    reply = last_reply(event.get("transcript_path"))
+    last = event.get("last_assistant_message")
+    if isinstance(last, str) and last not in reply:
+        reply = _joined(reply, last)
+    session_id = str(event.get("session_id") or "")
+    if not reply.strip() or not session_id or not cfg.db_path.exists():
+        return ""
+    state_file = _state_path(cfg, session_id)
+    state = _load_state(state_file)
+    project = _project(event)[0] or state.get("project")
+    task = str(state.get("task") or "")
+    with contextlib.closing(_open_readonly(cfg.db_path)) as conn:
+        rules = select_writing(SQLitePrincipleStore(conn).current("confirmed"), task,
+                               project=project, normalize_scope=normalize_scope).text
+    marks = forbidden_marks(rules)
+    found = breaches(reply, marks)
+    if not found:
+        return ""
+    key = hashlib.sha256(reply.encode("utf-8")).hexdigest()[:16]
+    if state.get("writing_checked") == key:
+        return ""
+    state["writing_checked"] = key
+    with contextlib.suppress(OSError):
+        _save_state(state_file, state)
+    statements = {rule.id: rule.statement for rule in rules}
+    used = " and ".join("an em dash" if mark == "em dash" else "an emoji" for mark in found)
+    lines = [f"varyz writing check. Your reply used {used}, which the owner's rules forbid:"]
+    lines += [f"- {statements[marks[mark]]} (id {marks[mark]})" for mark in found]
+    lines.append(
+        "The owner has already read the reply. If the mark was in a draft, email, message "
+        "or other text the owner will send or publish, give that text again, corrected, "
+        "with no apology and no note about this check. If it was only in your own "
+        "explanation, or in text you quoted from someone else, end the turn without "
+        "writing anything more. Follow these rules in everything you write for the rest "
+        "of this session."
+    )
+    return "\n".join(lines)
+
+
+def _done_gate(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
     from varyz.resolution.briefing import finish_check
     from varyz.resolution.task_size import sizer_from_config
 
-    # The turn is in the transcript now: what the owner said in it is read at once.
-    nudge_live_reading(cfg)
-    if event.get("stop_hook_active") or not cfg.agent.done_gate:
-        return None
     session_id = str(event.get("session_id") or "")
     if not session_id:
         return None
@@ -774,28 +981,20 @@ def stop(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
     # shown cannot be taken back. So the agent is told not to write it again:
     # the owner reads one report, and at most a short addendum under it.
     lines = [
-        "varyz finish check. The user already received the report; do not repeat it, "
-        "revise it into another report, or describe this internal check. Inspect the "
-        "completion standards and current task checklist below; continue authorised "
-        "unfinished work before ending the task. Add a brief "
-        "update covering changes, outstanding work, justified exclusions and unanswered "
-        "owner questions. If no update is needed, confirm in one sentence that the "
-        "owner's completion standards are satisfied. A working checkpoint is not "
-        "completion: if only permission, owner input or external blockers remain, "
-        "record a blocked checkpoint and hand off honestly; do not bypass them.",
+        "varyz finish check. The owner already has your report: do not repeat it or "
+        "mention this check. Finish any authorised work left below, then add at most "
+        "one short line on what is still open, or say the checklist is met. If only "
+        "owner input or an outside blocker remains, record a blocked checkpoint.",
     ]
     if pending_gate:
         lines.append("Current task: " + completion["task"])
-        lines.append("Unfinished work (agent-reported, not independently verified):")
+        lines.append("Unfinished (agent-reported):")
         lines += ["- " + item for item in completion.get("pending", [])]
-    lines += [f"- [{item['domain']}] {item['item']}" for item in items]
-    if check.get("verification"):
-        lines.append("Completion evidence: " + json.dumps(
-            check["verification"], ensure_ascii=False))
+    lines += [f"- {item['item']}" for item in items]
     if check.get("away_guidance"):
         lines.append(check["away_guidance"])
     if check["open_owner_questions"]:
-        lines.append("Unanswered owner questions (do not describe these as decisions):")
+        lines.append("Still unanswered in this conversation:")
         lines += [f"- {item['question']}" for item in check["open_owner_questions"]]
     return {"decision": "block", "reason": "\n".join(lines)}
 
@@ -866,7 +1065,7 @@ def doctor(
     else:
         checks.append(("database", False, f"missing: {cfg.db_path}"))
     checks.append(("hooks enabled", bool(cfg.agent.briefing_hooks),
-                   "done gate on" if cfg.agent.done_gate else "done gate off"))
+                   "stop check on" if cfg.agent.done_gate else "stop is silent"))
     paused = pause_path(cfg).exists()
     checks.append(("not paused", not paused,
                    "`varyz hooks resume` to turn back on" if paused else "running"))

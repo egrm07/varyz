@@ -103,8 +103,8 @@ and known biases are in `NETWORK_DATA.md`.
 Checks and escalations also carry the model name when the agent gave one (allowlisted
 families only), the result before this one (`previous`, which shows a false "done"), the
 ask label, the agent's guess at the answer with hit or miss, and rule chain depth. The
-memory test is off by default; `[signals] memory_test = true` in `config.toml` turns it
-on, and `memory_test_rate` (default 0.02, at most 0.1) sets how often a low-stakes rule
+memory test is on by default; `[signals] memory_test = false` in `config.toml` turns it
+off, and `memory_test_rate` (default 0.02, at most 0.1) sets how often a low-stakes rule
 is held back. `varyz data signals` prints the local totals: false "done" claims, first-try
 pass rate by model, shown versus held-back pass rates, ask labels, guess hit rates and how
 long rules last.

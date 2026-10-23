@@ -291,7 +291,9 @@ receipt = {
     "checks": results,
     "visual_wizard": "not inspected",
     "cloud_and_agent_accounts": "not connected; synthetic local onboarding only",
-    "installer_signature": "unsigned candidate; no public download switch",
+    "installer_signature": os.environ.get(
+        "INSTALLER_SIGNATURE", "unsigned candidate; no public download switch"
+    ),
     "foreign_python_environment": "deliberately injected throughout",
 }
 (r / "verified.json").write_text(json.dumps(receipt, indent=2) + "\n")

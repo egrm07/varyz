@@ -125,6 +125,22 @@ def test_backstory_is_a_dated_timeline_that_shows_a_problem_came_back(tmp_path):
         assert "brought it back 1 time(s)" in result["summary"]
 
 
+def test_earlier_sessions_share_two_topic_words_not_one_or_chat_words(tmp_path):
+    cfg = Config(base_dir=tmp_path)
+    with closing(open_db(cfg.db_path)) as conn:
+        for chat, asked in (
+            ("hook", "Make the stop hook note shorter"),
+            ("launch", "Plan a big launch for the persona site"),
+            ("chat", "I dont see the export button, really"),
+        ):
+            record(conn, Checkpoint(project="acorn", conversation_id=chat, checkpoint_id="a",
+                                    task=asked, status="working", checks=["Done"]),
+                   agent_id="agent:codex:eval")
+        result = brief(conn, "im not liking the stop hook, its really big and i dont see why",
+                       "acorn", conversation_id="now", cfg=cfg)
+        assert [s["conversation_id"] for s in result["timeline"]] == ["hook"]
+
+
 def test_continuation_does_not_replace_withheld_latest_with_stale_state(tmp_path):
     cfg = Config(base_dir=tmp_path)
     with closing(open_db(cfg.db_path)) as conn:

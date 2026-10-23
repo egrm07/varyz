@@ -140,6 +140,16 @@ _AGAIN = re.compile(r"\b(?:still|again|keeps?|tried|didn'?t work|did not work|no
                     r"no longer|as before|last time)\b", re.I)
 # Mined exchanges whose prompt was not the owner's own words.
 _NOT_ASKED = re.compile(r"^\s*(?:<|Historical session task\b)")
+# How the owner talks, not what about: rare enough in reports to pass as topic
+# words, so "i dont see" matched every chat where the owner said it.
+_CHAT = frozenset({
+    "im", "ive", "id", "ill", "dont", "doesnt", "didnt", "cant", "wont", "isnt", "arent",
+    "wasnt", "really", "see", "saw", "seen", "look", "looks", "give", "gives", "gave", "get",
+    "gets", "got", "like", "liking", "liked", "want", "wants", "wanted", "think", "know",
+    "mostly", "just", "actually", "maybe", "probably", "pretty", "right", "sure", "okay", "ok",
+    "yes", "yeah", "thing", "things", "stuff", "lot", "lots", "much", "kind", "way", "also",
+    "very",
+})
 
 
 def _topic_terms(conn: sqlite3.Connection, task: str, project: str) -> str:
@@ -148,7 +158,8 @@ def _topic_terms(conn: sqlite3.Connection, task: str, project: str) -> str:
     from varyz.resolution.task_history import task_query
     from varyz.retrieval.search import _fts_terms
 
-    terms = _fts_terms(task_query(task, project))
+    terms = [term for term in _fts_terms(task_query(task, project))
+             if term.strip('"').casefold() not in _CHAT]
     total = conn.execute("SELECT count(*) FROM session_progress_fts").fetchone()[0]
     counted = []
     for term in terms[:200]:
@@ -231,6 +242,18 @@ def related(
         " ORDER BY bm25(session_progress_fts, 3.0, 1.0) LIMIT 200",
         (query, project.casefold(), conversation_id or ""),
     ).fetchall()
+    terms = query.split(" OR ")
+    if len(terms) >= 3:
+        # One shared word is chance ("big" in a launch plan); the same problem
+        # shares at least two of the task's distinctive words.
+        found = {seq for seq, *_ in rows}
+        shared: dict[int, int] = {}
+        for term in terms:
+            for (seq,) in conn.execute("SELECT rowid FROM session_progress_fts "
+                                       "WHERE session_progress_fts MATCH ?", (term,)):
+                if seq in found:
+                    shared[seq] = shared.get(seq, 0) + 1
+        rows = [row for row in rows if shared.get(row[0], 0) >= 2]
     rank = {seq: n for n, (seq, *_) in enumerate(rows)}
     words = {term.strip('"').casefold() for term in query.split(" OR ")}
     steps: list[dict[str, Any]] = []

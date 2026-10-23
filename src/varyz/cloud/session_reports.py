@@ -445,7 +445,7 @@ class SessionReports:
                 "(r.origin='agent_report' OR NOT EXISTS (SELECT 1 FROM "
                 f"cloud_session_reports l WHERE l.account=r.account AND l.project IN ({marks}) "
                 "AND l.conversation=r.conversation AND l.origin='agent_report' "
-                "AND l.payload!='null'))"
+                "AND l.occurred>=r.occurred AND l.payload!='null'))"
             )
             args.extend(keys)
         if query.topic:

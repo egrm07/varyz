@@ -99,7 +99,10 @@ authoritative.
 | Accounts | Coming: an account ties a person to the data they sync to it, private to them unless they publish it themselves | Rules and preferences should follow a person between computers and agents. Private is the default and publishing is the person's own act. |
 | Role toward coding agents | Advisor, not lead | Claude Code and Codex plan, build and judge; Varyz supplies the owner's confirmed rules, vision and decisions so the work is done the owner's way. |
 | Rule source | Owner-confirmed only | Mined suggestions wait in review and never reach an agent; an agent records a rule only after asking the owner. |
-| Shareable card (`varyz wrapped`) | Deterministic Pillow render from general rules, read-only DB, preview before write | A card people post must never show a project rule, a guess or an unreviewed line; no model, no network, same rules give the same card. |
+| Shareable card (`varyz wrapped`, `varyz my-way`) | Deterministic Pillow render from general rules, read-only DB, preview before write | A card people post must never show a project rule, a guess or an unreviewed line; no model, no network, same rules give the same card. |
+| AI type and rarity | 46 types from nine word families over all the owner's own rules (only the type is shown, never a rule); the share is a table built by `scripts/type_rarity.py` from 1,109 public AI rule files on GitHub and shipped with the package | A type gives people something to compare and a rare one something to post. The share must be counted, not invented, and the card must work offline. |
+| Card lines | Seven fixed lines, each matched to the owner's rules by a word list; starters fill a short card and become rules only when the owner keeps the card | A line people share must be one their agents follow. Short, plain lines get shared; the rule behind each stays exact. |
+| Monthly Varyz Wrapped | One line the agent puts last in a reply, handed over by the prompt hook with news, at most once in 30 days from the last time the owner saw or was told about the card | It reaches the owner where they already read, in the agent's words, without a pop-up; one line, and no news post in the same reply, keeps it from crowding the answer. |
 | Evaluation | TRR plus explicit error/abstention buckets | Blanket abstention and confident invention must both score badly. |
 | Tier 3 | Optional incremental compile | Slow synthesis cannot gate explicit knowledge, evidence, or escalation. |
 | Onboarding | One idempotent `varyz setup`: archive, daemon, agents, data sources, doctor | Five commands in the right order lost people; each step asks, `--yes` answers all, and a re-run keeps what is there. |
@@ -200,7 +203,8 @@ src/varyz/resolution/client.py     JSON transport boundary
 src/varyz/trust.py                 principals, tokens, capabilities, callers
 src/varyz/mcp_server.py            agent tools and identity binding
 src/varyz/ui/server.py             authenticated owner inbox; daemon client only
-src/varyz/card/                    `varyz wrapped` card: source, archetype, layout, SVG/PNG, bundled OFL fonts
+src/varyz/card/                    `varyz wrapped` and `my-way` cards: source, lines, layout, SVG/PNG, bundled OFL fonts
+src/varyz/wrapped_monthly.py       Monthly Varyz Wrapped line for the agent's reply
 scripts/trr.py                     deterministic Trusted Resolution Rate scorer
 scripts/advice_bench.py            advice recall fixture and live replay (counts only)
 ```
@@ -302,7 +306,7 @@ The workflow an agent runs is brief → ask → check, all read-mostly over the 
   is read (`stored_scope`) and when SQL compares it (`varyz_scope(scope) = ?`, a
   function each store registers on its connection), never rewritten.
   The `ask_owner` block carries a scope question, and `answer_owner_question` stores the
-  owner's pick. Without one, `suggest_scope` guesses and fails narrow — a leaked one-off
+  owner's pick. Without one, `suggest_scope` guesses and fails narrow: a leaked one-off
   choice is worse than asking again in another project. Explicit wording decides first.
   Then the local model (`[workflows] scope_classifier`) widens to general only at
   P >= 0.9; below that the answer is kept to the project. Then the wording
@@ -328,7 +332,8 @@ tasks, and neither are plain questions. Work or question is asked of the local m
 (every sentence asks, none requests work). The hook never waits for a model load:
 `LocalModel(when_cold="warm")` starts the load in a detached process, because Ollama
 drops a load whose caller leaves, and lets the rule answer. SessionStart starts the
-same warm-up. The Stop hook skips a small change (`[agent] done_gate_small_changes`)
+same warm-up. The Stop hook is silent unless `[agent] done_gate` or `writing_check` is
+on, since the client shows its note under the finished reply. When on, it skips a small change (`[agent] done_gate_small_changes`)
 only when the model is already loaded (`when_cold="skip"`) and calls it small; a
 cold, absent or crowded model gates as before. Every hook fails open: an error is logged to `data/runtime/hooks/errors.log` and
 the agent carries on.
@@ -613,8 +618,14 @@ writes it through `record_recipe`, so no AI call is made; a credential found by 
 secrets scan refuses it. `task_recipes`, `task_recipe_retractions` and
 `task_recipe_outcomes` are append-only. The same name and scope again is one recipe; a
 correction supersedes, and an outcome is `worked`, `changed` or `failed`. `start_task`
-serves the best match by word overlap with the task (the project's own recipe before a
-general one) unless its last two outcomes failed, and `finish_check` either offers to
+serves the best match (the project's own recipe before a general one) unless its last two
+outcomes failed. A task that carries most of the recipe's name is a `named` match. A task
+worded differently is a `similar` match when it names the same kind of work as the
+recipe's name (`domains.detect_domains`, so "film a launch clip" finds "make a demo
+video") and shares at least one word with the recipe for every other kind of work it
+names; a broad kind (release, docs, website and the like) always needs one shared word.
+A similar recipe is served with guidance to use the steps that fit. No model or embedding
+is used, so local and hosted `start_task` match alike, and `finish_check` either offers to
 record one or asks how the served one went. Cloud sync carries current recipes (name,
 steps, check, pitfalls, scope; never provenance or outcomes) as the `recipe` kind, which
 the Cloud validates with the same caps; hosted `start_task` serves them from synced
@@ -946,7 +957,7 @@ history, not a distributed command/event authority or replacement sync protocol.
 See `docs/RULE_SHADOW.md`; transport contract models remain unchanged.
 
 
-## Approved Cloud snapshot — 2026-10-05
+## Approved Cloud snapshot (2026-10-05)
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
@@ -967,7 +978,7 @@ The Cloud service enforces OAuth grants, local-only uploads and a separate MCP r
 See `docs/CLOUD_ARCHIVE.md` and `reports/CLOUD_ARCHIVE_2026-10-05.md`.
 
 
-### Combined Cloud context deployment — 2026-10-05
+### Combined Cloud context deployment (2026-10-05)
 
 `/mcp/context` uses explicit `varyz.context.read` consent for read-only preferences
 and approved evidence; legacy archive grants stay search/fetch only. The
@@ -999,7 +1010,7 @@ checksum receipts follow verified restores; server snapshots and admission budge
 bound disk growth. Archive-key recovery is separately encrypted. The deployed
 read-only transport passed official MCP SDK tests; actual phone verification is pending.
 
-### Hosted plugin candidate — 2026-10-05
+### Hosted plugin candidate (2026-10-05)
 
 `/mcp/plugin` combines eight confirmed-preference tools and five approved-history
 read tools under explicit `varyz.plugin` consent. This new resource does not widen

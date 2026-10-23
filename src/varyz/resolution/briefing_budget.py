@@ -10,6 +10,8 @@ from varyz.resolution.knowledge import _terms
 FIELDS = (
     "continuation",
     "away_mode",
+    "writing_rules",
+    "message_rules",
     "how_owner_works",
     "project_vision",
     "project_rules",

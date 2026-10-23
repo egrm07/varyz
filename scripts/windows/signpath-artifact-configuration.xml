@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paste into the SignPath project as artifact configuration "windows-installer".
+     GitHub delivers the uploaded installer as a ZIP, so the root is a zip-file. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="VaryzSetup-*-windows-x64.exe">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
