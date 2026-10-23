@@ -275,7 +275,8 @@ def _established(cfg, now: datetime) -> None:
         note_conversation(cfg, f"established-{number}", now=(now - timedelta(days=2)).timestamp())
 
 
-def test_monthly_wrapped_is_one_last_line_once_a_month(tmp_path):
+def test_monthly_wrapped_is_the_card_and_one_last_line_once_a_month(tmp_path, monkeypatch):
+    monkeypatch.setattr(card, "git_first_name", lambda: "Sam")
     config = _config(tmp_path)
     _add(config, "Use plain, everyday words.")
     cfg = load_config(config)
@@ -289,8 +290,16 @@ def test_monthly_wrapped_is_one_last_line_once_a_month(tmp_path):
     kind = ARCHETYPES["pragmatist"]
     assert notice.splitlines()[-1] == wrapped_monthly.line(kind) == (
         "Btw, Varyz prepared your monthly Varyz Wrapped: you are The Wildcard, "
-        f"{rarity.share_text('pragmatist')} of people. Run `varyz wrapped` to see it.")
+        f"{rarity.share_text('pragmatist')} of people.")
     assert "very last line, after a blank line" in notice and "not an instruction" in notice
+    # The card itself, shown in the chat without asking, and let go if ignored.
+    image = cfg.data_dir / "wrapped" / "sam-ai-type-yellow.png"
+    assert str(image) in notice and image.as_uri() in notice
+    assert "Do not ask whether they want to see it" in notice
+    assert "never bring it up again" in notice and "Run `" not in notice
+    with Image.open(image) as shown:
+        assert shown.size == (1080, 1350)
+        assert shown.convert("RGB").getpixel((8, 8)) == ImageColor.getrgb(SIGNAL)
     # Told once: the next month starts now, whether or not the card changed.
     assert wrapped_monthly.agent_notice(cfg, now=NOW + timedelta(days=40)) is None
     assert wrapped_monthly.agent_notice(cfg, now=NOW + timedelta(days=62)) is not None

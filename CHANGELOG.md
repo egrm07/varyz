@@ -25,10 +25,12 @@ All notable changes to Varyz are recorded here. The format follows
   switch to black, a download button and a way to change the name or lines. Done shows
   it again; the page stays up while it is open and stops when the tab closes.
 - `varyz wrapped` previews the card and writes both PNGs. Once a month your agent
-  ends one reply with a single line, set apart from the rest: "Btw, Varyz prepared
-  your monthly Varyz Wrapped: you are The Editor, 1% of people. Run `varyz wrapped`
-  to see it." It comes with Varyz news (so `varyz news off` turns it off and a new
-  install waits a month), and that reply carries no news post, so it stays one line.
+  shows your card as an image in the chat and ends that reply with a single line,
+  set apart from the rest: "Btw, Varyz prepared your monthly Varyz Wrapped: you are
+  The Editor, 1% of people." Nothing to run and nothing to answer; if you let it
+  pass, the agent never brings it up again. It comes with Varyz news (so `varyz news
+  off` turns it off and a new install waits a month), and that reply carries no news
+  post, so it stays one line.
 - **Data signals on every task (2026-10-23).** The memory test is now on by default
   (`[signals] memory_test = false` turns it off; 2% of low-stakes rules are held back
   until the finish check). Each later task in a session gets a one-line reminder to run

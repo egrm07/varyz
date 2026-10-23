@@ -102,7 +102,7 @@ authoritative.
 | Shareable card (`varyz wrapped`, `varyz my-way`) | Deterministic Pillow render from general rules, read-only DB, preview before write | A card people post must never show a project rule, a guess or an unreviewed line; no model, no network, same rules give the same card. |
 | AI type and rarity | 46 types from nine word families over all the owner's own rules (only the type is shown, never a rule); the share is a table built by `scripts/type_rarity.py` from 1,109 public AI rule files on GitHub and shipped with the package | A type gives people something to compare and a rare one something to post. The share must be counted, not invented, and the card must work offline. |
 | Card lines | Seven fixed lines, each matched to the owner's rules by a word list; starters fill a short card and become rules only when the owner keeps the card | A line people share must be one their agents follow. Short, plain lines get shared; the rule behind each stays exact. |
-| Monthly Varyz Wrapped | One line the agent puts last in a reply, handed over by the prompt hook with news, at most once in 30 days from the last time the owner saw or was told about the card | It reaches the owner where they already read, in the agent's words, without a pop-up; one line, and no news post in the same reply, keeps it from crowding the answer. |
+| Monthly Varyz Wrapped | The card as an image in the chat and one line the agent puts last in the reply, handed over by the prompt hook with news, at most once in 30 days from the last time the owner saw or was shown the card; no question, and never raised again if ignored | It reaches the owner where they already read, without a pop-up or a command to run; one line, no news post in the same reply, and no follow-up keep it from crowding the work. |
 | Evaluation | TRR plus explicit error/abstention buckets | Blanket abstention and confident invention must both score badly. |
 | Tier 3 | Optional incremental compile | Slow synthesis cannot gate explicit knowledge, evidence, or escalation. |
 | Onboarding | One idempotent `varyz setup`: archive, daemon, agents, data sources, doctor | Five commands in the right order lost people; each step asks, `--yes` answers all, and a re-run keeps what is there. |
@@ -204,7 +204,7 @@ src/varyz/trust.py                 principals, tokens, capabilities, callers
 src/varyz/mcp_server.py            agent tools and identity binding
 src/varyz/ui/server.py             authenticated owner inbox; daemon client only
 src/varyz/card/                    `varyz wrapped` and `my-way` cards: source, lines, layout, SVG/PNG, bundled OFL fonts
-src/varyz/wrapped_monthly.py       Monthly Varyz Wrapped line for the agent's reply
+src/varyz/wrapped_monthly.py       Monthly Varyz Wrapped: the card image and line for the agent's reply
 scripts/trr.py                     deterministic Trusted Resolution Rate scorer
 scripts/advice_bench.py            advice recall fixture and live replay (counts only)
 ```
