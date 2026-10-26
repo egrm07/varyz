@@ -26,10 +26,11 @@ from typing import Any, Protocol
 import httpx
 
 from varyz.domain import Sensitivity
+from varyz.resolution.agent_voice import agent_thread, agent_written, typed_by_owner
 from varyz.resolution.rule_miner import (
     MIN_WORDS,
     MiningStats,
-    _turn_scope,
+    _turn_words,
 )
 
 REQUEST_TIMEOUT_SECONDS = 300.0
@@ -64,11 +65,16 @@ class Turn:
     after: str = ""
 
 
-def owner_turns(conn: sqlite3.Connection, stats: MiningStats, *, cloud: bool) -> list[Turn]:
+def owner_turns(conn: sqlite3.Connection, stats: MiningStats, *, cloud: bool,
+                min_words: int = MIN_WORDS) -> list[Turn]:
     """The owner's own turns a model may read, oldest first.
 
     Sensitive turns never; for the cloud, only turns classified public or
-    personal (unclassified is treated as sensitive, as everywhere else).
+    personal (unclassified is treated as sensitive, as everywhere else). Only
+    what the owner typed: never a message an agent sent, and in a thread an
+    agent started only the turns that read as the owner's (``agent_voice``).
+    Turns shorter than ``min_words`` say too little to read a rule from; the
+    portrait lowers it, since "didnt work" is pushback all the same.
     """
     allowed = [s.value for s in Sensitivity if s.cloud_ok] if cloud else [
         s.value for s in Sensitivity if s is not Sensitivity.SENSITIVE
@@ -87,12 +93,21 @@ def owner_turns(conn: sqlite3.Connection, stats: MiningStats, *, cloud: bool) ->
             ORDER BY occurred_start""",  # noqa: S608 - placeholders only
         allowed,
     ).fetchall()
+    said = [(row, *_turn_words(str(row["body"]), _folder(row))) for row in rows]
+    threads: dict[str, list[str]] = defaultdict(list)
+    for row, _, text in said:
+        if row["thread_id"]:
+            threads[str(row["thread_id"])].append(text)
+    by_agents = {thread for thread, texts in threads.items() if agent_thread(texts)}
     turns: list[Turn] = []
     sessions: dict[str, set[str | None]] = defaultdict(set)
-    for row in rows:
+    for row, scope, text in said:
         stats.turns_read += 1
-        scope, text = _turn_scope(str(row["body"]))
-        if len(text.split()) < MIN_WORDS:
+        if text and (agent_written(text) or (
+                row["thread_id"] in by_agents and not typed_by_owner(text))):
+            stats.agent_written += 1
+            continue
+        if len(text.split()) < min_words:
             continue
         turn = Turn(str(row["id"]), str(row["content_hash"]), row["thread_id"],
                     row["occurred_start"], scope, text, _context_before(row))
@@ -105,6 +120,16 @@ def owner_turns(conn: sqlite3.Connection, stats: MiningStats, *, cloud: bool) ->
         else:
             kept.append(turn)
     return kept
+
+
+def _folder(row: sqlite3.Row) -> str:
+    """The session's working directory: a worktree names its repository by it."""
+    try:
+        metadata = json.loads(row["conversation_metadata_json"] or "{}")
+    except (TypeError, ValueError):
+        return ""
+    folder = metadata.get("working_directory") if isinstance(metadata, dict) else None
+    return folder if isinstance(folder, str) else ""
 
 
 def _context_before(row: sqlite3.Row) -> str:

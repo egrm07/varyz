@@ -59,6 +59,14 @@ def test_unknown_probe_never_assumes_capacity(monkeypatch):
     assert memory("Darwin") == (None, None)
 
 
+def test_local_memory_reason_reports_current_headroom():
+    result = assess(replace(MAC, available_memory=128 * 1024**2))
+    assert result.comfortable is False
+    assert result.reasons == (
+        "Only 0.1 GB of memory is available now. Local learning needs at least 8 GB free.",
+    )
+
+
 def test_small_mac_auto_selects_conversations_without_granting_cloud(tmp_path, monkeypatch):
     monkeypatch.setattr("varyz.setup_machine.inspect_machine",
                         lambda _path: replace(MAC, total_memory=8 * GIB))

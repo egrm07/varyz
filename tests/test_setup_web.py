@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import socket
 import threading
 import time
 from pathlib import Path
@@ -682,7 +683,7 @@ def test_serve_closed_while_paused_says_how_to_carry_on(machine, monkeypatch, ca
     assert "Setup is paused. What has downloaded is kept: run varyz setup" in printed
 
 
-def test_serve_stops_when_the_page_is_gone_even_with_a_run_going(machine, monkeypatch, capsys):
+def test_serve_stops_a_stuck_run_once_its_page_is_gone(machine, monkeypatch, capsys):
     """A tab closed on a frozen run kept setup, and the install's files, open for good."""
     pauses: list[bool] = []
 
@@ -696,12 +697,13 @@ def test_serve_stops_when_the_page_is_gone_even_with_a_run_going(machine, monkey
             return "only a download can be paused"
 
     monkeypatch.setattr(setup_web, "SetupSession", Stuck)
+    monkeypatch.setattr(setup_web, "STALL_LIMIT", 0)
     monkeypatch.setattr(setup_web, "ABANDON_GRACE", 0)
 
     assert serve(machine.config, open_browser=False, idle_limit=0) is False
     printed = capsys.readouterr().out
     assert pauses == [True]
-    assert "The setup page was closed while setup was still working" in printed
+    assert "Setup made no progress for a long time with its page closed" in printed
     assert "Setup did not run" not in printed
     # Why it stopped is kept for whoever helps the owner afterwards.
     log = (machine.config.parent / "setup.log").read_text("utf-8").splitlines()
@@ -709,6 +711,67 @@ def test_serve_stops_when_the_page_is_gone_even_with_a_run_going(machine, monkey
         "opened", "stopped", "working", "steps", "result"]
     assert "while setup was working" in log[1]
     assert log[-1].endswith("result: none")
+
+
+def test_a_closed_tab_does_not_stop_a_run_still_going(machine, monkeypatch, capsys):
+    """Closing the tab half way stopped setup, and every step after it, with it."""
+
+    class Working(SetupSession):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.started, self.moves = True, 0
+
+        def progress_mark(self):
+            self.moves += 1
+            if self.moves >= 3:
+                self.finished = True
+                self.result = {"verdict": "GO", "summary": "Agents are briefed.",
+                               "problems": [], "next": [], "reading": None}
+            return (self.moves,)
+
+        def pause(self):
+            raise AssertionError("a run still moving was paused")
+
+    monkeypatch.setattr(setup_web, "SetupSession", Working)
+    # Far shorter than the real limit: a run that keeps moving needs no page at all.
+    monkeypatch.setattr(setup_web, "STALL_LIMIT", 1)
+
+    assert serve(machine.config, open_browser=False, idle_limit=0) is True
+    printed = capsys.readouterr().out
+    assert "Setup finished with its page closed." in printed
+    assert "GO" in printed and "no progress" not in printed
+
+
+def test_opening_setup_again_shows_the_one_still_working(server, machine, monkeypatch, capsys):
+    """Reopening setup while it worked started a second run beside the first."""
+    opened: list[str] = []
+    monkeypatch.setattr(setup_web.webbrowser, "open", opened.append)
+    setup_web._say_open(machine.config, server.url)
+    monkeypatch.setattr(setup_web, "SetupSession",
+                        lambda *_a, **_k: pytest.fail("a second setup was started"))
+
+    assert serve(machine.config) is True
+    assert opened == [server.url]
+    assert "Setup is already working" in capsys.readouterr().out
+    # Only that setup forgets where its page is, when it ends.
+    assert setup_web._open_path(machine.config).is_file()
+
+
+def test_a_page_left_by_a_setup_that_has_gone_is_not_shown(machine, monkeypatch, capsys):
+    note = setup_web._open_path(machine.config)
+    # Nothing answers on a port just let go of; nothing is asked of another host.
+    with socket.socket() as spare:
+        spare.bind(("127.0.0.1", 0))
+        port = spare.getsockname()[1]
+    for url in (f"http://127.0.0.1:{port}/?t=key", "http://example.com:80/?t=key", "nonsense"):
+        setup_web._say_open(machine.config, url)
+        assert setup_web._open_elsewhere(machine.config) is None, url
+    note.write_text("{not json", encoding="utf-8")
+    assert setup_web._open_elsewhere(machine.config) is None
+
+    assert serve(machine.config, open_browser=False, idle_limit=0) is False
+    assert "Setup is already working" not in capsys.readouterr().out
+    assert not note.exists()
 
 
 def test_setup_log_keeps_its_size(tmp_path, monkeypatch):
@@ -1031,7 +1094,7 @@ def _downloading_after_reading(monkeypatch, release: threading.Event) -> None:
     monkeypatch.setattr(cli, "_sync_sources", sync)
 
 
-def test_the_offer_is_asked_while_the_search_models_download(machine, monkeypatch):
+def test_learning_starts_by_itself_while_the_search_models_download(machine, monkeypatch):
     machine.extract.offer = dict(OFFER)
     release = threading.Event()
     _downloading_after_reading(monkeypatch, release)
@@ -1052,17 +1115,16 @@ def test_the_offer_is_asked_while_the_search_models_download(machine, monkeypatc
     session.start(["claude-code"], ["ai_conversations"])
 
     try:
+        # No question: once estimated, the reading starts with nothing to answer.
         state = _until(session, lambda state: state["extract"] is not None
-                       and state["extract"]["state"] == "offered")
+                       and state["extract"]["state"] == "accepted")
         assert state["steps"][3]["state"] == "running"  # still downloading
-        assert state["extract"]["state"] == "offered"
         assert machine.extract.asked == [machine.config]
-
-        assert session.choose_extract(True) is None
-        view = _until(session, lambda state: state["extract"]["state"] == "accepted")["extract"]
         assert started == [OFFER]
+        view = _until(session, lambda state: state["extract"].get("turns_left") == 2000)["extract"]
         assert (view["state"], view["phase"], view["plan"]) == ("accepted", "reading", "ChatGPT")
-        assert session.choose_extract(False) == "nothing to answer"
+        # The page's one line keeps the offer's own figures once progress is measured.
+        assert view["five_hour"] == OFFER["five_hour"]
     finally:
         release.set()
         _finished(session)
@@ -1099,31 +1161,131 @@ def test_the_downloads_say_what_is_left_counting_the_classifier(machine, monkeyp
     assert downloads["then_bytes"] == 3_400_000_000
 
 
-def test_the_offer_answered_through_the_api(server, machine):
+def test_learning_is_stopped_through_the_api(server, machine, monkeypatch):
+    stopped = []
+    monkeypatch.setattr("varyz.setup_extract.stop",
+                        lambda cfg, *, runner=None: stopped.append(runner))
     token = server.session.token
-    status, _, _ = _request(server, "POST", "/api/extract", token=token, body={"extract": "yes"})
+    status, _, _ = _request(server, "POST", "/api/extract/control", token=token,
+                            body={"action": "halt"})
     assert status == 400
-    status, _, body = _request(server, "POST", "/api/extract", token=token,
-                               body={"extract": True})
-    assert (status, json.loads(body)) == (409, {"error": "nothing to answer"})
+    status, _, body = _request(server, "POST", "/api/extract/control", token=token,
+                               body={"action": "stop"})
+    assert (status, json.loads(body)) == (409, {"error": "learning is not running"})
 
-    server.session._extract = dict(OFFER)
-    status, _, body = _request(server, "POST", "/api/extract", token=token,
-                               body={"extract": False})
+    server.session._extract = {**OFFER, "state": "accepted", "phase": "reading"}
+    server.session._extract_started = {"at": time.time(), "turns": 2807, "runner": "codex"}
+    status, _, body = _request(server, "POST", "/api/extract/control", token=token,
+                               body={"action": "stop"})
     assert (status, json.loads(body)) == (200, {"ok": True})
     state = json.loads(_request(server, "GET", "/api/state", token=token)[2])
     assert state["extract"]["state"] == "declined"
+    deadline = time.monotonic() + 5
+    while not stopped and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert stopped == ["codex"]
+    assert not server.session.extract_accepted
 
 
-def test_the_page_asks_in_percent_and_minutes():
+def test_stop_while_it_is_estimated_starts_nothing(machine, monkeypatch):
+    begun = []
+    monkeypatch.setattr("varyz.setup_extract.offer", lambda *_a, **_k: dict(OFFER))
+    monkeypatch.setattr("varyz.setup_extract.start",
+                        lambda *a, **_k: begun.append(a) or {"at": 1.0, "runner": "codex"})
+    session = SetupSession(machine.config)
+    session._extract = {"state": "preparing"}
+    session._extract_cfg = object()
+
+    assert session.stop_extract() is None
+    session._make_offer(session._extract_cfg)
+
+    assert session.snapshot()["extract"]["state"] == "declined"
+    assert begun == []
+
+
+def test_the_page_says_what_it_reads_and_can_stop_it():
     page = render_page("tok").decode("utf-8")
 
-    assert "Learn from your past chats now?" in page
-    assert '"/api/extract"' in page
-    assert "5-hour limit" in page and "weekly limit" in page
-    assert "Start learning" in page
+    assert "Learning from your past chats" in page
+    assert '"/api/extract/control"' in page and 'controlExtract("stop")' in page
+    assert 'id="extract-stop"' in page and 'id="extract-yes"' not in page
+    assert "account_five_hour" in page and "Noticed so far" in page
+    assert "Plan change:" not in page and "of your 5-hour limit" not in page
+    assert "See your portrait" in page
     assert "All downloads: " in page
     assert "—" not in page  # no em dashes in the copy
+
+
+def test_stop_during_start_cancels_the_reader_that_finishes_starting(machine, monkeypatch):
+    stopped = []
+    session = SetupSession(machine.config)
+    session._extract_cfg = object()
+    session._extract = {**OFFER, "state": "starting"}
+    started = {"at": 1.0, "runner": "local"}
+
+    def start(*_args):
+        assert session.stop_extract() is None
+        return started
+
+    monkeypatch.setattr("varyz.setup_extract.start", start)
+    monkeypatch.setattr(session, "_stop_reader", stopped.append)
+    session._begin_extract(dict(OFFER))
+
+    assert stopped == [started]
+    assert session.snapshot()["extract"]["state"] == "declined"
+    assert not session.extract_accepted
+
+
+def test_stop_during_retry_cancels_a_reader_restarted_after_stop(machine, monkeypatch):
+    session = SetupSession(machine.config)
+    session._extract_cfg = object()
+    session._extract = {**OFFER, "state": "accepted", "phase": "waiting"}
+    session._extract_started = {"at": 1.0, "runner": "local"}
+    stopped = threading.Event()
+    active = []
+
+    def stop(_started):
+        active.clear()
+        stopped.set()
+
+    def retry(*_args, **_kwargs):
+        assert session.stop_extract() is None
+        assert stopped.wait(2)
+        active.append("reader")  # The in-flight retry starts after Stop returned.
+        return True
+
+    monkeypatch.setattr(session, "_stop_reader", stop)
+    monkeypatch.setattr("varyz.setup_extract.retry", retry)
+    session._control_extract("retry")
+
+    assert active == []
+    assert session.snapshot()["extract"]["state"] == "declined"
+    assert not session.extract_accepted
+
+
+def test_rechecking_the_plan_updates_local_availability_before_setup(server, machine, monkeypatch):
+    from dataclasses import replace
+
+    from varyz.setup_machine import GIB, Machine
+
+    hardware = Machine("Windows", "amd64", 16, 32 * GIB, 128 * 1024**2,
+                       40 * GIB, 1000, 12000)
+    monkeypatch.setattr("varyz.setup_machine.inspect_machine", lambda _path: hardware)
+    token = server.session.token
+    low = json.loads(_request(server, "GET", "/api/plan", token=token)[2])["ai"]
+    assert low["choices"] == ["conversations"]
+    assert "0.1 GB" in low["reasons"][0]
+    assert not machine.config.exists()
+
+    hardware = replace(hardware, available_memory=12 * GIB)
+    ready = json.loads(_request(server, "GET", "/api/plan", token=token)[2])["ai"]
+    assert ready["choices"] == ["local", "conversations"]
+    assert not ready["cloud_conversations"]
+    assert not machine.config.exists()  # Rechecking grants nothing and writes nothing.
+
+    server.session.started = True
+    hardware = replace(hardware, available_memory=128 * 1024**2)
+    assert json.loads(json.dumps(server.session.plan()["ai"])) == ready
 
 
 def test_serve_with_the_reading_taken_on_the_page_names_no_last_step(machine, monkeypatch,

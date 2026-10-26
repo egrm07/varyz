@@ -65,14 +65,18 @@ def memory(system: str) -> tuple[int | None, int | None]:
         elif system == "Darwin":
             total = int(_output(["sysctl", "-n", "hw.memsize"]).strip())
             stats = _output(["vm_stat"])
-            page_size = int(re.search(r"page size of (\d+) bytes", stats)[1])
+            matched = re.search(r"page size of (\d+) bytes", stats)
+            if matched is None:
+                return None, None
+            page_size = int(matched[1])
             counts = dict(re.findall(r"^(Pages [\w ]+):\s+(\d+)\.", stats, re.M))
             available = sum(int(counts[name]) for name in
                             ("Pages free", "Pages inactive", "Pages speculative")) * page_size
             return total, available
         elif system == "Linux":
-            stats = dict(re.findall(r"^(\w+):\s+(\d+) kB", Path("/proc/meminfo").read_text(), re.M))
-            return int(stats["MemTotal"]) * 1024, int(stats["MemAvailable"]) * 1024
+            linux_stats = dict(re.findall(
+                r"^(\w+):\s+(\d+) kB", Path("/proc/meminfo").read_text(), re.M))
+            return int(linux_stats["MemTotal"]) * 1024, int(linux_stats["MemAvailable"]) * 1024
     except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
         pass
     return None, None
@@ -116,7 +120,11 @@ def assess(machine: Machine) -> Assessment:
         reasons.append("At least 16 GB of memory is recommended for Qwen alongside your apps.")
     # Qwen, the search models, runtime buffers and room for other apps.
     if machine.available_memory is None or machine.available_memory < 8 * GIB:
-        reasons.append("Qwen needs more headroom; at least 8 GB of memory should be available now.")
+        if machine.available_memory is None:
+            available = "Available memory could not be checked."
+        else:
+            available = f"Only {machine.available_memory / GIB:.1f} GB of memory is available now."
+        reasons.append(f"{available} Local learning needs at least 8 GB free.")
     if machine.free_disk is None or machine.free_disk < 12 * GIB:
         reasons.append("Keep at least 12 GB free for the model, runtime and working space.")
     if machine.cores < 4:

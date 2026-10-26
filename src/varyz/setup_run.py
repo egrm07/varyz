@@ -137,7 +137,7 @@ class SetupRun:
         """Step 4 is about to read and index on this machine; a view may say that is fine."""
 
     def _sources_read(self, run: _Run) -> None:
-        """The chosen sources are in the archive; a view may offer to read the chats now.
+        """The chosen sources are in the archive; a view may start reading the chats now.
 
         Called while the search models download, and again after step 4.
         """

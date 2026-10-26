@@ -1,5 +1,13 @@
 # Varyz architecture
 
+Portable rule packs (2026-10-25), on hosted Cloud: a free-text request selects existing
+synced preferences and keeps source scope separate from reviewed pack applicability.
+The pack page provides choose, review, copy/download and device sharing.
+Account/session-bound encrypted `shared_previews` expire in ten minutes and
+revalidate source versions before release. No publication or delivery
+occurs automatically. Pack instructions preserve current recipient instructions,
+then their own rules, then attributed shared guidance. See `docs/SHARED_VARYZ.md`.
+
 Shared Varyz (2026-10-09) uses separate publication/membership/question tables and
 the scoped `/mcp/shared` resource. Guest reads use immutable reviewed projections;
 private edits await review, while retractions suppress in the canonical sync
@@ -432,6 +440,40 @@ Rules enter the ledger three ways:
   exists. Trial rules do not count toward the review acceptance rate. A quote that
   says the rule holds from now on (`rule_miner._GENERAL`, not about the moment) is
   a signal of its own ("said to hold from now on").
+- **In-task rule questions** (`resolution/rule_questions.py`, migration
+  `0052_rule_questions.sql`). A candidate the trial lane left waiting is not put to
+  the owner on a page. `start_task` carries a `rule_question` when a waiting
+  model-read rule (no workflow or decision) is in the task's scope and shares at least
+  `MIN_SHARED` (2) terms with it; the most shared terms win, then the most evidence. It
+  is drawn only with a conversation id, and never when that conversation already has a
+  row, when `DAILY_CAP` (2) were asked in the last 24 hours, in away mode, or for a rule
+  answered before or asked within `QUIET_DAYS` (14). The MCP `start_task` and the
+  prompt hook keep it only once the daemon recorded it as `asked`
+  (`POST /v1/principles/questions`; the hook only on a prompt whose briefing it shows),
+  so an unregistered agent or an offline daemon asks nothing. `finish_check` repeats
+  the conversation's unanswered question. `answer_rule_question` records the owner's
+  reply: `yes` confirms the candidate, `reword` confirms it in their words, `no`
+  retracts it. The ledger is append-only by trigger, one row per rule, conversation
+  and event.
+- **Portrait** (`portrait.py`, served by `review_web.py` at `/api/portrait`). The
+  review page opens on what a reading found, read-only: the strongest model-read rules
+  grouped by meaning (embeddings when available, else shared terms), one trait per
+  distinct point, three at most, with short display labels and collapsed quotes from typed turns
+  (`rule_reader.owner_turns`), ranked by conversations behind it, boosted when it
+  holds across projects or few public rule files lead with it. Routine tooling is
+  downweighted; original statements remain unchanged. The leading panel is the
+  habit: the kind of correction the owner pushed back on most (at least
+  `MIN_HABIT_CONVERSATIONS`), counted over every owner turn. A trait reworded keeps
+  its rule in those words; "not me" retracts every rule behind it; the habit can be
+  kept once as an `owner:portrait` rule. Built once per page, from a read-only
+  connection.
+- **Setup learning display** (`setup_extract.py`, `setup_web.html`). Stable finding
+  identities and conditional panel placement prevent per-poll animation restarts.
+  The original approved message cohort gates completion; later live messages do
+  not reopen it. Reading ranges need three measured batches over at least a minute,
+  disappear on stalls or large rate variation, and exclude unknown merge time.
+  Fresh provider usage is account-wide, not attributed to the reading. Completion
+  navigates once to the portrait, with a manual fallback and no reload loop.
 - **Live reading** (`resolution/live.py`, `profile_reader.live_offer`). The
   `UserPromptSubmit` and `Stop` hooks send `POST /v1/live/nudge`. Two seconds later
   the daemon's `LiveIngest` syncs just the `ai_conversations` connector under

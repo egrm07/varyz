@@ -103,7 +103,8 @@ def test_setup_process_waits_for_an_open_review_to_close(machine, monkeypatch):
         "result": {"verdict": "GO", "summary": "Ready", "problems": [], "next": []},
     }
     session = SimpleNamespace(
-        config_path=machine.config, running=False, extract_accepted=False, snapshot=lambda: snapshot
+        config_path=machine.config, running=False, extract_accepted=False,
+        snapshot=lambda: snapshot, progress_mark=lambda: (),
     )
     server = setup_web.SetupServer(session)
     monkeypatch.setattr(setup_web, "SetupSession", lambda _: session)

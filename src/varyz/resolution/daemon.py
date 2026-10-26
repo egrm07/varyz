@@ -223,6 +223,21 @@ class ResolutionService:
             device_id=str(payload["device_id"]),
         )
 
+    def record_rule_question(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """A waiting rule a task asked the owner about, or their answer to it."""
+        from datetime import UTC, datetime
+
+        from varyz.resolution import rule_questions
+
+        with self.lock:
+            recorded = rule_questions.record(
+                self.knowledge._conn, str(payload.get("principle_id") or ""),
+                str(payload.get("conversation_id") or ""), str(payload.get("event") or ""),
+                project=payload.get("project") or None,
+                stamp=datetime.now(UTC).isoformat(),
+            )
+        return {"recorded": recorded}
+
     def record_task_signals(self, payload: dict[str, Any]) -> dict[str, Any]:
         """What finish_check found for each rule, and the answers a finished task adopted."""
         from varyz.resolution import rule_signals
@@ -671,6 +686,9 @@ class _ResolutionHandler(BaseHTTPRequestHandler):
         if path == "/v1/principles/uses":
             promoted = self.resolution_daemon.service.record_principle_uses(payload)
             self._json(HTTPStatus.OK, {"promoted": promoted})
+            return
+        if path == "/v1/principles/questions":
+            self._json(HTTPStatus.OK, self.resolution_daemon.service.record_rule_question(payload))
             return
         if path == "/v1/tasks/signals":
             self._json(HTTPStatus.OK, self.resolution_daemon.service.record_task_signals(payload))

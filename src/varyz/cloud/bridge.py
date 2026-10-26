@@ -69,9 +69,13 @@ def ensure_ready(config: Path, *, port: int = PORT, timeout: float = 10) -> str:
                "--port", str(port)]
     if sys.flags.isolated:
         command.insert(1, "-I")
+    # Detached like the daemon: closing the setup page that opened it must not stop it.
+    flags = 0
+    for name in ("CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW"):
+        flags |= getattr(subprocess, name, 0)
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, close_fds=True,
-                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                               stderr=subprocess.DEVNULL, close_fds=True, creationflags=flags,
+                               start_new_session=sys.platform != "win32")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if ready(config, port):
@@ -114,11 +118,12 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=PORT)
     args = parser.parse_args()
     with BridgeServer(args.config, args.port) as server:
+        connection = server.computer_connection
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
             while (time.monotonic() - server.last_request < 1800
-                   or server.computer_connection.active()):
+                   or (connection is not None and connection.active())):
                 time.sleep(1)
         finally:
             server.shutdown()

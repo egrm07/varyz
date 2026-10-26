@@ -26,11 +26,15 @@ Consent is exactly what the page showed: the sources offered, with their
 paths, are decided once when the page opens, and a run can only approve some
 of those.
 
-While the search models download, the page may ask to extract the owner's
-preferences from the chats just read (`setup_extract`): what it takes, in
-percent of their plan's limits and in minutes, and how long the downloads
-still take. A yes starts varyz's own reader in the background; it goes on
-after the page is closed.
+While the search models download, setup starts learning the owner's
+preferences from the chats just read (`setup_extract`), with no question to
+answer: the page says what it reads, shows measured progress and fresh account
+usage, keeps its findings stable, and has a Stop that works at every
+stage. Varyz's own reader goes on after the page is closed.
+
+Closing the page does not stop setup either. A run still going carries on
+without it and setup ends once the run has finished; opening setup again
+shows the page of the setup still working rather than starting a second run.
 
 GitHub is the one source that needs something typed: a token, or the login
 the GitHub CLI already holds. The page checks it with GitHub at once, so a
@@ -43,6 +47,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import secrets
 import subprocess
 import threading
@@ -71,11 +76,18 @@ PRESELECTED_SOURCES = frozenset({"ai_conversations"})
 # The card has no colour for a failure; this warm coral is the page's one
 # addition to its palette (the owner's choice, 2026-09-28).
 FAILED = "#ff7a66"
-# The server stops by itself after this long without a request: a tab closed
-# without "Close setup" must not leave it behind, even with a run going.
+# The server stops by itself after this long without a request, once no run is
+# going: a tab closed without "Close setup" must not leave it behind. A closed
+# tab never stops a run; setup ends when the run has finished.
 IDLE_LIMIT = 30 * 60.0
-# How long a run left by a closed page gets to pause before setup stops anyway.
+# With no page open, a run that has not moved for this long is taken as stuck
+# and put away, so a hung step cannot keep setup, and every file of the
+# install, open for good. Each long step reports progress well within it.
+STALL_LIMIT = 60 * 60.0
+# How long a stuck run gets to pause its download before setup stops anyway.
 ABANDON_GRACE = 120.0
+# Where a setup still working says where its page is, next to the config.
+OPEN_FILE = "setup-open.json"
 # How often the reading's progress is measured again for the page's polls.
 EXTRACT_REFRESH = 3.0
 # A reading's progress not measured again for this long is shown as old.
@@ -184,9 +196,9 @@ class SetupSession(SetupRun):
         self.github_account = _github_account(section)
         self.github_offered = section is None or self.github_account is not None
         self.github_cli = section is None and _gh_token() is not None
-        # The offer to extract preferences from past chats: None until the
-        # sources are read (and when there is nothing to offer), then the
-        # offer, the owner's no, or the reading started.
+        # Learning from past chats: None until the sources are read (and when
+        # there is nothing to read), then its estimate, the reading started,
+        # or the owner's Stop.
         self._extract: dict[str, Any] | None = None
         self._extract_asked = False
         self._extract_cfg: Any = None
@@ -201,6 +213,17 @@ class SetupSession(SetupRun):
     def plan(self) -> dict[str, Any]:
         from varyz.analytics import status
         from varyz.config import ConfigError, load_config
+        from varyz.setup_machine import plan as machine_plan
+
+        # Memory pressure can change while the owner is choosing. Recheck on
+        # reload or request, but keep an active run's choices fixed.
+        with self._lock:
+            choosing = not self.started
+        if choosing:
+            refreshed = machine_plan(self.config_path)
+            with self._lock:
+                if not self.started:
+                    self.ai_plan = refreshed
 
         # Setup never asks about sharing: the Varyz network popup waits for the
         # owner's first rules review after the trial window (review_web.html).
@@ -302,7 +325,7 @@ class SetupSession(SetupRun):
         if self._extract_started is None:
             return self._extract
         if self._extract_retrying:
-            return {**self._extract, "state": "accepted", "phase": "checking"}
+            return {**(self._extract or {}), "state": "accepted", "phase": "checking"}
         now = time.time()
         if ((self._extract_seen is None or now - self._extract_seen[0] >= EXTRACT_REFRESH)
                 and self._extract_lock.acquire(blocking=False)):
@@ -325,17 +348,24 @@ class SetupSession(SetupRun):
             if started is None:
                 return
             view = setup_extract.progress(self._extract_cfg, started, time.time())
+            view["noticed"] = setup_extract.noticed(self._extract_cfg, float(started["at"]))
             from varyz.setup_recovery import repair_prompt
 
             if view.get("phase") in {"waiting", "failed", "stopped"}:
                 view["reason_text"] = setup_extract.plain_reason(
                     str(view.get("reason") or view["phase"]))
                 view["repair_prompt"] = repair_prompt(self.config_path, [
-                    (self._extract["plan"] + " learning", str(view.get("reason") or view["phase"]))
+                    ((self._extract or {}).get("plan", "AI") + " learning",
+                     str(view.get("reason") or view["phase"]))
                 ])
             with self._lock:
                 if self._extract_started is started:
-                    self._extract_seen = (time.time(), {**view, "plan": self._extract["plan"]})
+                    # The page's one line on what it reads keeps the offer's figures.
+                    offered = {key: (self._extract or {}).get(key)
+                               for key in ("older", "five_hour")}
+                    self._extract_seen = (time.time(), {
+                        **offered, **view, "plan": (self._extract or {}).get("plan", "AI"),
+                    })
         except Exception:  # noqa: BLE001 - keep the last measured progress
             pass
         finally:
@@ -363,7 +393,7 @@ class SetupSession(SetupRun):
     # -- extracting preferences ---------------------------------------------------
 
     def _sources_read(self, run: _Run) -> None:
-        """Ask once, if an agent was connected, whether to read the chats now."""
+        """Once, if an agent was connected: estimate the reading, then start it."""
         with self._lock:
             if (self._extract_asked
                     or (not run.agent_names and self.inference_mode != "local")):
@@ -384,23 +414,14 @@ class SetupSession(SetupRun):
         except Exception:  # noqa: BLE001 - no offer; the agent asks on its first use
             offered = None
         with self._lock:
-            if self._extract is None or self._extract.get("state") == "preparing":
-                self._extract = offered
-
-    def choose_extract(self, yes: bool) -> str | None:
-        """The owner's answer to the offer; an error sentence when there is none to answer."""
-
-        with self._lock:
-            offered = self._extract
+            if self._extract is not None and self._extract.get("state") != "preparing":
+                return  # stopped while it was being estimated
             if offered is None or offered.get("state") != "offered":
-                return "nothing to answer"
-            if not yes:
-                self._extract = {**offered, "state": "declined"}
-                return None
+                self._extract = offered
+                return
+            # No question to answer: the page says what it uses, and Stop stops it.
             self._extract = {**offered, "state": "starting"}
-        threading.Thread(target=self._begin_extract, args=(offered,), daemon=True,
-                         name="varyz-setup-learning").start()
-        return None
+        self._begin_extract(offered)
 
     def _begin_extract(self, offered: dict[str, Any]) -> None:
         from varyz import setup_extract
@@ -410,16 +431,48 @@ class SetupSession(SetupRun):
         except Exception:  # noqa: BLE001 - said on the page; the agent asks later
             started = None
         with self._lock:
-            if started is None:
-                self._extract = {**offered, "state": "unavailable"}
+            stopped = self._extract is not None and self._extract.get("state") == "declined"
+            if not stopped:
+                if started is None:
+                    self._extract = {**offered, "state": "unavailable"}
+                    return None
+                self._extract = {**offered, "state": "accepted", "phase": "waiting_model"
+                                 if offered.get("runner") == "local" else "reading"}
+                self._extract_started = started
                 return None
-            self._extract = {**offered, "state": "accepted", "phase": "waiting_model"
-                             if offered.get("runner") == "local" else "reading"}
-            self._extract_started = started
+        if started is not None:
+            # Stop was pressed while it started: cancel what just began.
+            self._stop_reader(started)
         return None
 
+    def stop_extract(self) -> str | None:
+        """Stop learning wherever it has got; what it read so far is kept."""
+        with self._lock:
+            extract = self._extract
+            view = self._extract_seen[1] if self._extract_seen else extract or {}
+            if extract is None or extract.get("state") in {"declined", "unavailable"}:
+                return "learning is not running"
+            if view.get("phase") == "done":
+                return "learning has finished"
+            started = self._extract_started
+            self._extract = {**extract, "state": "declined"}
+            self._extract_started = None
+            self._extract_seen = None
+        if started is not None:
+            threading.Thread(target=self._stop_reader, args=(started,), daemon=True,
+                             name="varyz-setup-learning-stop").start()
+        return None
+
+    def _stop_reader(self, started: dict[str, Any]) -> None:
+        from varyz import setup_extract
+
+        with contextlib.suppress(Exception):
+            setup_extract.stop(self._extract_cfg, runner=started.get("runner"))
+
     def control_extract(self, action: str) -> str | None:
-        """Retry or skip a quota wait; HTTP polling never performs the lookup."""
+        """Stop learning, or retry or skip a quota wait; polling never performs the lookup."""
+        if action == "stop":
+            return self.stop_extract()
         with self._lock:
             view = self._extract_seen[1] if self._extract_seen else self._extract or {}
             if (self._extract_started is None
@@ -435,18 +488,26 @@ class SetupSession(SetupRun):
         from varyz import setup_extract
 
         try:
-            started = self._extract_started or {}
+            with self._lock:
+                started = self._extract_started
+            if started is None:
+                return  # Stop won before this worker began.
             if action == "skip":
                 if started.get("runner") != "local":
                     # A stopped local reader has nothing to cancel; new prompts restart it.
                     setup_extract.stop(self._extract_cfg)
                 with self._lock:
-                    self._extract = {**self._extract, "state": "declined"}
+                    self._extract = {**(self._extract or {}), "state": "declined"}
                     self._extract_started = None
             else:
                 # Keep the saved reading and its diagnostic if retry still cannot start.
                 setup_extract.retry(self._extract_cfg, self.config_path,
                                     runner=started.get("runner"))
+                with self._lock:
+                    stopped = self._extract_started is not started
+                if stopped:
+                    # Retry may finish starting a reader after Stop cancelled it.
+                    self._stop_reader(started)
         except Exception:  # noqa: BLE001 - keep the waiting state and its repair prompt
             pass
         finally:
@@ -465,6 +526,12 @@ class SetupSession(SetupRun):
         """A run is going: not before it, after it, or while it is paused."""
         with self._lock:
             return self.started and not self.finished and self.paused is None
+
+    def progress_mark(self) -> tuple[Any, ...]:
+        """What changes whenever the run moves on: its steps and its progress line."""
+        with self._lock:
+            return (tuple((step.state, step.detail) for step in self.steps),
+                    self.activity, self.fraction)
 
     # -- the run ------------------------------------------------------------------
 
@@ -876,8 +943,8 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/review":
             try:
                 url = self.server.open_review()
-            except ValueError as error:
-                self._json({"error": str(error)}, HTTPStatus.CONFLICT)
+            except ValueError as review_error:
+                self._json({"error": str(review_error)}, HTTPStatus.CONFLICT)
             except Exception:  # a missing/unavailable daemon must not stop setup
                 self._json({"error": "Review is unavailable. Please try again."},
                            HTTPStatus.SERVICE_UNAVAILABLE)
@@ -893,24 +960,12 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/extract/control":
             body = self._body()
             action = body.get("action") if isinstance(body, dict) else None
-            if not isinstance(action, str) or action not in {"retry", "skip"}:
-                self._text(HTTPStatus.BAD_REQUEST, "expected action: retry or skip")
+            if not isinstance(action, str) or action not in {"retry", "skip", "stop"}:
+                self._text(HTTPStatus.BAD_REQUEST, "expected action: retry, skip or stop")
                 return
             error = self.server.session.control_extract(action)
             self._json({"error": error} if error else {"ok": True},
                        HTTPStatus.CONFLICT if error else HTTPStatus.OK)
-            return
-        if path == "/api/extract":
-            body = self._body()
-            answer = body.get("extract") if isinstance(body, dict) else None
-            if type(answer) is not bool:
-                self._text(HTTPStatus.BAD_REQUEST, "expected {\"extract\": true or false}")
-                return
-            error = self.server.session.choose_extract(answer)
-            if error is not None:
-                self._json({"error": error}, HTTPStatus.CONFLICT)
-                return
-            self._json({"ok": True})
             return
         if path in ("/api/pause", "/api/resume"):
             session = self.server.session
@@ -999,26 +1054,83 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"login": login})
 
 
+# -- one setup at a time ------------------------------------------------------------
+
+
+def _open_path(config_path: Path) -> Path:
+    return Path(config_path).parent / OPEN_FILE
+
+
+def _say_open(config_path: Path, url: str) -> None:
+    """Note where this setup's page is. It holds the page's key: only the owner may read it."""
+    path = _open_path(config_path)
+    with contextlib.suppress(OSError):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(json.dumps({"url": url}), encoding="utf-8")
+        if os.name != "nt":
+            temporary.chmod(0o600)
+        temporary.replace(path)
+
+
+def _forget_open(config_path: Path, url: str) -> None:
+    path = _open_path(config_path)
+    with contextlib.suppress(OSError, ValueError):
+        if json.loads(path.read_text(encoding="utf-8")).get("url") == url:
+            path.unlink()
+
+
+def _open_elsewhere(config_path: Path) -> str | None:
+    """The page of a setup for this config that still answers, or None."""
+    from urllib.request import ProxyHandler, Request, build_opener
+
+    try:
+        url = json.loads(_open_path(config_path).read_text(encoding="utf-8")).get("url")
+        parts = urlsplit(url)
+        token = parse_qs(parts.query)["t"][0]
+        if parts.scheme != "http" or parts.hostname != "127.0.0.1" or parts.port is None:
+            return None
+        ping = Request(f"http://127.0.0.1:{parts.port}/api/ping",
+                       headers={_TOKEN_HEADER: token})
+        # Straight to this computer: a system proxy would never reach it.
+        with build_opener(ProxyHandler({})).open(ping, timeout=2) as answer:
+            return url if answer.status == HTTPStatus.OK else None
+    except (OSError, ValueError, KeyError, IndexError, AttributeError, TypeError):
+        # Missing, unreadable or left by a setup that has gone: start afresh.
+        return None
+
+
 def serve(
     config_path: Path,
     *,
     open_browser: bool = True,
     idle_limit: float = IDLE_LIMIT,
 ) -> bool | None:
-    """Serve the setup page until the owner closes it.
+    """Serve the setup page until the owner closes it and no run is left going.
 
     True on GO, False on NO-GO or when setup never ran, and None when it was
     paused: that is not a failure, and `varyz setup` carries on from it.
+    True as well when a setup for this config was already working: its page
+    is shown again, and a second run is not started beside it.
     """
     from varyz.cli import console
     from varyz.setup_run import print_result
 
+    other = _open_elsewhere(config_path)
+    if other is not None:
+        console.print("Setup is already working; its page is open in your browser again: "
+                      f"{other}", highlight=False, soft_wrap=True)
+        if open_browser:
+            with contextlib.suppress(webbrowser.Error):
+                webbrowser.open(other)
+        return True
     console.print("[bold]Varyz setup[/bold] · looking for your agents and data sources...")
     session = SetupSession(config_path)
     server = SetupServer(session)
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.25},
                               daemon=True, name="varyz-setup-server")
     thread.start()
+    _say_open(config_path, server.url)
     console.print(f"Setup is open in your browser: {server.url}", highlight=False, soft_wrap=True)
     console.print("[dim]Keep this window open until the page says you are done.[/dim]")
     if open_browser:
@@ -1030,40 +1142,51 @@ def serve(
     log = SetupLog(config_path)
     log.write("opened")
     logged = time.monotonic()
+    mark, moved = session.progress_mark(), time.monotonic()
     try:
-        # Closing setup must not cut off a review already opened from this page.
-        while not server.closed.is_set() or server.review_active:
+        # Closing setup, or its tab, must not cut off a run still going or a
+        # review already opened from this page: setup ends once both are done.
+        while not server.closed.is_set() or server.review_active or session.running:
             time.sleep(1.0)
-            if time.monotonic() - logged >= LOG_EVERY and session.started:
-                logged = time.monotonic()
+            now = time.monotonic()
+            if now - logged >= LOG_EVERY and session.started:
+                logged = now
                 log.progress(session.snapshot())
-            idle = time.monotonic() - server.last_request
-            if idle > idle_limit and not server.review_active:
-                # A closed page with the run still going used to keep this
-                # process alive for good, and with it every file of the
-                # install. Pause a download so it can carry on later; a run
-                # that does not settle within the grace period is left.
-                if session.running:
-                    if abandoned is None:
-                        abandoned = time.monotonic()
-                        session.pause()
-                    if time.monotonic() - abandoned < ABANDON_GRACE:
-                        continue
-                    console.print("The setup page was closed while setup was still working; "
-                                  f"stopping. Run varyz setup{session._config_flag()} to "
-                                  "carry on.")
-                    log.write("stopped", f"nothing heard from the page for {idle:.0f} s "
-                                         "while setup was working")
-                    break
-                console.print("Nothing heard from the page for a while; stopping.")
-                log.write("stopped", f"nothing heard from the page for {idle:.0f} s")
+            latest = session.progress_mark()
+            if latest != mark:
+                mark, moved = latest, now
+            idle = now - server.last_request
+            if idle <= idle_limit or server.review_active:
+                continue
+            if session.running:
+                if now - moved < STALL_LIMIT:
+                    continue  # Still moving: it needs no page to finish.
+                # Stuck with no page open, it would keep this process, and
+                # every file of the install, alive for good. Pause a download
+                # so it can carry on later; a run that does not settle within
+                # the grace period is left.
+                if abandoned is None:
+                    abandoned = now
+                    session.pause()
+                if now - abandoned < ABANDON_GRACE:
+                    continue
+                console.print("Setup made no progress for a long time with its page closed; "
+                              f"stopping. Run varyz setup{session._config_flag()} to "
+                              "carry on.")
+                log.write("stopped", f"no progress for {now - moved:.0f} s with no page open "
+                                     "while setup was working")
                 break
+            console.print("Setup finished with its page closed." if session.finished
+                          else "Nothing heard from the page for a while; stopping.")
+            log.write("stopped", f"nothing heard from the page for {idle:.0f} s")
+            break
         else:
             log.write("stopped", "closed from the page")
     except KeyboardInterrupt:
         console.print("Stopped.")
         log.write("stopped", "interrupted in the setup window")
     finally:
+        _forget_open(config_path, server.url)
         server.shutdown()
         server.server_close()
     snapshot = session.snapshot()

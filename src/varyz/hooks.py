@@ -546,6 +546,10 @@ def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | No
     domains = [item["domain"] for item in briefing["kinds_of_work"]]
     seen = set(state.get("domains", []))
     new_domains = [name for name in domains if name not in seen]
+    if first or new_domains:
+        _ask_rule_question(cfg, briefing, session_id or None, project)
+    else:
+        briefing["rule_question"] = None
 
     state.update({
         "briefed": True,
@@ -1200,6 +1204,32 @@ def _record_trial_uses(
             shown_rule_ids(briefing), task_key=task_key(session_id, task),
             device_id=resolution.device_id,
         )
+
+
+def _ask_rule_question(
+    cfg: Any, briefing: dict[str, Any], session_id: str | None, project: str | None
+) -> None:
+    """Keep the briefing's rule question only once the daemon kept it as asked, so
+    the owner is not asked again in this conversation; else drop it."""
+    asked = briefing.get("rule_question")
+    if not asked:
+        return
+    briefing["rule_question"] = None
+    if not session_id:
+        return
+    from varyz.resolution.client import ResolutionClient, ResolutionClientError
+
+    resolution = cfg.resolution
+    if not _port_open(resolution.bind_host, resolution.port):
+        return
+    client = ResolutionClient(
+        resolution.bind_host, resolution.port, auth_mode=resolution.auth_mode,
+        archive=cfg.db_path, timeout=2.0,
+    )
+    with contextlib.suppress(ResolutionClientError, OSError, ValueError):
+        if client.record_rule_question(str(asked["id"]), conversation_id=session_id,
+                                       event="asked", project=project):
+            briefing["rule_question"] = asked
 
 
 def _daemon_check(cfg: Any) -> tuple[bool, str]:

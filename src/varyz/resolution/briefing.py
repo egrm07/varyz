@@ -343,7 +343,9 @@ def start_task(
         decisions=project_decisions, principles=principles, sizer=sizer,
     )
     from varyz.resolution.continuation import brief as continuation_brief
+    from varyz.resolution.rule_questions import pick as rule_question
 
+    away = away_status(conn, project, conversation_id)
     return {
         "task": task,
         "continuation": continuation_brief(
@@ -352,7 +354,7 @@ def start_task(
         "history_check": preflight(task, project),
         "project": project,
         "conversation_id": conversation_id,
-        "away_mode": away_status(conn, project, conversation_id),
+        "away_mode": away,
         "kinds_of_work": [
             {"domain": name, "title": domain_title(name)} for name in domains
         ],
@@ -381,9 +383,13 @@ def start_task(
         "ask_varyz_about": open_points,
         "already_decided": decided,
         "pending_owner_questions": pending,
+        # One rule the reading was unsure of, asked here because it bears on this task.
+        "rule_question": None if away["active"] else rule_question(
+            conn, task, project=project, conversation_id=conversation_id,
+            now=datetime.now(UTC)),
         "protocol": [*PROTOCOL, RECOGNITION, (
             "Away mode overrides immediate relay and optional workflow/memory questions. "
-            + AWAY_POLICY if away_status(conn, project, conversation_id)["active"] else
+            + AWAY_POLICY if away["active"] else
             "Check away state before relaying questions if the owner activates it later."
         )],
     }
@@ -461,6 +467,7 @@ def finish_check(
         for item in guides
         if item.get("rework")
     ]
+    from varyz.resolution.rule_questions import open_question
     from varyz.resolution.verification import verify
 
     verification = verify(items + [
@@ -499,6 +506,9 @@ def finish_check(
         "workflow_reworks": reworks,
         "task_recipe": recipe_check,
         "open_owner_questions": _pending_questions(conn, project, conversation_id),
+        # The rule start_task asked about, while the owner has not answered it.
+        "rule_question": None if away_status(conn, project, conversation_id)["active"]
+        else open_question(conn, conversation_id),
         "how": (
             "Check every item yourself before you write your report and fix anything "
             "not done now. The user does not see this checklist: in the report name "
@@ -695,6 +705,12 @@ def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True,
         "Owner questions still open",
         [f"- {item['question']}" for item in briefing.get("pending_owner_questions", [])],
     )
+    asked = briefing.get("rule_question")
+    if asked:
+        section("One rule to check with the owner", [
+            f"- {asked['question']} ({asked['scope']}; id {asked['id']})",
+            str(asked["how"]),
+        ])
     if include_protocol:
         protocol = list(briefing.get("protocol", []))
         if policy_known:

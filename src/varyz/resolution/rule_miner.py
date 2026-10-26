@@ -23,6 +23,7 @@ from typing import Any
 
 from varyz.resolution.knowledge import stored_scope
 from varyz.resolution.principles import GLOBAL_SCOPE, normalize_statement
+from varyz.scopes import session_project
 
 MIN_WORDS = 4
 MAX_WORDS = 40
@@ -113,6 +114,8 @@ class MiningStats:
     unread: int = 0
     deferred: int = 0
     pasted: int = 0
+    # Turns an agent wrote (``agent_voice``), stored as the owner's.
+    agent_written: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return dict(self.__dict__)
@@ -182,7 +185,22 @@ def rules_in_text(
 
 
 def _turn_scope(body: str) -> tuple[str, str]:
-    """(scope, text) from an ai_conversations body: its project, and the turn's words."""
+    """(scope, text) from an ai_conversations body: its project, and the turn's words.
+
+    A message an agent sent (an orchestrator's brief, a failover's replay) has no
+    words of the owner's: its text is "".
+    """
+    from varyz.resolution.agent_voice import agent_written
+
+    scope, text = _turn_words(body)
+    return scope, "" if agent_written(text) else text
+
+
+def _turn_words(body: str, folder: str = "") -> tuple[str, str]:
+    """``_turn_scope`` keeping agent-written messages: a thread is judged by them.
+
+    ``folder`` is the session's working directory, when the archive kept it.
+    """
     header, _, text = body.partition("\n\n")
     match = _CONVERSATION_HEADER.search(header)
     where = match.group("where").strip() if match else ""
@@ -192,7 +210,10 @@ def _turn_scope(body: str) -> tuple[str, str]:
     # A session in no project was once named by its id, which names nothing either.
     named = (where and "--" not in where and "/" not in where
              and not _SESSION_ID.fullmatch(where))
-    scope = stored_scope(where) if named else GLOBAL_SCOPE
+    # A worktree is the repository it was cut from; a folder that holds projects,
+    # or a scratch session, is no project at all.
+    project = session_project(where if named else "", folder)
+    scope = stored_scope(project) if project else GLOBAL_SCOPE
     # Recheck older stored rows too, before either deterministic or model-based
     # mining can learn preferences from generated tool/reviewer transcripts.
     from varyz.connectors.ai_conversations import is_machine_text

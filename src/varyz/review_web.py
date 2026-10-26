@@ -1,5 +1,11 @@
 """`varyz rules review`: what varyz learned about the owner, as a page to keep or drop.
 
+The page opens on the owner's portrait (``varyz.portrait``): the few things the
+reading found that make them who they are to an agent, and the one thing they
+keep fixing. Nothing there needs an answer; the owner corrects only what is
+wrong, a trait reworded or "not me", and can make the habit one rule. The full
+list below it is for whoever wants to read every rule.
+
 A reading of the owner's turns (``profile_reader``) gives dozens of items at
 once -- each project's vision and its lines never to cross, the owner's taste
 and way of working, what "done" means for a kind of work, their workflows. One
@@ -27,6 +33,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import sqlite3
 import threading
 import time
 import webbrowser
@@ -51,6 +58,8 @@ _CSP = (
     "font-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
     "form-action 'none'; frame-ancestors 'none'"
 )
+# A rule the owner kept from their portrait's habit.
+PORTRAIT_SOURCE = "owner:portrait"
 SLOT_ORDER = ("vision", "never", "decision", "rule", "done", "workflow")
 GROUP_ORDER = ("work", "products", "project")
 
@@ -222,6 +231,9 @@ class ReviewSession:
         # The trial rules this session asks about, drawn once: deciding one must
         # not draw another, or the spot-check would never end.
         self._sample: list[str] | None = None
+        # The portrait, built once: it reads every turn and takes seconds.
+        self._portrait: dict[str, Any] | None = None
+        self._portrait_lock = threading.Lock()
 
     def _spot_check(self) -> list[str]:
         if self._sample is None:
@@ -316,6 +328,89 @@ class ReviewSession:
                 done.append(str(item["id"]))
             return {"done": done, "errors": errors}
 
+
+    def portrait(self) -> dict[str, Any] | None:
+        """The owner's portrait, or None when there is no archive to read it from."""
+        with self._portrait_lock:
+            if self._portrait is None:
+                self._portrait = self._build_portrait()
+            if not self._portrait:
+                return None
+            habit = self._portrait.get("habit")
+            if habit:
+                habit["kept"] = self._habit_rule(str(habit["kind"])) is not None
+            return self._portrait
+
+    def _build_portrait(self) -> dict[str, Any]:
+        from varyz import portrait
+
+        if self.cfg is None or not Path(self.cfg.db_path).is_file():
+            return {}
+        # Read-only: the portrait only reads, and the daemon keeps writing.
+        conn = sqlite3.connect(f"{Path(self.cfg.db_path).resolve().as_uri()}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            found = portrait.build(conn, embed=portrait.embedder(self.cfg))
+        finally:
+            conn.close()
+        if not found.traits and found.habit is None:
+            return {}
+        return found.to_dict()
+
+    def correct_trait(self, trait_id: str, action: str, statement: str = "") -> dict[str, Any]:
+        """The owner's correction of one trait: its wording, or that it is not them.
+
+        A reworded trait keeps its rule in the owner's words; "not me" stops every
+        rule behind it. The rules that make the same point stay as they are.
+        """
+        portrait = self.portrait() or {}
+        trait = next((found for found in portrait.get("traits") or []
+                      if found["id"] == trait_id), None)
+        if trait is None:
+            raise ValueError("This trait is no longer on the portrait. Reload the page.")
+        wording = " ".join(statement.split())
+        if action == "reword":
+            if not wording:
+                raise ValueError("Write the trait the way you would say it.")
+            result = self.decide([{"id": trait_id, "action": "keep", "statement": wording}])
+        elif action == "not_me":
+            result = self.decide([{"id": rule_id, "action": "drop"}
+                                  for rule_id in trait["rule_ids"]])
+        else:
+            raise ValueError("expected reword or not_me")
+        if not result["done"]:
+            raise ValueError(next(iter(result["errors"].values()), "Nothing changed."))
+        with self._portrait_lock:
+            trait["corrected"] = action
+            if action == "reword":
+                trait["statement"] = wording
+                from varyz.portrait import headline
+
+                trait["headline"] = headline(wording) or "In your words"
+        return {"trait": trait, "errors": result["errors"]}
+
+    def _habit_rule(self, kind: str) -> str | None:
+        return next((str(rule["id"]) for rule in self.client.principles("confirmed")
+                     if (rule.get("provenance") or {}).get("portrait") == kind), None)
+
+    def keep_habit(self, kind: str) -> str:
+        """The habit's rule, kept as the owner's own; its id. Once per habit."""
+        from varyz.portrait import BY_KIND
+
+        found = BY_KIND.get(kind)
+        if found is None:
+            raise ValueError("no such habit")
+        with self._lock:
+            kept = self._habit_rule(kind)
+            if kept is not None:
+                return kept
+            rule_id = self.client.add_principle(
+                statement=found.rule, scope=GLOBAL_SCOPE, kind="rule", source=PORTRAIT_SOURCE,
+                provenance={"portrait": kind, "applies_to": "work"},
+                caller=self.caller, device_id=self.device_id,
+            )
+            self.kept += 1
+            return str(rule_id)
 
     def _own_statements(self) -> list[str]:
         from varyz.card.work_with import own_statements_from_principles
@@ -508,7 +603,7 @@ class ReviewServer(ThreadingHTTPServer):
     @property
     def url(self) -> str:
         host, port = self.server_address[:2]
-        return f"http://{host}:{port}/?t={self.session.token}"
+        return f"http://{str(host)}:{port}/?t={self.session.token}"
 
     def allowed_hosts(self) -> set[str]:
         port = self.server_address[1]
@@ -587,6 +682,13 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"error": f"varyz could not list them: {exc}"},
                            HTTPStatus.SERVICE_UNAVAILABLE)
             return
+        if parts.path == "/api/portrait":
+            try:
+                self._json({"portrait": self.server.session.portrait()})
+            except Exception as exc:
+                self._json({"error": f"varyz could not read your portrait: {exc}"},
+                           HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         self._text(HTTPStatus.NOT_FOUND, "not found")
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
@@ -606,6 +708,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path in {"/api/card", "/api/card/keep"}:
             self._card(path)
+            return
+        if path in {"/api/portrait/trait", "/api/portrait/habit"}:
+            self._portrait(path)
             return
         if path == "/api/network/offer":
             try:
@@ -653,6 +758,25 @@ class _Handler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.BAD_REQUEST, str(exc))
         except Exception as exc:
             self._json({"error": f"varyz could not make the card: {exc}"},
+                       HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def _portrait(self, path: str) -> None:
+        body = self._body()
+        if not isinstance(body, dict):
+            self._text(HTTPStatus.BAD_REQUEST, "expected a JSON object")
+            return
+        session = self.server.session
+        try:
+            if path == "/api/portrait/habit":
+                self._json({"kept": session.keep_habit(str(body.get("kind") or ""))})
+            else:
+                self._json(session.correct_trait(str(body.get("id") or ""),
+                                                 str(body.get("action") or ""),
+                                                 str(body.get("statement") or "")))
+        except ValueError as exc:
+            self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self._json({"error": f"varyz could not save it: {exc}"},
                        HTTPStatus.SERVICE_UNAVAILABLE)
 
     def _body(self) -> Any:

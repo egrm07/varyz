@@ -9,6 +9,69 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-26
+
+### Added
+
+- **Your portrait opens the rules review (2026-10-25).** Instead of a long list of
+  rules to vet, `varyz rules review` opens on three traits the reading found, each in
+  your own words with how many conversations it came from, and the one thing you keep
+  correcting agents about across projects ("Agents tell you it's done before it
+  works"), with how often you did. Nothing needs an answer: reword a trait, mark it
+  "not me", or make the habit one rule. The full list stays below it.
+- **Unsure rules are asked inside a task (2026-10-25).** A rule the reading was not
+  sure enough of to put on trial is no longer left for a review page. When a task bears
+  on it, the agent asks once, in one line: keep it, stop it, or say it your way
+  (`answer_rule_question`). At most one per conversation and two a day, none in away
+  mode, and a rule you let pass rests for 14 days.
+- **Setup starts learning by itself (2026-10-25).** There is no "Learn from your past
+  chats now?" question to miss. Once setup has estimated the reading it starts, and the
+  page says what it reads and with what. While it reads, the page shows concise
+  findings with measured progress and fresh account-wide usage when available.
+  Stop works while it gets ready, starts or reads, including the reader on this device,
+  and what it read is kept. A retry finishing after Stop cannot leave learning running.
+- **Rule packs on Varyz Shared (2026-10-25).** On Varyz Cloud, **Packs** turns a
+  description such as "my design rules" or "all my rules except colours" into a pack
+  of your synced rules. You pick the rules, check where each one applies and read the
+  exact text before you copy it, save it as Markdown or share it. Whoever receives it
+  can read it without an account. A pack is a dated copy, not a live link, and leaves
+  out the rules you did not pick, your private reasons and history.
+
+### Changed
+
+- Live findings keep their nodes between polls; the finished setup view no longer
+  moves the learning panel repeatedly and restarts its animations. Brief, distinct
+  findings replace the latest raw rule text. The portrait leads with the recurring
+  correction, then three short signatures with rarity cues and collapsible evidence.
+- Completed learning opens the portrait automatically once. Later live messages do
+  not reopen the original backlog; pending merges, pauses and errors still gate it.
+- Learning no longer displays borrowed finish countdowns or attributes account-wide
+  usage changes to its own reading. A reading-only range needs three measured batches
+  and disappears when progress stalls or varies too much. Fresh plan totals are
+  explicitly account-wide; merge time is not guessed.
+- Local learning stays visible when hardware checks fail, with the current reason.
+  **Check again** refreshes the check before setup without changing consent or the
+  selected mode; temporary memory pressure no longer silently removes the option.
+- Sessions run in a worktree count for the repository they came from, and scratch or
+  home folders name no project, so the review no longer shows projects you never had.
+- The rules page's download button is smaller.
+- Learning no longer takes another agent's messages for yours. Briefs an orchestrator
+  sends its workers, and a whole earlier session replayed after an account switch, are
+  stored as if you typed them; the reading now leaves them out, so rules are no longer
+  learned in an agent's voice.
+
+### Fixed
+
+- **Closing a browser tab no longer stops Varyz (2026-10-26).** Setup carries on with
+  its tab closed and ends once it has finished; the page now says you can close it.
+  Only a run that has made no progress for an hour with no page open is put away, as
+  before with what it downloaded kept. Opening setup again while it works shows that
+  setup's page instead of starting a second one. The daemon and the Cloud connection
+  that setup starts now run on their own, so the Mac setup app ending, or Ctrl+C in a
+  setup terminal, no longer takes them down with it.
+- Importing a JSON file that holds an escaped lone surrogate no longer fails; the text
+  keeps its original escape.
+
 ## [0.1.3] - 2026-10-23
 
 ### Added

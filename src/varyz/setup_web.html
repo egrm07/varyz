@@ -177,21 +177,22 @@ td.state.connected { color: var(--signal); }
 
 #downloads { flex-basis: 100%; }
 
-/* The offer to read the owner's past chats, asked while the downloads run. */
+/* Learning from the owner's past chats, started while the downloads run. */
 .extract { margin-top: calc(var(--gap) * 1.3); padding-top: calc(var(--gap) * 0.9);
   border-top: 2px solid var(--line); }
 .extract .label { margin-top: 0; }
 .extract-title { font-family: var(--display); font-size: clamp(26px, 3.6vw, 38px); line-height: 1.12;
   margin: 0 0 0.45em; text-wrap: balance; }
-.costs { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5em, 1fr)); gap: 1em 1.4em;
-  margin: 1.1em 0 0; }
-.costs div { margin: 0; }
-.costs dt { font-family: var(--serif); color: var(--signal); font-size: clamp(30px, 4.2vw, 44px);
-  line-height: 1; font-variant-numeric: tabular-nums; }
-.costs dt small { display: block; margin-bottom: 0.3em; font-family: var(--sans); font-size: 13px;
-  color: var(--muted); letter-spacing: 0.04em; }
-.costs dd { margin: 0.3em 0 0; color: var(--muted); font-size: 15px; line-height: 1.35; }
-.costs dd span { display: block; color: var(--dim); }
+/* What the reading found so far, newest first, while it still reads. */
+.noticed { margin-top: 1.2em; }
+.noticed .label { margin-bottom: 0.5em; }
+.noticed ul { list-style: none; margin: 0; padding: 0; }
+.noticed li { padding: 0.35em 0 0.35em 0.9em; border-left: 2px solid var(--signal);
+  margin-bottom: 0.6em; color: var(--ink); font: 16px/1.45 var(--sans); overflow-wrap: anywhere;
+  animation: noticed-in 0.4s ease-out; }
+@keyframes noticed-in { from { opacity: 0; transform: translateY(4px); } }
+.finding-rare { margin-left: 10px; color: var(--signal); font-size: 12px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .noticed li { animation: none; } }
 .extract .actions { margin-top: 1.3em; }
 .extract .bar { max-width: none; margin-top: 1em; }
 .extract .hint { display: block; margin-top: 0.7em; }
@@ -215,11 +216,6 @@ td.state.connected { color: var(--signal); }
   border-radius: 6px; background: var(--night);
   color: var(--ink); font: 16px/1.5 var(--sans); }
 .extract .hint code, .extract .note code { font-family: var(--sans); color: var(--signal); }
-@media (max-width: 560px) {
-  .costs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8em; }
-  .costs dt { font-size: 28px; }
-  .costs dd { font-size: 13px; }
-}
 
 footer { margin-top: auto; padding-top: calc(var(--gap) * 1.6); }
 footer .rule { height: 2px; background: var(--line); }
@@ -256,7 +252,8 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
     <h2 class="label" id="ai-title">Step 1 of 3</h2>
     <p class="privacy-text" id="machine-summary">Choose where Varyz learns.</p>
     <ul class="choices" id="ai-modes"></ul>
-    <div class="actions"><button id="ai-continue" disabled>Continue</button></div>
+    <div class="actions"><button id="ai-continue" disabled>Continue</button>
+      <button id="ai-recheck" class="quiet" hidden>Check again</button></div>
   </section>
 
   <div id="setup-details" hidden>
@@ -320,24 +317,25 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
   </div>
   <p class="error" id="error" role="alert" hidden></p>
 
-  <section class="extract" id="extract" aria-live="polite" hidden>
+  <section class="extract" id="extract" hidden>
     <h2 class="label">Your past chats</h2>
-    <p class="extract-title" id="extract-title">Learn from your past chats now?</p>
+    <p class="extract-title" id="extract-title">Learning from your past chats</p>
     <p class="privacy-text" id="extract-text"></p>
     <div class="learning-activity" id="learning-activity" hidden>
       <span class="learning-spinner" aria-hidden="true"></span>
       <span id="learning-activity-label" role="status" aria-live="polite"></span>
       <span class="learning-elapsed" id="learning-elapsed" aria-hidden="true" title="Time in this stage"></span>
     </div>
-    <dl class="costs" id="extract-costs"></dl>
     <div class="bar" id="extract-bar" role="progressbar" aria-label="Extraction progress" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div>
     <p class="hint" id="extract-status"></p>
-    <p class="note warm" id="extract-warm" hidden>This can make your computer warm and use battery faster. That&rsquo;s normal.</p>
-    <div class="actions" id="extract-actions">
-      <button id="extract-yes">Start learning</button>
-      <button id="extract-no" class="quiet">Not now</button>
+    <div class="noticed" id="extract-noticed" hidden>
+      <h3 class="label">Noticed so far</h3>
+      <ul id="extract-noticed-list"></ul>
     </div>
-    <p class="note" id="extract-note"></p>
+    <p class="note warm" id="extract-warm" hidden>This can make your computer warm and use battery faster. That&rsquo;s normal.</p>
+    <div class="actions" id="extract-actions" hidden>
+      <button id="extract-stop" class="quiet">Stop</button>
+    </div>
     <div class="actions" id="extract-wait-actions" hidden>
       <button id="extract-retry" class="quiet">Retry learning</button>
       <button id="extract-skip" class="quiet">Learn later</button>
@@ -376,7 +374,7 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
     </details>
     <div class="actions">
       <button id="close" class="quiet">Close setup</button>
-      <a id="review-rules" class="button" href="/review?t={{TOKEN_URL}}" target="_blank" rel="noopener" hidden>Review preferences</a>
+      <a id="review-rules" class="button" href="/review?t={{TOKEN_URL}}" target="_blank" rel="noopener" hidden>See your portrait</a>
       <a id="setup-cloud" class="button" href="/cloud?t={{TOKEN_URL}}" target="_blank" rel="noopener noreferrer">Set up Varyz Cloud</a>
     </div>
   </section>
@@ -455,22 +453,7 @@ function choice(name, value, label, what, checked, enabled) {
 
 function renderPlan(plan) {
   if (!plan.ai) throw new Error("Update Varyz to load both AI choices, then reopen setup.");
-  const ai = plan.ai;
-  // A recommendation is not permission to send chats to cloud AI.
-  inferenceMode = ai.selected === "conversations" && !ai.cloud_conversations ? null : ai.selected;
-  $("machine-summary").textContent = "Choose where Varyz learns.";
-  $("ai-modes").replaceChildren(...ai.choices.map((mode) => {
-    const local = mode === "local";
-    const input = el("input", {type: "radio", name: "ai-mode", value: mode});
-    input.checked = mode === inferenceMode;
-    const label = el("span", {}, local ? "On this device" : "Your AI account");
-    label.append(el("span", {class: "what"}, local
-      ? "Local learning. Downloads 3.4 GB plus Ollama."
-      : "Uses your AI plan to learn from chats you choose."));
-    input.addEventListener("change", () => { inferenceMode = mode; renderAIMode(); });
-    return el("li", {}, el("label", {class: "choice"}, input, label));
-  }));
-  renderAIMode();
+  renderAIPlan(plan.ai);
   $("config-path").textContent = plan.config;
   $("footer-stat").textContent = "Your archive stays on this device";
   const agents = $("agents");
@@ -496,6 +479,43 @@ function renderPlan(plan) {
   $("ai-continue").disabled = !inferenceMode;
   showChoiceStep(1);
 }
+
+function renderAIPlan(ai, preserve = false) {
+  // A recommendation is not permission to send chats to cloud AI.
+  inferenceMode = preserve ? (ai.choices.includes(inferenceMode) ? inferenceMode : null)
+    : ai.selected === "conversations" && !ai.cloud_conversations ? null : ai.selected;
+  $("machine-summary").textContent = "Choose where Varyz learns.";
+  $("ai-recheck").hidden = ai.choices.includes("local");
+  $("ai-modes").replaceChildren(...["local", "conversations"].map((mode) => {
+    const local = mode === "local";
+    const available = ai.choices.includes(mode);
+    const input = el("input", {type: "radio", name: "ai-mode", value: mode});
+    input.disabled = !available;
+    input.checked = mode === inferenceMode;
+    const label = el("span", {}, local ? "On this device" : "Your AI account");
+    label.append(el("span", {class: "what"}, local
+      ? "Local learning. Downloads 3.4 GB plus Ollama."
+      : "Uses your AI plan to learn from chats you choose."));
+    if (local && !available) {
+      label.append(el("span", {class: "what", id: "local-unavailable", role: "status"},
+        (ai.reasons || []).join(" ") || "Local learning is unavailable on this device."));
+      input.setAttribute("aria-describedby", "local-unavailable");
+    }
+    input.addEventListener("change", () => { inferenceMode = mode; renderAIMode(); });
+    return el("li", {}, el("label", {class: available ? "choice" : "choice absent"}, input, label));
+  }));
+  renderAIMode();
+}
+
+$("ai-recheck").addEventListener("click", async () => {
+  const button = $("ai-recheck");
+  button.disabled = true;
+  button.textContent = "Checking…";
+  showError("");
+  try { renderAIPlan((await api("/api/plan")).ai, true); }
+  catch (error) { showError(`Could not check this device: ${error.message}`); }
+  finally { button.disabled = false; button.textContent = "Check again"; }
+});
 
 function renderAIMode() {
   const local = inferenceMode === "local";
@@ -613,7 +633,7 @@ function renderState(state) {
     : state.paused ? "Paused. What has downloaded is kept: resume here, or close this tab and run varyz setup later to carry on."
     : between ? doing
     : `${running >= 0 ? `Step ${shown.indexOf(state.steps[running]) + 1} of ${shown.length}. ` : ""}`
-      + "Keep this tab open.";
+      + "You can close this tab: setup keeps going.";
   renderBar($("wait-bar"), between ? state : null);
   for (const step of state.steps) {
     const index = state.steps.indexOf(step);
@@ -640,6 +660,22 @@ function renderState(state) {
     if (bar) renderBar(bar, step.state === "running" ? state : null);
   }
   if (state.finished && state.result) renderResult(state.result);
+  showPortraitWhenReady(state);
+}
+
+let portraitOpening = false;
+async function showPortraitWhenReady(state) {
+  if (portraitOpening || !state.finished || state.extract?.state !== "accepted"
+      || state.extract.phase !== "done" || (state.result?.privacy && !privacySkipped)) return;
+  const key = `varyz-portrait:${TOKEN}`;
+  try { if (sessionStorage.getItem(key)) return; } catch { /* storage is optional */ }
+  portraitOpening = true;
+  try {
+    const {url} = await api("/api/review", {});
+    if (!url) throw new Error("The portrait could not be opened. Use See your portrait to retry.");
+    try { sessionStorage.setItem(key, "opened"); } catch { /* storage is optional */ }
+    location.assign(url);
+  } catch (error) { showError(error.message); }
 }
 
 // Kept in place between polls, so a sweep does not restart every 700 ms.
@@ -712,7 +748,9 @@ function renderResult(result) {
   $("recovery-steps").hidden = Boolean(result.repair_prompt);
   renderRepair($("repair-help"), result.repair_prompt);
   // The offer, or the reading under way, goes on under the verdict.
-  $("result").insertBefore($("extract"), $("reading"));
+  if ($("extract").parentNode !== $("result") || $("extract").nextElementSibling !== $("reading")) {
+    $("result").insertBefore($("extract"), $("reading"));
+  }
   const agentLearning = lastState?.extract?.phase === "agent";
   renderReading(result.reading || (agentLearning ? {agents:configured || [],
     restart:result.restart, turns_waiting:lastState.extract.turns || 0} : null));
@@ -731,7 +769,7 @@ function renderReading(reading) {
   $("reading-text").textContent = `${open}, then send this message to start learning from your approved chats.`;
 }
 
-// -- downloads and the offer to read past chats ------------------------------
+// -- downloads and learning from past chats --------------------------------
 
 function duration(seconds) {
   if (seconds < 60) return "under a minute";
@@ -772,17 +810,10 @@ function renderDownloads(downloads) {
   }
 }
 
-function cost(value, label, sub) {
-  // "about 10 min": the qualifier sits small above the figure, so the figure keeps one line.
-  const [, qualifier, figure] = value.match(/^(about|under) (.+)$/) || [null, "", value];
-  return el("div", {}, el("dt", {}, qualifier ? el("small", {}, qualifier) : "", figure),
-    el("dd", {}, label, sub ? el("span", {}, sub) : ""));
-}
-
 // This clock is independent of polling: quiet batches still look alive.
 let learningActivity = null;
 let learningActivityTimer = null;
-let extractStarting = false;
+let extractStopping = false;
 
 function updateLearningElapsed() {
   if (!learningActivity || document.body.classList.contains("setup-gone")) return;
@@ -817,9 +848,51 @@ function renderLearningActivity(extract) {
   if (!learningActivityTimer) learningActivityTimer = setInterval(updateLearningElapsed, 1000);
 }
 
+// What it reads, with what: said once, in one line, as it starts by itself.
+function learningLine(extract) {
+  const turns = (extract.turns || 0).toLocaleString();
+  const messages = extract.turns === 1 ? "message" : "messages";
+  // A heavy history is read from its newest messages only.
+  const newest = extract.older ? `your newest ${turns}` : turns;
+  const older = extract.older
+    ? ` ${extract.older.toLocaleString()} older ones are left out, so it stays quick.` : "";
+  if (extract.runner === "local") {
+    return `Reading ${newest} chat ${messages} on this device. It uses no AI plan allowance.${older}`;
+  }
+  if (extract.runner === "agent") {
+    return `Your AI reads ${newest} chat ${messages} on its first task after setup.${older}`;
+  }
+  return `Reading ${newest} chat ${messages} with ${extract.plan}.${older}`;
+}
+
+function renderNoticed(extract) {
+  const found = (extract?.state === "accepted" && extract.phase !== "done" && extract.noticed) || [];
+  $("extract-noticed").hidden = !found.length;
+  const list = $("extract-noticed-list");
+  // Only a change redraws it, so each new finding fades in once.
+  const findings = found.map(item => typeof item === "string"
+    ? {id:item, title:item, rare:""} : item);
+  const shown = JSON.stringify(findings);
+  if (list.dataset.shown === shown) return;
+  list.dataset.shown = shown;
+  const wanted = new Set(findings.map(item => item.id));
+  for (const node of [...list.children]) if (!wanted.has(node.dataset.id)) node.remove();
+  for (const item of findings) {
+    let node = [...list.children].find(child => child.dataset.id === item.id);
+    if (!node) {
+      node = el("li", {"data-id":item.id}, el("span", {class:"finding-title"}, item.title));
+      if (item.rare) node.append(el("span", {class:"finding-rare",
+        title:"Share of public AI rule files, not people."}, `Rare · ${item.rare}`));
+      list.append(node);
+    }
+  }
+}
+
 function renderExtract(extract) {
-  if (extractStarting && extract?.state === "offered") extract = {...extract, state: "starting"};
+  // An offer is started at once; a page that sees one sees it starting.
+  if (extract?.state === "offered") extract = {...extract, state: "starting"};
   renderLearningActivity(extract);
+  renderNoticed(extract);
   $("review-rules").hidden = !(lastState?.finished && extract?.state === "accepted"
     && extract.phase === "done");
   const card = $("extract");
@@ -832,69 +905,47 @@ function renderExtract(extract) {
     && ["reading", "merging"].includes(extract.phase));
   if (!extract) return;
   const state = extract.state;
+  const phase = extract.phase;
+  // Stop is there for as long as it is getting ready or reading.
+  const going = ["preparing", "starting"].includes(state) || (state === "accepted"
+    && ["reading", "merging", "checking", "waiting_model"].includes(phase));
+  $("extract-actions").hidden = !going;
+  $("extract-stop").disabled = extractStopping;
+  $("extract-stop").textContent = extractStopping ? "Stopping…" : "Stop";
+  $("extract-text").hidden = !going;
   if (state === "preparing") {
-    $("extract-title").textContent = "Estimating learning time…";
-    $("extract-text").textContent = "Setup continues while we check your selected chats.";
-    $("extract-text").hidden = false;
-    for (const id of ["extract-actions", "extract-costs", "extract-note", "extract-bar"]) $(id).hidden = true;
-    $("extract-status").textContent = "";
-    return;
-  }
-  const turns = (extract.turns || 0).toLocaleString();
-  const messages = extract.turns === 1 ? "message" : "messages";
-  const asking = state === "offered" || state === "starting";
-  $("extract-actions").hidden = !asking;
-  $("extract-yes").disabled = $("extract-no").disabled = state === "starting";
-  $("extract-yes").textContent = state === "starting" ? "Starting…" : "Start learning";
-  $("extract-costs").hidden = !asking;
-  $("extract-text").hidden = !asking;
-  $("extract-note").hidden = !asking;
-  if (asking) {
-    $("extract-title").textContent = "Learn from your past chats now?";
-    const local = extract.runner === "local";
-    // A heavy history is read from its newest messages only.
-    const newest = extract.older ? `your newest ${turns}` : turns;
-    const older = extract.older
-      ? ` ${extract.older.toLocaleString()} older ones are left out, so it stays quick.` : "";
-    $("extract-text").textContent = (local
-      ? `Read ${newest} chat ${messages} on this device? Uses no AI plan allowance.`
-      : `Read ${newest} chat ${messages} using ${extract.plan}? Sensitive content is skipped.`)
-      + older;
-    $("extract-costs").replaceChildren(
-      cost(percent(extract.five_hour), "5-hour limit"),
-      cost(percent(extract.weekly), "weekly limit"),
-      cost(duration(extract.seconds), "reading time"));
-    const notes = [extract.estimate_note || "Estimates vary by plan and model."];
-    if (extract.runner === "agent") notes.push("Varyz cannot access the Claude/Codex CLI. Start a task after setup; your agent will start learning your rules.");
-    else if (extract.usage_unknown) notes.push("Usage is unavailable. Learning still starts after you approve.");
-    if (!local) notes.push("Low allowance will not delay learning. Provider limits may interrupt it; progress is saved.");
-    notes.push("Setup continues. You can close this page after setup finishes.");
-    $("extract-note").textContent = notes.join(" ");
-    $("extract-note").hidden = !notes.length;
+    $("extract-title").textContent = "Getting ready to learn from your past chats…";
+    $("extract-text").textContent = "It starts by itself in a moment. Setup continues.";
     $("extract-status").textContent = "";
     renderBar($("extract-bar"), null);
     return;
   }
   if (state === "declined" || state === "unavailable") {
-    $("extract-title").textContent = state === "declined" ? "Skipped for now." : "It could not start here.";
-    $("extract-status").textContent = state === "declined" ? "Setup continues without learning now."
+    $("extract-title").textContent = state === "declined" ? "Stopped." : "It could not start here.";
+    $("extract-status").textContent = state === "declined"
+      ? "What it read so far is kept. It picks up again as you use your AI."
       : "Setup continues. Try learning again later.";
     renderBar($("extract-bar"), null);
     return;
   }
-  // Accepted: how far it has got, how long it still takes and what it has used.
-  const phase = extract.phase;
+  $("extract-text").textContent = learningLine(extract);
+  if (state === "starting") {
+    $("extract-title").textContent = "Learning from your past chats";
+    $("extract-status").textContent = "Setup continues. You can close this page after setup finishes.";
+    renderBar($("extract-bar"), null);
+    return;
+  }
+  // Under way: how far it has got, how long it still takes and what it has used.
+  const turns = (extract.turns || 0).toLocaleString();
   $("extract-title").textContent = phase === "agent" ? "Continue in your AI"
-    : phase === "done" ? "Ready to review"
+    : phase === "done" ? "Your portrait is ready"
     : phase === "waiting" ? "Learning paused"
     : phase === "failed" ? "Learning stopped"
-    : phase === "stopped" ? "Learning stopped for now" : "Learning your preferences…";
+    : phase === "stopped" ? "Learning stopped for now" : "Learning from your past chats";
   const read = ((extract.turns || 0) - (extract.turns_left || 0)).toLocaleString();
   const parts = [];
-  const used = [];
-  if (extract.used_five_hour != null) used.push(`${extract.used_five_hour}% of 5-hour limit`);
-  if (extract.used_weekly != null) used.push(`${extract.used_weekly}% weekly`);
-  const usedLine = used.join(" and ");
+  const usedLine = extract.account_five_hour != null
+    ? `${extract.account_plan || extract.plan} account: ${extract.account_five_hour}% of 5-hour limit used` : "";
   const status = $("extract-status");
   const away = "Runs in the background.";
   if (phase === "agent") {
@@ -909,13 +960,16 @@ function renderExtract(extract) {
       parts.push(`nothing read yet, ${duration(extract.nothing_read_for)} since it started`);
     }
     if (extract.stale != null) parts.push(`progress last checked ${duration(extract.stale)} ago`);
-    if (extract.seconds_left != null) parts.push(`${duration(extract.seconds_left)} left`);
-    if (usedLine && extract.runner !== "local") parts.push(`Plan change: ${usedLine}`);
+    if (extract.reading_seconds_range) {
+      const [low, high] = extract.reading_seconds_range.map(value => Math.max(1, Math.ceil(value / 60)));
+      parts.push(`about ${low === high ? high : `${low} to ${high}`} min to read`);
+    }
+    if (usedLine && extract.runner !== "local") parts.push(usedLine);
+    status.title = usedLine ? "Account-wide usage, including other activity. Refreshed within two minutes." : "";
     status.textContent = `${parts.join(" · ")}. ${away}`;
   } else if (phase === "merging") {
     parts.push("Sorting what it found into rules");
-    if (extract.seconds_left != null) parts.push(`${duration(extract.seconds_left)} left`);
-    if (usedLine && extract.runner !== "local") parts.push(`Plan change: ${usedLine}`);
+    if (usedLine && extract.runner !== "local") parts.push(usedLine);
     status.textContent = `${parts.join(" · ")}. ${away}`;
   } else if (phase === "checking") {
     status.textContent = "Connecting to your AI. Setup continues.";
@@ -926,7 +980,7 @@ function renderExtract(extract) {
     status.textContent = `Your AI provider stopped learning: ${extract.reason || "usage limit reached"}.${progress} Progress is saved.`
       + (extract.until ? ` Retries at ${clock(extract.until)}.` : " Retry below when your plan is available.");
   } else if (phase === "done") {
-    status.textContent = "Learning finished. Your preferences are ready to review.";
+    status.textContent = "Learning finished. Here is what it found about how you work.";
   } else {
     // Said in plain words: whoever sees this may never have opened a terminal.
     const why = (extract.reason_text || extract.reason || "").replace(/[.\s]+$/, "");
@@ -947,37 +1001,24 @@ function extractActive(extract) {
     && ["reading", "merging", "waiting", "waiting_model", "checking", "agent"].includes(extract.phase));
 }
 
-async function answerExtract(yes) {
-  showError("");
-  $("extract-yes").disabled = $("extract-no").disabled = true;
-  extractStarting = yes;
-  if (yes) renderExtract({...lastState?.extract, state: "starting"});
-  try {
-    await api("/api/extract", { extract: yes });
-  } catch (error) {
-    showError(`Could not ${yes ? "start it" : "answer"}: ${error.message}`);
-    renderLearningActivity(null);
-  } finally {
-    extractStarting = false;
-  }
-  if (!polling) polling = setInterval(poll, 700);
-  poll();
-}
-
-$("extract-yes").addEventListener("click", () => answerExtract(true));
-$("extract-no").addEventListener("click", () => answerExtract(false));
-
 async function controlExtract(action) {
-  $("extract-retry").disabled = $("extract-skip").disabled = true;
+  const buttons = [$("extract-retry"), $("extract-skip"), $("extract-stop")];
+  for (const button of buttons) button.disabled = true;
+  extractStopping = action === "stop";
+  if (extractStopping) $("extract-stop").textContent = "Stopping…";
   showError("");
   try { await api("/api/extract/control", {action}); }
-  catch (error) { showError(`Could not update learning: ${error.message}`); }
-  finally { $("extract-retry").disabled = $("extract-skip").disabled = false; }
+  catch (error) { showError(`Could not ${action === "stop" ? "stop" : "update"} learning: ${error.message}`); }
+  finally {
+    extractStopping = false;
+    for (const button of buttons) button.disabled = false;
+  }
   if (!polling) polling = setInterval(poll, 700);
   poll();
 }
 $("extract-retry").addEventListener("click", () => controlExtract("retry"));
 $("extract-skip").addEventListener("click", () => controlExtract("skip"));
+$("extract-stop").addEventListener("click", () => controlExtract("stop"));
 
 $("copy-learning-message").addEventListener("click", async () => {
   const text = $("learning-message"), button = $("copy-learning-message");
@@ -1037,7 +1078,7 @@ async function poll() {
     // A slow answer is a busy setup; a refused one is a setup no longer running,
     // whose window was closed or whose computer stopped it. Said so either way.
     if (pollFailures >= LOST_AFTER) {
-      // Gone, the spinner, the clock and "Keep this tab open" said it still worked.
+      // Gone, the spinner, the clock and "setup keeps going" said it still worked.
       const gone = error.name !== "TimeoutError";
       document.body.classList.toggle("setup-gone", gone);
       if (gone) $("hint").textContent = "";

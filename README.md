@@ -19,7 +19,9 @@ varyz setup
 ```
 
 Setup opens in your browser: choose where Varyz learns, connect your AI tools,
-then select the sources it may read. Wait for setup to finish and restart your
+then select the sources it may read. While the search models download, setup
+starts learning from your past chats by itself and shows what it notices; Stop on the
+page stops it and keeps what it read. Wait for setup to finish and restart your
 connected agent. Cloud is optional and has a separate sharing approval.
 
 Already installed? Open **Varyz Setup** from the Windows Start menu, or run
@@ -34,6 +36,12 @@ ask questions using their own verified account (a free Varyz Cloud email sign-in
 enough). People hear about invitations and questions by email and desktop
 notification. The implementation is disabled by default; pilot/native acceptance status and setup are in
 [Shared Varyz](docs/SHARED_VARYZ.md).
+
+Shared also builds portable rule packs from descriptions such as "my design rules".
+Review which rules to include and whether each applies across projects or only its
+source project, then copy or save a file to send in any chat. The recipient needs no
+account; their current choices and own rules take priority over the pack. This uses
+already synced preferences and the existing Shared feature gate.
 
 Agents can now leave concise local work checkpoints and retrieve a recorded
 session's completed work, checks and blockers with `record_progress` and
@@ -161,9 +169,17 @@ it asks when, and Varyz reads then), which reads those messages for each project
 like work done and what you already decided. A rule it found with strong evidence (you
 corrected an agent over it, or said it in two conversations or projects) goes into
 effect at once as a *trial rule*, and agents are told you have not confirmed it yet; it
-holds for good after 3 tasks over 7 days with no correction. The rest waits for your
-review: ask your agent to open it, or run `varyz rules review`, which also shows a
-sample of 10 trial rules to keep or drop. New trial rules pause when you keep fewer
+holds for good after 3 tasks over 7 days with no correction. You do not have to go
+through the rest. When a task you give an agent bears on one of them, the agent asks you
+about it once, in one line: keep it, stop it, or say it your way. That happens at most
+twice a day, never twice in one conversation and never while you are away. To see what
+was learned, ask your agent to open the review or run `varyz rules review`. It opens on
+your portrait: three brief signatures, rarity cues, and the one thing you keep fixing
+across projects. Full rules and your own quotes stay under "Why this?". Setup opens
+the portrait automatically when its reading and merges finish.
+Nothing there needs an answer. Reword a trait that is off, mark one "not me", or make
+the habit a rule. The full list sits below it, with a sample of 10 trial rules to keep
+or drop. New trial rules pause when you keep fewer
 than 90% of that sample; `varyz rules trials` shows them, `--off` stops new ones and
 `--undo-since DATE` withdraws them. In Claude Code that subagent is `varyz-rule-miner`, which connecting
 installs: Sonnet, and only the two Varyz tools that hand it the messages and take what
@@ -419,6 +435,7 @@ removing its archive. Add `--config <path>` when managing a separate archive.
 | Learn | `remember_owner_workflow` | when you steer it through steps in your usual order, it offers to remember the order |
 | Learn | `record_workflow_nudge` → `answer_workflow_review` | records whether you took or skipped a step it raised; after 2 skips in a week that cost nothing, asks you once whether to keep the step |
 | Learn | `record_recipe` | when a task took working out, saves how to do it so the next agent starts from there |
+| Learn | `answer_rule_question` | when a task bears on a rule the reading was unsure of, asks you once in that task whether to keep it, stop it or say it your way |
 
 ### A way of working vs a one-off choice
 

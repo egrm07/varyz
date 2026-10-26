@@ -256,7 +256,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .swatch { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--muted); }
 .swatch.yellow { background: var(--signal); border-color: var(--signal); }
 .swatch.black { background: var(--night); }
-.card-side .card-download { width: 100%; min-height: 46px; }
+.card-side .card-download { min-height: 38px; padding: 7px 22px; font-size: 15px; }
 .card-note { color: var(--dim); font-size: 14px; line-height: 1.45; margin: 14px 0 0; min-height: 1.45em; }
 .card-basis { color: var(--dim); font-size: 12px; line-height: 1.45; margin: 16px 0 0; }
 .card-edit { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
@@ -270,6 +270,74 @@ main.done { padding-bottom: var(--margin); }
 main.done .card-panel { margin-top: calc(var(--gap) * 1.2); justify-content: start; }
 main.done .card-figure { width: min(460px, max(340px, calc((100dvh - 300px) * 0.8))); }
 .closing { color: var(--dim); font-size: 14px; margin-top: var(--gap); }
+
+/* The portrait, the page's first view: what the reading found, read top to
+   bottom, ending on the habit and the card. Nothing on it needs an answer. */
+body[data-view="portrait"] .bar { display: none; }
+body[data-view="portrait"] main { padding-bottom: var(--margin); }
+.portrait { max-width: 880px; }
+.portrait > .label, .habit .label { font-size: 13px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--signal); margin: var(--gap) 0 0; }
+.portrait h1 { margin-top: 12px; text-wrap: balance; }
+.reading { height: 1px; margin-top: 28px; max-width: 420px; background: linear-gradient(90deg,
+  transparent, var(--signal), transparent) 0 0 / 40% 100% no-repeat; animation: reading 1.6s ease-in-out infinite; }
+@keyframes reading { from { background-position: -60% 0; } to { background-position: 160% 0; } }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 24px 0 0; padding: 0; }
+.chips li { border: 1px solid var(--line); border-radius: 999px; padding: 5px 13px; font-size: 14px;
+  color: var(--dim); }
+.chips b { font-weight: 400; color: var(--ink); margin-right: .45em; }
+.portrait h2.section { font: 400 clamp(28px, 3.4vw, 36px)/1.1 var(--display); margin: calc(var(--gap) * 1.7) 0 6px; }
+.portrait .sub { color: var(--muted); font-size: 16px; margin: 0 0 10px; }
+.trait { display: grid; grid-template-columns: 2.4em 1fr; gap: 0 14px; margin-top: 12px; padding: 18px 20px;
+  background: var(--glass); border: 1px solid var(--glass-edge); border-radius: 14px;
+  transition: opacity .2s; }
+.trait-n { font: 400 26px/1.1 var(--display); color: var(--signal); }
+.trait-statement { margin: 0; font-size: clamp(19px, 2.2vw, 22px); line-height: 1.32; overflow-wrap: anywhere; }
+.trait-quote { margin: 10px 0 0; padding-left: 12px; border-left: 1px solid var(--line); font-family: var(--serif);
+  font-style: italic; color: var(--muted); font-size: 17px; overflow-wrap: anywhere; }
+.when { font-family: var(--sans); font-style: normal; color: var(--dim); font-size: 13px; margin-left: .5em;
+  white-space: nowrap; }
+.trait-meta { margin: 10px 0 0; color: var(--dim); font-size: 14px; }
+.evidence { margin-top: 12px; color: var(--muted); font-size: 15px; }
+.evidence > summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+.evidence > p { line-height: 1.5; }
+.rare { display: inline-block; margin-top: 10px; padding: 2px 9px; border: 1px solid #806a36; border-radius: 6px;
+  color: var(--signal); font-size: 12px; }
+.trait-fix { display: grid; gap: 10px; margin-top: 12px; }
+.trait-fix textarea { font: inherit; font-size: 17px; color: var(--ink); width: 100%; resize: vertical;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-edge); border-radius: 10px; padding: 8px 10px; }
+.trait-fix textarea:focus { outline: 1px solid var(--signal); border-color: transparent; }
+.trait-fix .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.trait-note { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.trait-note:empty { display: none; }
+.trait[data-corrected="not_me"] { opacity: .45; }
+.trait[data-corrected="not_me"] .trait-statement { text-decoration: line-through; text-decoration-color: var(--dim); }
+.habit { margin-top: calc(var(--gap) * 2); padding: clamp(24px, 4.5vw, 48px); border: 1px solid #806a36;
+  border-radius: 18px; background: radial-gradient(120% 140% at 0 0, rgba(255, 194, 61, .11),
+  rgba(255, 194, 61, .015) 62%), var(--glass); }
+.habit .label { margin: 0; }
+.habit h2 { font: 400 clamp(32px, 4.6vw, 50px)/1.06 var(--display); letter-spacing: -.02em; margin: 14px 0 0;
+  text-wrap: balance; }
+.habit-count { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px; margin-top: 26px; }
+.habit-count .big { font: 400 clamp(68px, 11vw, 124px)/.9 var(--display); color: var(--signal);
+  font-variant-numeric: tabular-nums; }
+.habit-count p { flex: 1; min-width: 14em; margin: 0; color: var(--muted); font-size: 17px; line-height: 1.45; }
+.habit .quotes li { color: var(--ink); font-size: clamp(18px, 2.2vw, 22px); margin-top: 10px; }
+.habit-ways { margin: 30px 0 0; color: var(--muted); }
+.habit-rule { margin: 10px 0 20px; font: 400 clamp(20px, 2.4vw, 24px)/1.35 var(--serif); }
+.habit-act { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.habit-kept { margin: 0; color: var(--signal); }
+.portrait-card { margin-top: calc(var(--gap) * 2); }
+.portrait-card .card-panel { justify-content: start; }
+.portrait-card .card-panel:not(.reveal):not(.arrive) { visibility: hidden; }
+.portrait-end { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+  margin-top: calc(var(--gap) * 1.5); padding-top: 18px; border-top: 1px solid var(--line); }
+.back { margin-top: var(--gap); }
+.rise { animation: card-rise 650ms cubic-bezier(.2, .8, .2, 1) var(--at, 0ms) both; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .rise, .reading { animation: none; }
+}
 @media (max-width: 760px) {
   .card-panel { grid-template-columns: 1fr; }
   .card-figure, main.done .card-figure { width: min(100%, 440px); min-width: 0; }
@@ -285,15 +353,26 @@ main.done .card-figure { width: min(460px, max(340px, calc((100dvh - 300px) * 0.
   .toolbar label:not(.search) { flex: 1; min-width: 130px; }
   .toolbar .search { flex-basis: 100%; }
   .choice { flex-wrap: wrap; }
+  .trait { grid-template-columns: 1fr; padding: 16px; }
+  .trait-n { font-size: 20px; margin-bottom: 6px; }
 }
 </style>
 </head>
-<body>
+<body data-view="portrait">
 <main>
   <header class="brand">
     <svg viewBox="0 -8 62 42" aria-hidden="true"><path d="{{MARK_PATH}}"/></svg>
     <span>Varyz</span>
   </header>
+  <section class="portrait" id="portrait" aria-labelledby="portrait-title">
+    <p class="label">Your portrait</p>
+    <h1 id="portrait-title">Reading your conversations</h1>
+    <p class="lede" id="portrait-lede">This takes a few seconds.</p>
+    <div class="reading" id="reading" aria-hidden="true"></div>
+    <div id="portrait-body"></div>
+  </section>
+  <div id="list-view" hidden>
+  <button class="link back" id="back" type="button" hidden>Back to your portrait</button>
   <h1>Your rules</h1>
   <p class="lede">See what agents follow, what is on trial, and what still needs your review.</p>
   <div class="statuses" id="statuses" role="tablist" aria-label="Rule status"></div>
@@ -308,6 +387,7 @@ main.done .card-figure { width: min(460px, max(340px, calc((100dvh - 300px) * 0.
   <p class="error" id="error" role="alert" hidden></p>
   <div id="projects"></div>
   <p class="empty" id="empty" hidden></p>
+  </div>
 </main>
 <div class="bar">
   <div class="bar-inner">
@@ -676,6 +756,7 @@ async function load() {
     }
     for (const id of [...open]) if (!items.some((i) => i.id === id)) open.delete(id);
     render();
+    countAll();
   } catch (error) {
     showError(error.message);
   }
@@ -957,34 +1038,255 @@ $("card-dialog").addEventListener("close", () => {
   else $("close").focus();
 });
 
-$("close").addEventListener("click", async () => {
+// Done: the card once more, unless the portrait already ended on it.
+async function finish(withCard) {
   if (saving) return;
   if (choices.size && !confirm("Leave without saving what you picked?")) return;
   clearInterval(pinger);
   const brand = document.querySelector("header.brand").cloneNode(true);
-  // Done keeps the server up for the card; closing the tab stops it.
-  await api("/api/done", {}).catch(() => {});
   let panel = null;
-  try {
-    await loadCard();
-    cardStyle = "yellow";
-    panel = reveal(cardPanel(null), 160);
-  } catch {
+  if (withCard) {
+    // Done keeps the server up for the card; closing the tab stops it.
+    await api("/api/done", {}).catch(() => {});
+    try {
+      await loadCard();
+      cardStyle = "yellow";
+      panel = reveal(cardPanel(null), 160);
+    } catch {
+      await api("/api/close", {}).catch(() => {});
+    }
+  } else {
     await api("/api/close", {}).catch(() => {});
   }
-  document.body.replaceChildren(panel
+  const closing = el("p", { class: "closing" }, "You can close this tab.");
+  document.body.replaceChildren(panel || !withCard
     ? el("main", { class: "done" }, brand, el("h1", {}, "All set."),
-      el("p", { class: "lede" }, "Your agents follow your rules from now on."),
-      panel, el("p", { class: "closing" }, "You can close this tab."))
+      el("p", { class: "lede" }, "Your agents follow your rules from now on."), panel, closing)
     : el("main", {}, el("p", { class: "empty" }, "Rules view closed. You can close this tab.")));
-  // The heading is there from the start; the closing line comes after the card.
-  document.querySelector("main.done > .closing")?.style.setProperty("--at", "4600ms");
   if (panel) {
+    // The heading is there from the start; the closing line comes after the card.
+    closing.style.setProperty("--at", "4600ms");
     addEventListener("pagehide", () => {
       fetch("/api/close", { method: "POST", headers: HEADERS, keepalive: true }).catch(() => {});
     });
   }
-});
+}
+$("close").addEventListener("click", () => finish(true));
+
+// The portrait: the first view when the reading found anything. The owner reads
+// it top to bottom; a trait they correct and the habit they keep save at once.
+let portrait = null;
+let portraitCard = false;
+const number = (n) => Number(n).toLocaleString("en-GB");
+const plural = (n, word) => `${number(n)} ${word}${n === 1 ? "" : "s"}`;
+const times = (n) => n === 1 ? "once" : n === 2 ? "twice" : `${number(n)} times`;
+function listText(names) {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+function day(value, withYear) {
+  if (!value) return "";
+  return new Date(`${value}T12:00:00`).toLocaleDateString("en-GB",
+    withYear ? { day: "numeric", month: "long", year: "numeric" } : { day: "numeric", month: "short" });
+}
+function quoteNode(quote, tag) {
+  const where = [day(quote.when), quote.project].filter(Boolean).join(" · ");
+  return el(tag, { class: tag === "p" ? "trait-quote" : null }, `“${quote.text}”`,
+    where ? el("span", { class: "when" }, where) : null);
+}
+
+function showView(view) {
+  document.body.dataset.view = view;
+  $("portrait").hidden = view !== "portrait";
+  $("list-view").hidden = view !== "list";
+  scrollTo(0, 0);
+}
+
+// Runs once when the node is first on screen; at once where that cannot be told.
+function whenSeen(node, run, threshold = 0.25) {
+  if (!("IntersectionObserver" in window)) { run(); return; }
+  const seen = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    seen.disconnect();
+    run();
+  }, { threshold });
+  seen.observe(node);
+}
+
+function countUp(node, to) {
+  if (calm()) return;
+  const begun = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - begun) / 1200);
+    node.textContent = number(Math.round(to * (1 - (1 - t) ** 3)));
+    if (t < 1) requestAnimationFrame(step);
+  };
+  node.textContent = "0";
+  requestAnimationFrame(step);
+}
+
+function traitNode(trait, index) {
+  const parts = [`In ${plural(trait.conversations, "conversation")}`];
+  const projects = trait.projects.slice(0, 3);
+  const more = trait.projects.length - projects.length;
+  if (projects.length) parts.push(more ? `${projects.join(", ")} and ${more} more` : listText(projects));
+  if (trait.corrections) parts.push(`you corrected agents on it ${times(trait.corrections)}`);
+  if (trait.on_trial) parts.push("agents follow it now");
+  const note = el("p", { class: "trait-note", role: "status" });
+  if (trait.corrected === "reword") note.textContent = "Saved in your words. Agents follow it this way.";
+  if (trait.corrected === "not_me") note.textContent = "Stopped. Agents no longer follow it.";
+  const node = el("article", { class: "trait", "data-corrected": trait.corrected || null },
+    el("span", { class: "trait-n", "aria-hidden": "true" }, String(index + 1)));
+  const body = el("div", {}, el("p", { class: "trait-statement" }, trait.headline || trait.statement),
+    el("p", { class: "trait-meta" }, `${plural(trait.conversations, "chat")}`
+      + (trait.corrections ? ` · ${plural(trait.corrections, "correction")}` : "")),
+    trait.rare ? el("span", { class: "rare", title: portrait.rarity_basis },
+      `Rare · ${trait.rare}`) : null);
+  const evidence = el("details", {class:"evidence"}, el("summary", {}, "Why this?"),
+    trait.quote ? quoteNode(trait.quote, "p") : "",
+    el("p", {}, trait.statement), el("p", {class:"trait-meta"}, parts.join(" · ")),
+    trait.rare ? el("p", {class:"trait-meta"},
+      `${trait.rare} of public rule files focus on ${trait.family_label}. ${portrait.rarity_basis}`) : "");
+  body.append(evidence);
+  node.append(body);
+  if (!trait.corrected) {
+    const toggle = el("button", { class: "link", type: "button", "aria-expanded": "false" }, "Not quite?");
+    const wording = el("textarea", { rows: "2", maxlength: "500", "aria-label": "In your words" });
+    wording.value = trait.statement;
+    const save = el("button", { type: "button" }, "Save wording");
+    const notMe = el("button", { type: "button" }, "This isn't me");
+    const fix = el("div", { class: "trait-fix", hidden: true }, wording,
+      el("div", { class: "actions" }, save, notMe));
+    toggle.addEventListener("click", () => {
+      fix.hidden = !fix.hidden;
+      toggle.setAttribute("aria-expanded", String(!fix.hidden));
+      if (!fix.hidden) wording.focus();
+    });
+    async function correct(action) {
+      for (const button of [save, notMe]) button.disabled = true;
+      try {
+        const result = await api("/api/portrait/trait",
+          { id: trait.id, action, statement: wording.value });
+        Object.assign(trait, result.trait);
+        node.replaceWith(traitNode(trait, index));
+        load();
+      } catch (error) {
+        note.textContent = `Not saved: ${error.message}`;
+        for (const button of [save, notMe]) button.disabled = false;
+      }
+    }
+    save.addEventListener("click", () => correct("reword"));
+    notMe.addEventListener("click", () => correct("not_me"));
+    evidence.append(el("p", { class: "trait-meta" }, toggle), fix);
+  }
+  body.append(note);
+  return node;
+}
+
+function habitNode(habit) {
+  const big = el("span", { class: "big", "aria-hidden": "true" }, number(habit.times));
+  const titles = {unfinished:"“Done” keeps needing a redo", handed_back:"You keep handing the wheel back",
+    stopped:"You keep asking AI to keep going", wordy:"You keep cutting the waffle",
+    generic:"You keep pushing past generic"};
+  const ways = habit.rule_ids.length;
+  const act = el("div", { class: "habit-act" });
+  const kept = () => el("p", { class: "habit-kept" },
+    "Kept as your rule. Every agent follows it from now on.");
+  if (habit.kept) {
+    act.append(kept());
+  } else {
+    const keep = el("button", { class: "primary", type: "button" }, "Make it one rule");
+    const note = el("span", { class: "trait-note", role: "status" });
+    keep.addEventListener("click", async () => {
+      keep.disabled = true;
+      try {
+        await api("/api/portrait/habit", { kind: habit.kind });
+        habit.kept = true;
+        act.replaceChildren(kept());
+        load();
+      } catch (error) {
+        note.textContent = `Not saved: ${error.message}`;
+        keep.disabled = false;
+      }
+    });
+    act.append(keep, note);
+  }
+  const node = el("section", { class: "habit", "aria-labelledby": "habit-title" },
+    el("p", { class: "label" }, "What you keep fixing"),
+    el("h2", { id: "habit-title" }, titles[habit.kind] || habit.title),
+    el("div", { class: "habit-count" }, big,
+      el("p", {}, el("span", { class: "sr" }, `${number(habit.times)} `),
+        `corrections · ${plural(habit.conversations, "chat")}`)),
+    habit.quotes[0] ? quoteNode(habit.quotes[0], "p") : "",
+    el("details", {class:"evidence"}, el("summary", {}, "See the pattern"),
+      el("p", {}, `${plural(habit.projects.length, "project")} · ${day(habit.first, true)} to ${day(habit.last, true)}`),
+      el("ul", {class:"quotes"}, ...habit.quotes.slice(1).map(quote => quoteNode(quote,"li"))),
+      ways > 1 ? el("p", {}, `Already written ${number(ways)} different ways in your rules.`) : "",
+      el("blockquote", {class:"habit-rule"}, habit.rule), act));
+  whenSeen(big, () => countUp(big, habit.times), 0.6);
+  return node;
+}
+
+async function portraitCardInto(slot) {
+  try { await loadCard(); } catch { return; }
+  cardStyle = "yellow";
+  // The portrait ends on the card, so a save in the full list does not raise it again.
+  cardShown = true;
+  portraitCard = true;
+  const panel = cardPanel(() => load());
+  const title = panel.querySelector("#card-title");
+  title.id = "portrait-card-title";
+  panel.setAttribute("aria-labelledby", title.id);
+  slot.replaceChildren(panel);
+  whenSeen(panel, () => reveal(panel, 0));
+}
+
+function paintPortrait() {
+  const found = portrait;
+  $("portrait-title").textContent = "What stands out";
+  const across = found.projects.length ? ` · ${plural(found.projects.length, "project")}` : "";
+  $("portrait-lede").textContent =
+    `${plural(found.messages, "message")} · ${plural(found.conversations, "chat")}${across}`;
+  $("reading").remove();
+  const opening = [];
+  if (found.habit) opening.push(habitNode(found.habit));
+  if (found.traits.length) {
+    opening.push(el("h2", { class: "section" }, "Your signatures"),
+      ...found.traits.map(traitNode));
+  }
+  // The opening rises in order; what is further down is read as it is reached.
+  opening.forEach((node, i) => {
+    node.classList.add("rise");
+    node.style.setProperty("--at", `${120 + i * 90}ms`);
+  });
+  const card = el("div", { class: "portrait-card" });
+  const done = el("button", { type: "button" }, "Done");
+  const seeAll = el("button", { class: "link", id: "see-all", type: "button" }, "See all rules");
+  done.addEventListener("click", () => finish(!portraitCard));
+  seeAll.addEventListener("click", () => showView("list"));
+  $("portrait-body").replaceChildren(...opening, card,
+    el("div", { class: "portrait-end" }, done, seeAll));
+  countAll();
+  portraitCardInto(card);
+}
+
+function countAll() {
+  const all = items.filter((item) => item.status !== "withdrawn").length;
+  if ($("see-all") && all) $("see-all").textContent = `See all ${number(all)} rules`;
+}
+
+$("back").addEventListener("click", () => showView("portrait"));
+
+async function start() {
+  load();
+  try {
+    portrait = (await api("/api/portrait")).portrait;
+  } catch (error) {
+    showError(`Your portrait could not be read: ${error.message}`);
+  }
+  if (!portrait) { showView("list"); return; }
+  $("back").hidden = false;
+  paintPortrait();
+}
 
 for (const [value, label] of SLOTS) $("kind").append(el("option", { value }, label));
 $("search").addEventListener("input", render);
@@ -999,7 +1301,7 @@ $("refresh").addEventListener("click", async () => {
 
 // The server stops after a while without a word from the page; reading is not idle.
 const pinger = setInterval(() => { api("/api/ping").catch(() => {}); }, 60_000);
-load();
+start();
 </script>
 </body>
 </html>

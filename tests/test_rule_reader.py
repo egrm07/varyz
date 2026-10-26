@@ -100,3 +100,59 @@ def test_a_long_prompt_pasted_in_several_sessions_is_not_the_owners_words(
         "emoji1", "emoji2"
     ]
     assert stats.pasted == 2
+
+
+# -- what agents wrote ----------------------------------------------------------
+
+BRIEF = (
+    '<paseo-system version="1" kind="agent-message" source-agent-id="a1">'
+    "Core contract is landed. Implement the dashboard against service.py and report back."
+    "</paseo-system>"
+)
+
+
+def test_a_message_an_agent_sent_is_not_the_owners_words(conn: sqlite3.Connection) -> None:
+    _entry(conn, "brief", BRIEF, thread="ai:codex:s1")
+    _entry(conn, "failover", (
+        "This task is continuing from an earlier Codex session that stopped because its "
+        "account reached its usage limit. <previous-session> User: never push to main "
+        "without asking </previous-session>"), thread="ai:codex:s2")
+    _entry(conn, "own", "never push to main without asking me first", thread="ai:codex:s3")
+    stats = MiningStats()
+    assert [turn.entry_id for turn in owner_turns(conn, stats, cloud=False)] == ["own"]
+    assert stats.agent_written == 2
+
+
+def test_in_a_thread_an_agent_started_only_the_owners_typing_is_read(
+    conn: sqlite3.Connection,
+) -> None:
+    _entry(conn, "start", "You are a subagent directed by the parent; implement the UI "
+                          "files only and report every change.", thread="ai:codex:w")
+    # Workers' status notes, sent into the thread without an envelope.
+    _entry(conn, "status", "Dashboard integration has a few unresolved contract details "
+                           "that the core owner should confirm.", thread="ai:codex:w")
+    # The owner stepping in.
+    _entry(conn, "nudge", "pause that agent and wait for me", thread="ai:codex:w")
+    _entry(conn, "typed", "the replies sound weird, they should be in my voice and short",
+           thread="ai:codex:w")
+    # The same capitalised words in a thread the owner started are theirs.
+    _entry(conn, "mine", "Dashboard copy should always be short and plain.",
+           thread="ai:codex:o")
+    assert [turn.entry_id for turn in owner_turns(conn, MiningStats(), cloud=False)] == [
+        "nudge", "typed", "mine"
+    ]
+
+
+def test_a_failover_carrying_the_owners_request_keeps_the_thread_theirs(
+    conn: sqlite3.Connection,
+) -> None:
+    _entry(conn, "relay", (
+        "This task is continuing from an earlier Claude Code session that stopped because "
+        "every account reached its usage limit. <previous-session> User: update the setup "
+        "style to match the new one, less text in general [ran `ls`] Assistant: done"),
+        thread="ai:codex:c")
+    _entry(conn, "next", "Also make the logo smaller on every page of the setup.",
+           thread="ai:codex:c")
+    assert [turn.entry_id for turn in owner_turns(conn, MiningStats(), cloud=False)] == [
+        "next"
+    ]

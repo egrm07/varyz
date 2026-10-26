@@ -40,8 +40,10 @@ def until(get, predicate, timeout=5):
     raise AssertionError("expected background transition did not happen")
 
 
-@pytest.mark.parametrize("approve", [False, True])
-def test_setup_finishes_while_approved_mining_starts_independently(machine, monkeypatch, approve):
+@pytest.mark.parametrize("stop", [False, True])
+def test_setup_finishes_while_mining_starts_by_itself_and_stops_on_request(
+    machine, monkeypatch, stop
+):
     download = threading.Event()
     mining = threading.Event()
     started = threading.Event()
@@ -59,9 +61,12 @@ def test_setup_finishes_while_approved_mining_starts_independently(machine, monk
         assert mining.wait(5)
         return {"at": time.time(), "turns": 1000, "runner": "codex", "seconds": 221}
 
+    stopped = []
     monkeypatch.setattr(cli, "_sync_sources", sync)
     monkeypatch.setattr(setup_extract, "offer", lambda *_a, **_k: dict(OFFER))
     monkeypatch.setattr(setup_extract, "start", start)
+    monkeypatch.setattr(setup_extract, "stop",
+                        lambda cfg, *, runner=None: stopped.append(runner))
     monkeypatch.setattr(
         setup_extract,
         "progress",
@@ -75,22 +80,28 @@ def test_setup_finishes_while_approved_mining_starts_independently(machine, monk
             inference_mode="conversations",
             cloud_conversations=True,
         )
-        until(session.snapshot, lambda s: s["extract"] and s["extract"]["state"] == "offered")
-        assert not calls  # Choosing connected AI never approves this bulk reading.
-        before = time.monotonic()
-        assert session.choose_extract(approve) is None
-        assert time.monotonic() - before < 0.5
-        if approve:
-            assert started.wait(2)
-            assert session.choose_extract(True) == "nothing to answer"
+        # Once estimated it starts by itself, while the download still runs.
+        assert started.wait(2)
+        assert session.snapshot()["extract"]["state"] == "starting"
+        if stop:
+            before = time.monotonic()
+            assert session.control_extract("stop") is None
+            assert time.monotonic() - before < 0.5
+            assert session.control_extract("stop") == "learning is not running"
         download.set()
         state = until(session.snapshot, lambda s: s["finished"])
         assert state["result"]["verdict"] == "GO"
-        assert state["extract"]["state"] == ("starting" if approve else "declined")
-        assert len(calls) == int(approve)
+        assert state["extract"]["state"] == ("declined" if stop else "starting")
+        assert len(calls) == 1
         mining.set()
-        if approve:
+        if stop:
+            # What began while it was stopped is cancelled, and stays stopped.
+            until(lambda: stopped, bool)
+            assert stopped == ["codex"]
+            assert session.snapshot()["extract"]["state"] == "declined"
+        else:
             until(session.snapshot, lambda s: s["extract"]["state"] == "accepted")
+            assert not stopped
     finally:
         download.set()
         mining.set()
@@ -127,7 +138,7 @@ def config_file(tmp_path):
     return path
 
 
-def test_local_offer_uses_zero_subscription_allowance_and_starts_only_on_yes(
+def test_local_offer_uses_zero_subscription_allowance_and_starts_nothing_itself(
     config_file, monkeypatch
 ):
     cfg = load_config(config_file)
@@ -155,7 +166,8 @@ def test_local_progress_waits_for_download_and_does_not_claim_partial_work_is_do
     monkeypatch.setattr(local_reader, "work_left", lambda cfg: (500, 2))
     started = {"at": 100, "turns": 1000, "runner": "local", "seconds": 2000}
     view = setup_extract.progress(cfg, started, 200)
-    assert view["phase"] == "waiting_model" and view["used_weekly"] == 0
+    assert view["phase"] == "waiting_model"
+    assert "account_weekly" not in view  # Local learning has no subscription usage.
     status.update(state="running", reading_at=100)
     view = setup_extract.progress(cfg, started, 200)
     assert view["phase"] == "reading" and view["fraction"] == 0.5

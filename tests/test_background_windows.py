@@ -118,3 +118,53 @@ def test_ollama_version_probe_asks_for_no_window(monkeypatch):
     assert binary_version(Path("ollama.exe"), run=fake_run) == (0, 34, 4)
     assert calls[0][0] == ["ollama.exe", "--version"]
     assert _hidden_console(calls[0][1])
+
+
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+
+def _outlives_its_starter(kwargs: dict[str, Any], platform: str) -> bool:
+    """Its own process group (and on a Mac or Linux its own session), with no console."""
+    flags = int(kwargs.get("creationflags", 0))
+    return (bool(flags & CREATE_NEW_PROCESS_GROUP) and _hidden_console(kwargs)
+            and kwargs.get("start_new_session") is (platform != "win32")
+            and kwargs.get("close_fds") is True)
+
+
+class _Starting:
+    """A daemon that answers once something has started it."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def status(self) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            from varyz.resolution.client import ResolutionClientError
+
+            raise ResolutionClientError("connection refused")
+        return "up"
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin"])
+def test_the_daemon_setup_starts_outlives_setup(cfg, windows_flags, monkeypatch, platform):
+    """Closing setup's tab ended the Mac setup app, and its process group took the daemon."""
+    from varyz.resolution.client import ensure_daemon
+
+    monkeypatch.setattr(sys, "platform", platform)
+    assert ensure_daemon(_Starting(), _config_file(cfg)) == "up"  # type: ignore[arg-type]
+    assert _outlives_its_starter(windows_flags[0], platform)
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin"])
+def test_the_cloud_bridge_outlives_the_page_that_opened_it(tmp_path, windows_flags,
+                                                          monkeypatch, platform):
+    from varyz.cloud import bridge
+
+    config = tmp_path / "config.toml"
+    config.write_text("[resolution]\nport=8765\n", encoding="utf-8")
+    checks = iter([False, True])
+    monkeypatch.setattr(bridge, "ready", lambda *_a: next(checks))
+    monkeypatch.setattr(sys, "platform", platform)
+    assert bridge.ensure_ready(config) == bridge.CLOUD_SETUP_URL
+    assert _outlives_its_starter(windows_flags[0], platform)

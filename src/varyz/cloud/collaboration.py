@@ -37,6 +37,7 @@ ACTIONS = (
     "context",
     "publish",
     "public",
+    "pack",
 )
 _LINE = {"type": "string", "maxLength": 200}
 _TOPIC = {"type": "string", "minLength": 2, "maxLength": 60}
@@ -65,7 +66,10 @@ TOOL: dict[str, Any] = {
         "and next_milestone. Do not upload raw private conversations. Public Varyz: "
         "publish with a topic ('code review') returns the page where the owner ticks the "
         "standards anyone may follow and reviews the exact text; give them the link and "
-        "never publish for them. public shows what is published, followers and uses."
+        "never publish for them. public shows what is published, followers and uses. "
+        "pack with query, the person's own description of which rules to share, returns "
+        "a private review link to make a portable copy. The owner checks scope and text "
+        "before copying or sending; no rules are published or sent by this action."
     ),
     "inputSchema": {
         "type": "object",
@@ -124,6 +128,7 @@ TOOL: dict[str, Any] = {
             "question": {"type": "string", "maxLength": 500},
             "reason": {"type": "string", "maxLength": 500},
             "topic": _TOPIC,
+            "query": {"type": "string", "minLength": 2, "maxLength": 500},
         },
         "additionalProperties": False,
     },
@@ -135,7 +140,8 @@ FOLLOW_TOOL: dict[str, Any] = {
     "description": (
         "Public Varyz: creators publish the standards they actually apply, such as their "
         "code review or writing standards. When the person says 'follow @name' or 'use "
-        "name's Varyz', call follow with the username. When two followed creators cover "
+        "name's Varyz' or 'use Egors rules', call follow with the username. When two "
+        "followed creators cover "
         "one topic, pick chooses whose standards it uses ('use @name for code review'). "
         "list shows who the person follows and those choices; standards reads one "
         "topic's standards in full. Following is free. Afterwards start_task carries the "
@@ -310,7 +316,8 @@ def followed_brief(config_path: Path | None, task: str) -> dict[str, Any] | None
     if not isinstance(value, dict) or not value.get("following"):
         _follows[key[0]] = (now + FRESH, False)
         return None
-    result = value if value.get("standards") else None
+    result = value if (value.get("standards") or value.get("unresolved")
+                       or value.get("missing_topics")) else None
     if len(_briefs) >= 64:
         _briefs.clear()
     _briefs[key] = (now + FRESH, result)

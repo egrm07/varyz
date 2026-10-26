@@ -56,7 +56,7 @@ from varyz.session_progress import PROGRESS_POLICY
 from varyz.session_progress import TOOLS as PROGRESS_TOOLS
 
 SERVER_NAME = "varyz"
-SERVER_VERSION = "0.1.3"
+SERVER_VERSION = "0.1.4"
 
 _COLOUR_LITERAL = re.compile(
     r"\b(?:red|orange|yellow|green|blue|purple|pink|brown|black|white|grey|gray|"
@@ -840,6 +840,36 @@ _ANSWER_WORKFLOW_REVIEW_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+_ANSWER_RULE_QUESTION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "The rule's id, as start_task gave it in rule_question.",
+        },
+        "answer": {
+            "type": "string",
+            "enum": ["yes", "no", "reword"],
+            "description": (
+                "The owner's answer, never yours: 'yes' keeps the rule, 'no' stops it, "
+                "'reword' keeps it in the words they gave."
+            ),
+        },
+        "statement": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "With 'reword': the rule in the owner's own words.",
+        },
+        "project": _PROJECT_PROPERTY,
+        "conversation_id": {"type": "string", "minLength": 1, "maxLength": 200},
+        "purpose": _PURPOSE_PROPERTY,
+    },
+    "required": ["id", "answer"],
+    "additionalProperties": False,
+}
+
 _PROFILE_READING_TASK_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -1409,6 +1439,24 @@ TOOLS: list[dict[str, Any]] = [
             + _UNTRUSTED_NOTE
         ),
         "inputSchema": _ANSWER_WORKFLOW_REVIEW_SCHEMA,
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    },
+    {
+        "name": "answer_rule_question",
+        "title": "Record the owner's answer about a rule varyz was unsure of",
+        "description": (
+            "When start_task or finish_check carries a rule_question, ask the owner its "
+            "question once with your question tool (yes / no / in my words) and record "
+            "their answer here. 'yes' keeps the rule for every agent, 'no' stops it, "
+            "'reword' keeps it in their words. Never answer for the owner, and record "
+            "nothing if they did not answer. " + _UNTRUSTED_NOTE
+        ),
+        "inputSchema": _ANSWER_RULE_QUESTION_SCHEMA,
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": False,
@@ -2316,6 +2364,19 @@ class VaryzServer:
                 followed = collaboration.followed_brief(self._config_path, task)
                 if followed:
                     result["followed"] = followed
+        if result.get("rule_question"):
+            # Asked only once it is kept as asked: an unkept draw would be drawn again,
+            # and the owner asked again, in this same conversation.
+            asked = result["rule_question"]
+            recorded = False
+            if caller.capability_id is not None:
+                with contextlib.suppress(Exception):
+                    recorded = self._with_daemon(lambda client: client.record_rule_question(
+                        asked["id"], conversation_id=str(result["conversation_id"]),
+                        event="asked", project=project,
+                    ))
+            if not recorded:
+                result["rule_question"] = None
         if result.get("trial_rules"):
             # Count this task for the rules on trial it showed; best effort, as a
             # briefing never waits on the trial lane.
@@ -3134,6 +3195,66 @@ class VaryzServer:
             return _relay_outage(outage)
         return {"recorded": True, "answer": answer, "nudge_ids": nudge_ids}
 
+    def _call_answer_rule_question(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        from varyz.resolution.client import ResolutionClientError
+
+        rule_id = arguments.get("id")
+        answer = arguments.get("answer")
+        if not isinstance(rule_id, str) or not rule_id.strip():
+            raise ValueError("id is required, as start_task gave it in rule_question")
+        if answer not in ("yes", "no", "reword"):
+            raise ValueError("answer is the owner's 'yes', 'no' or 'reword'")
+        statement = arguments.get("statement") or ""
+        if not isinstance(statement, str):
+            raise ValueError("statement must be a string")
+        statement = " ".join(statement.split())
+        if answer == "reword" and not statement:
+            raise ValueError("answer 'reword' needs statement: the rule in the owner's words")
+        conversation = self._conversation_id(arguments)
+        if conversation is None:
+            raise ValueError("conversation_id is required, the one start_task was given")
+        project, _cwd = self._project_argument(arguments)
+        caller, denial = self._advice_caller(arguments)
+        if denial is not None:
+            return {"recorded": False, "error": denial}
+        device_id = self.cfg.resolution.device_id
+
+        def apply(client: Any) -> dict[str, Any] | None:
+            item = next((row for row in client.principles("candidate")
+                         if row["id"] == rule_id.strip()), None)
+            if item is None:
+                return None
+            kept = None
+            if answer == "no":
+                client.retract_principle(str(item["id"]), caller=caller, device_id=device_id,
+                                         reason="the owner said no when a task asked")
+            else:
+                kept = client.confirm_principle(
+                    str(item["id"]), caller=caller, device_id=device_id,
+                    statement=statement if answer == "reword" else None)
+            client.record_rule_question(str(item["id"]), conversation_id=conversation,
+                                        event=answer, project=project)
+            return {"rule_id": kept, "statement": statement or str(item["statement"])}
+
+        try:
+            done = self._with_daemon(apply)
+        except ResolutionClientError as outage:
+            return _relay_outage(outage)
+        if done is None:
+            return {"recorded": False, "error": (
+                "That rule is no longer waiting: the owner already kept or dropped it. "
+                "Nothing changed.")}
+        return {
+            "recorded": True,
+            "answer": answer,
+            **done,
+            "note": (
+                "Stopped: no agent is given this rule." if answer == "no"
+                else "Kept as the owner's rule; start_task gives it to every agent from now "
+                "on. Tell them in one line."
+            ),
+        }
+
     def _call_answer_workflow_review(self, arguments: dict[str, Any]) -> dict[str, Any]:
         from varyz.resolution.client import ResolutionClientError
 
@@ -3343,6 +3464,7 @@ class VaryzServer:
             "schedule_reading",
             "record_workflow_nudge",
             "answer_workflow_review",
+            "answer_rule_question",
             "record_recipe",
             "resolve",
             "owner_questions",
@@ -3393,6 +3515,8 @@ class VaryzServer:
             return self._call_record_recipe(arguments)
         if name == "answer_workflow_review":
             return self._call_answer_workflow_review(arguments)
+        if name == "answer_rule_question":
+            return self._call_answer_rule_question(arguments)
         if name == "resolve":
             return self._call_resolve(arguments)
         if name == "owner_questions":

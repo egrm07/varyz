@@ -222,6 +222,17 @@ class ResolutionClient:
         )
         return [str(value) for value in response.get("promoted") or []]
 
+    def record_rule_question(
+        self, principle_id: str, *, conversation_id: str, event: str, project: str | None = None
+    ) -> bool:
+        """Keep that a task asked the owner about a waiting rule ('asked'), or their
+        answer ('yes', 'no', 'reword'). False when it was already kept."""
+        response = self._request("POST", "/principles/questions", {
+            "principle_id": principle_id, "conversation_id": conversation_id,
+            "event": event, "project": project,
+        })
+        return bool(response.get("recorded"))
+
     def record_task_signals(
         self,
         conversation_id: str,
@@ -562,13 +573,20 @@ def ensure_daemon(
         # The native launcher deliberately ignores foreign PYTHONHOME/PYTHONPATH.
         # Keep that isolation when its CLI starts the long-lived daemon too.
         command.insert(1, "-I")
+    # Its own session and process group: the daemon outlives whatever started
+    # it. Setup's window or tab closing, a Ctrl+C there, or the Mac setup app
+    # ending (which takes its process group with it) must not stop it.
+    flags = 0
+    for name in ("CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW"):
+        flags |= getattr(subprocess, name, 0)
     process = subprocess.Popen(  # noqa: S603 - fixed local module invocation
         command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        creationflags=flags,
         close_fds=True,
+        start_new_session=sys.platform != "win32",
     )
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

@@ -4,15 +4,13 @@ Setup reads the chosen sources before it downloads the search models, so the
 owner's chats with AI agents are in the archive while the download (250 MB,
 or 1.3 GB with a local judge) runs. When an agent that can run varyz's own
 reader was connected (Claude Code or Codex, `headless_reader.find_runners`),
-the page asks "Extract
-preferences from your existing chats?" and says what it takes: the share of
-the plan's 5-hour and weekly limits, in percent, and how long. A yes hands
-the full reading to varyz's own reader in the background now, instead of on
-the agent's first use (`profile_reader.SETUP_STEP`); a no keeps that.
+setup hands the reading to varyz's own reader in the
+background at once, instead of on the agent's first use
+(`profile_reader.SETUP_STEP`). The page says what it takes and can stop it.
 
-A reading's cost is estimated from the readings measured so far until the
-reading itself shows its pace and its draw on the plan. The page also says
-how long the downloads still take, from their measured speed.
+Historical planning figures are retained internally, not shown as a prediction.
+The page shows completed messages, a reading-only range after measured batches,
+and fresh account-wide usage without attributing other activity to the reading.
 """
 
 from __future__ import annotations
@@ -37,16 +35,9 @@ FIVE_HOUR_PER_1000 = 4.3
 WEEKLY_PER_1000 = 0.7
 # Starting the reader and its first model call, whatever the size.
 START_SECONDS = 30.0
-# Before this much has been read, the measured pace says little.
-SETTLE_SECONDS = 20.0
-SETTLE_TURNS = 20
 # Nothing read this long after the start: the estimate is no longer believable,
 # so the page says nothing has been read yet instead of counting down from it.
 FIRST_READ_SECONDS = 180.0
-# Learning moves a model call at a time, so its pace is read over a longer
-# stretch than a download's: the last 2 minutes or 30% of the reading.
-RECENT_SECONDS = 120.0
-RECENT_SHARE = 0.3
 # The local reader before it has measured itself. Measured on 2026-10-22: 16
 # reads of 107 messages took 0.68 s a message with qwen3.5:4b on an RTX 5070;
 # rounded up for slower graphics cards and the merges after. Its own pace
@@ -189,17 +180,18 @@ def start(
     from varyz.resolution.profile_reader import announced, reading_taken
 
     now = time.time() if now is None else now
+    cohort = reading_cohort(cfg, str(offered.get("runner")), before=now)
     read_usage = read_usage or usage_mod.read
     if offered.get("runner") == "local":
         from varyz.resolution import local_reader
 
         if not local_reader.request(cfg, config_file, wait_model=True):
             return None
-        return {"at": now, "turns": int(offered["turns"]), "runner": "local",
+        return {"at": now, "cohort": cohort, "turns": int(offered["turns"]), "runner": "local",
                 "seconds": float(offered["seconds"]), "merging_since": None}
     if offered.get("runner") == "agent":
         reader.hand_back(cfg, "cli_unavailable")
-        return {"at": now, "turns": int(offered["turns"]), "runner": "agent",
+        return {"at": now, "cohort": cohort, "turns": int(offered["turns"]), "runner": "agent",
                 "seconds": float(offered["seconds"])}
     reader.update_status(cfg, lambda status: status.update({
         "setup_runner": offered["runner"], "setup_agent_fallback": False,
@@ -210,15 +202,16 @@ def start(
         if (offered.get("allow_agent_fallback") and reader.enabled(cfg, "full")
                 and not reader._paused(cfg)):
             reader.hand_back(cfg, "cli_unavailable")
-            return {"at": now, "turns": int(offered["turns"]), "runner": "agent",
+            return {"at": now, "cohort": cohort, "turns": int(offered["turns"]), "runner": "agent",
                     "seconds": float(offered["seconds"])}
         return None
-    # The owner chose on the page: their agent neither asks again nor announces it.
+    # Setup already explained this reading; the agent does not announce it again.
     reading_taken(cfg, now)
     announced(cfg, now)
     found = reader._read_usage(read_usage, offered["runner"]) if offered.get("known") else None
     return {
         "at": now,
+        "cohort": cohort,
         "turns": int(offered["turns"]),
         "runner": offered["runner"],
         "seconds": float(offered["seconds"]),
@@ -250,9 +243,15 @@ def retry(cfg: Any, config_file: Path, *, runner: str | None = None) -> bool:
     return reader.request(cfg, "full", config_file, runners=runners)
 
 
-def stop(cfg: Any) -> None:
-    """Cancel setup's cloud reading; keep its completed work and other pending jobs."""
+def stop(cfg: Any, *, runner: str | None = None) -> None:
+    """Cancel setup's reading; keep its completed work and other pending jobs."""
     from varyz.resolution import headless_reader as reader
+
+    if runner == "local":
+        from varyz.resolution import local_reader
+
+        local_reader.stop(cfg)
+        return
 
     def cancel(status: dict[str, Any]) -> None:
         status["pending"] = [job for job in status.get("pending", []) if job != "full"]
@@ -265,6 +264,112 @@ def stop(cfg: Any) -> None:
 
 
 # -- its progress -------------------------------------------------------------------
+
+
+def reading_cohort(cfg: Any, runner: str, *, before: float,
+                   unread_only: bool = True, window: bool = True) -> list[str] | None:
+    """Freeze the approved messages this reading covers; later chats are live work."""
+    import sqlite3
+    from datetime import UTC, datetime
+
+    from varyz.resolution.profile_reader import ProfileState, _turns, _unread, _window, profile_path
+
+    path = Path(cfg.db_path)
+    if not path.is_file():
+        return None
+    tier = "local" if runner == "local" else "cloud"
+    stamp = datetime.fromtimestamp(before, UTC).isoformat()
+    try:
+        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            eligible = _turns(conn, tier)
+            turns = [turn for turn in (_window(eligible) if window else eligible)
+                     if not turn.occurred or turn.occurred <= stamp]
+            if unread_only:
+                state = ProfileState(profile_path(cfg, tier))
+                if state.newer:
+                    return None
+                turns = _unread(state, turns)
+            return [turn.entry_id for turn in turns]
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError, ValueError):
+        return None
+
+
+def _cohort_left(cfg: Any, started: dict[str, Any], now: float) -> int | None:
+    """Current unread messages within the original cohort, respecting current access."""
+    cohort = started.get("cohort")
+    if not isinstance(cohort, list):
+        return None
+    unread = reading_cohort(cfg, str(started["runner"]), before=now, window=False)
+    return len(set(cohort) & set(unread)) if unread is not None else None
+
+# How many of its newest findings the page shows while it reads.
+NOTICED_SHOWN = 3
+NOTICED_CHARS = 90
+
+
+def noticed(cfg: Any, since: float, *, limit: int = NOTICED_SHOWN) -> list[dict[str, str]]:
+    """Distinctive findings from this reading, with stable display identities.
+
+    Read-only: the page's live line while it reads, before the portrait.
+    """
+    import json
+    import sqlite3
+    from datetime import UTC, datetime
+
+    from varyz.card.rarity import SHARE, share_text
+    from varyz.portrait import RARE_SHARE, _family, headline, interest
+    from varyz.resolution.principles import _CURRENT
+    from varyz.resolution.trials import MODEL_SOURCES
+
+    path = Path(cfg.db_path)
+    if not path.is_file():
+        return []
+    stamp = datetime.fromtimestamp(since, UTC).isoformat()
+    marks = ", ".join("?" for _ in MODEL_SOURCES)
+    try:
+        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)
+        try:
+            rows = conn.execute(
+                f"""SELECT principle.statement, principle.provenance_json
+                    FROM owner_principles AS principle
+                    WHERE principle.source IN ({marks}) AND principle.kind = 'rule'
+                      AND principle.created_at >= ? AND {_CURRENT}
+                    ORDER BY principle.created_at DESC, principle.monotonic_seq DESC
+                    LIMIT ?""",
+                (*MODEL_SOURCES, stamp, 100),
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+    ranked: dict[str, tuple[float, dict[str, str]]] = {}
+    for statement, raw in rows:
+        title = headline(str(statement))
+        if not title:
+            continue
+        try:
+            provenance = json.loads(raw or "{}")
+        except (ValueError, TypeError):
+            provenance = {}
+        if not isinstance(provenance, dict):
+            provenance = {}
+        quotes = provenance.get("quotes") or []
+        threads = {str(q.get("thread") or q.get("entry_id")) for q in quotes
+                   if isinstance(q, dict)}
+        score = interest(str(statement), conversations=max(1, len(threads)),
+                         corrections=len(provenance.get("corrections") or []))
+        family = _family(str(statement))
+        key = title.casefold()
+        rare = share_text(family) if family and SHARE.get(family, 1) < RARE_SHARE else ""
+        finding = {"id": key, "title": title, "rare": rare}
+        if key not in ranked or score > ranked[key][0]:
+            ranked[key] = (score, finding)
+    return [finding for _, finding in sorted(ranked.values(),
+            key=lambda item: (-item[0], item[1]["id"]))[:max(0, limit)]]
 
 
 # Why a reading stopped, in the owner's words: the readers' statuses keep short
@@ -313,17 +418,19 @@ def plain_reason(reason: str) -> str:
     return reason or "it stopped before reading everything"
 
 
-def _used_since(status: dict[str, Any], started: dict[str, Any]) -> dict[str, float | None]:
-    """How much of each limit went since the start; None where a window started over."""
-    raw = (status.get("usage") or {}).get(started["runner"])
+def _account_usage(status: dict[str, Any], started: dict[str, Any],
+                   now: float) -> dict[str, float | str | None]:
+    """Fresh provider totals, never attributed to this reading alone."""
+    runner = status.get("runner") or started["runner"]
+    raw = (status.get("usage") or {}).get(runner)
     found = Usage.from_dict(raw) if isinstance(raw, dict) else None
-    used: dict[str, float | None] = {"five_hour": None, "weekly": None}
-    if found is None or found.read_at < started["at"]:
+    used: dict[str, float | str | None] = {"account_five_hour": None, "account_weekly": None,
+                                         "account_plan": PLANS.get(runner, str(runner))}
+    if found is None or not 0 <= now - found.read_at <= 120:
         return used
     for key, window in (("five_hour", found.five_hour), ("weekly", found.weekly)):
-        before = started.get(f"{key}_used")
-        if window is not None and before is not None and window.used >= before:
-            used[key] = round(window.used - before, 1)
+        if window is not None:
+            used[f"account_{key}"] = round(window.used, 1)
     return used
 
 
@@ -341,6 +448,8 @@ def progress(
     status = reader.load_status(cfg)
     turns_left, work_merges, _, _ = (work if work is not None else
                                    reader._work_left(cfg, "full", now))
+    if work is None and (cohort_left := _cohort_left(cfg, started, now)) is not None:
+        turns_left = cohort_left
     if status.get("setup_agent_fallback"):
         done = turns_left == 0 and work_merges == 0
         return {"state": "accepted", "phase": "done" if done else "agent",
@@ -352,14 +461,14 @@ def progress(
     state = status.get("state")
     pending = "full" in (status.get("pending") or [])
     elapsed = now - float(started["at"])
-    merge_seconds = total / 1000 * MERGE_SECONDS_PER_1000
     view: dict[str, Any] = {
         "state": "accepted", "turns": total, "turns_left": turns_left,
         "fraction": read / total if total else 1.0, "seconds_left": None,
-        "until": None, "reason": "", **{f"used_{k}": v for k, v in
-                                        _used_since(status, started).items()},
+        "until": None, "reason": "", **_account_usage(status, started, now),
     }
-    if state in {"failed", "no_runner"}:
+    if not pending and turns_left == 0 and work_merges == 0:
+        view.update(phase="done", fraction=1.0)
+    elif state in {"failed", "no_runner"}:
         view.update(phase="failed", reason=str(status.get("reason") or state))
     elif state == "rate_limited":
         view.update(phase="waiting", reason=str(status.get("reason") or ""),
@@ -367,54 +476,49 @@ def progress(
     elif state in {"scheduled", "paused", "stopped"}:
         view.update(phase="stopped", reason=str(status.get("reason") or state),
                     until=status.get("next_check") if state == "scheduled" else None)
-    elif not pending and turns_left == 0 and work_merges == 0:
-        view.update(phase="done", fraction=1.0)
+    elif (turns_left == 0 and work_merges and "live" in (status.get("pending") or [])
+          and state in {"running", "queued"}):
+        view.update(phase="merging")
     elif not pending:
         view.update(phase="stopped", reason="Learning is incomplete; resume the reader.")
     elif turns_left == 0:
         if started.get("merging_since") is None:
             started["merging_since"] = now
-        view.update(phase="merging",
-                    seconds_left=max(merge_seconds - (now - started["merging_since"]), 30.0))
+        view.update(phase="merging")
     else:
         view["phase"] = "reading"
-        pace = _recent(started, now, read, turns_left, float(started["at"]))
-        if elapsed >= SETTLE_SECONDS and read >= max(SETTLE_TURNS, total * 0.02) and pace:
-            view["seconds_left"] = pace + merge_seconds
-        elif read == 0 and elapsed >= FIRST_READ_SECONDS:
+        view["reading_seconds_range"] = _reading_range(started, now, read, turns_left,
+                                                       float(started["at"]))
+        if read == 0 and elapsed >= FIRST_READ_SECONDS:
             # A reader that has read nothing has no pace; the estimate made
             # before it started is not one either.
             view["nothing_read_for"] = round(elapsed)
-        else:
-            view["seconds_left"] = max(float(started["seconds"]) - elapsed, 30.0)
     return view
 
 
-def _recent(
-    started: dict[str, Any], now: float, read: int, left: int, origin: float,
-) -> float | None:
-    """Seconds for ``left`` more turns at the latest pace; the samples live in ``started``.
+def _reading_range(started: dict[str, Any], now: float, read: int, left: int,
+                   origin: float) -> list[int] | None:
+    """A reading-only range after three measured batches; stalls invalidate it."""
+    import math
 
-    Reading moves a call at a time, so the figure is set when the count moves and
-    counts down between moves; a stall longer than it falls back to the pace with
-    the stall in it.
-    """
-    from varyz.cli import recent_seconds_left
-
-    # Nothing was read when reading began at ``origin``.
-    samples = started.setdefault("samples", [(origin, 0)])
-    if read != samples[-1][1]:
-        samples.append((now, read))
-        started["estimate"] = recent_seconds_left(samples, left, recent=RECENT_SECONDS,
-                                                  share=RECENT_SHARE)
-    estimate = started.get("estimate")
-    if estimate is None:
+    samples = started.setdefault("pace_samples", [(origin, 0)])
+    if read < samples[-1][1]:
+        samples[:] = [(now, read)]
         return None
-    since = now - samples[-1][0]
-    if since < estimate:
-        return estimate - since
-    return recent_seconds_left([*samples, (now, read)], left, recent=RECENT_SECONDS,
-                               share=RECENT_SHARE)
+    if read > samples[-1][1]:
+        samples.append((now, read))
+        del samples[:-8]
+    if len(samples) < 4 or samples[-1][0] - samples[0][0] < 60:
+        return None
+    last_gap = samples[-1][0] - samples[-2][0]
+    if now - samples[-1][0] > max(60, 2 * last_gap):
+        return None
+    rates = [(end_n - begin_n) / (end_t - begin_t)
+             for (begin_t, begin_n), (end_t, end_n) in zip(samples, samples[1:], strict=False)
+             if end_t > begin_t and end_n > begin_n]
+    if not rates or max(rates) > min(rates) * 3:
+        return None
+    return [math.floor(left / max(rates)), math.ceil(left / min(rates))]
 
 
 def _local_progress(cfg: Any, started: dict[str, Any], now: float) -> dict[str, Any]:
@@ -422,12 +526,14 @@ def _local_progress(cfg: Any, started: dict[str, Any], now: float) -> dict[str, 
 
     status = local_reader.load_status(cfg)
     left, merges = local_reader.work_left(cfg)
+    if (cohort_left := _cohort_left(cfg, started, now)) is not None:
+        left = cohort_left
     total = max(int(started["turns"]), left)
     done = total - left
     phase = status.get("state", "queued")
     view: dict[str, Any] = {
         "state": "accepted", "runner": "local", "turns": total, "turns_left": left,
-        "fraction": done / total if total else 0, "used_five_hour": 0, "used_weekly": 0,
+        "fraction": done / total if total else 0,
         "seconds_left": None, "reason": status.get("reason", ""),
     }
     if phase in {"queued", "waiting_model"}:
@@ -439,19 +545,10 @@ def _local_progress(cfg: Any, started: dict[str, Any], now: float) -> dict[str, 
     else:
         elapsed = now - float(status.get("reading_at") or now)
         view["phase"] = "merging" if not left else "reading"
-        # The merges still to make, at the length the reader's own calls take.
-        call = status.get("call_seconds")
-        merging = merges * float(call) if isinstance(call, int | float) else None
-        pace = _recent(started, now, done, left, now - elapsed) if left else None
-        if not left:
-            # No measured call yet: no figure, rather than "under a minute" throughout.
-            view["seconds_left"] = max(merging, 30) if merging else None
-        elif done >= SETTLE_TURNS and pace is not None:
-            view["seconds_left"] = max(pace + (merging or 0), 30)
-        elif left and done == 0 and elapsed >= FIRST_READ_SECONDS:
+        view["reading_seconds_range"] = (_reading_range(started, now, done, left, now - elapsed)
+                                         if left else None)
+        if left and done == 0 and elapsed >= FIRST_READ_SECONDS:
             view["nothing_read_for"] = round(elapsed)
-        else:
-            view["seconds_left"] = max(float(started["seconds"]) - elapsed, 30)
     return view
 
 

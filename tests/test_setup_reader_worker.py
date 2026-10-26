@@ -152,6 +152,36 @@ def test_owner_retry_skips_the_local_cooldown(tmp_path, monkeypatch):
     assert len(launched) == 1 and launched[0][-1] == "--wait-model"
 
 
+def test_stop_halts_the_local_worker_before_its_next_model_call(
+    tmp_path, daemon_client, monkeypatch  # noqa: F811
+):
+    """Stop on the setup page stops the on-device reader; it had no way to stop before."""
+    _queue_only(tmp_path)
+    path, cfg = _local_config(tmp_path)
+    conn = open_db(cfg.db_path)
+    _shop(conn)
+    conn.close()
+    model = FakeModel(SHOP_MODEL)
+    monkeypatch.setattr(local_reader, "model_ready", lambda cfg: True)
+    monkeypatch.setattr(cli, "_resolution_client", lambda cfg: daemon_client)
+    monkeypatch.setattr(rule_reader, "reader_from_config", lambda *a, **kw: model)
+
+    local_reader.stop(cfg)
+    local_reader.run(path, wait_model=True)
+
+    assert model.calls == []
+    status = local_reader.load_status(cfg)
+    assert (status["state"], status["reason"]) == ("stopped", "asked")
+    assert local_reader.work_left(cfg)[0] > 0  # nothing read, nothing lost
+    # The owner's next start is their own: the stop no longer holds.
+    launched = []
+    monkeypatch.setattr(local_reader, "_allowed", lambda cfg: True)
+    monkeypatch.setattr(local_reader.subprocess, "Popen",
+                        lambda command, **kwargs: launched.append(command))
+    assert _REQUEST(cfg, path, wait_model=True, force=True)
+    assert launched and not local_reader._stopped(cfg)
+
+
 def test_cloud_supervisor_reads_through_the_real_mcp_tools_and_reaches_idle(
     tmp_path, daemon_client, monkeypatch  # noqa: F811
 ):

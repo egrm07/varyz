@@ -54,6 +54,22 @@ def work_left(cfg: Any) -> tuple[int, int]:
         conn.close()
 
 
+def _stop_path(cfg: Any) -> Path:
+    return Path(cfg.data_dir) / "rules" / "local_reader.stop"
+
+
+def stop(cfg: Any) -> None:
+    """Ask a running reader to stop before its next model call; what it read is kept."""
+    path = _stop_path(cfg)
+    with contextlib.suppress(OSError):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(time.time()), encoding="utf-8")
+
+
+def _stopped(cfg: Any) -> bool:
+    return _stop_path(cfg).exists()
+
+
 def model_ready(cfg: Any) -> bool:
     import httpx
 
@@ -78,6 +94,9 @@ def request(cfg: Any, config_file: Path, *, wait_model: bool = False,
             return False
     except (OSError, ValueError, TypeError, AttributeError):
         pass
+    # A new start (the owner's retry, or their next prompt) lifts an earlier stop.
+    with contextlib.suppress(OSError):
+        _stop_path(cfg).unlink(missing_ok=True)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     try:
@@ -135,6 +154,9 @@ def run(config_file: Path, *, wait_model: bool = False) -> None:
                 status.update(state="stopped",
                               reason="Local learning was paused or the AI mode changed.")
                 return
+            if _stopped(cfg):
+                status.update(state="stopped", reason="asked")
+                return
         status.update(state="running", reading_at=time.time())
         path.write_text(json.dumps(status), encoding="utf-8")
         provider = reader_from_config(cfg, schema=SCHEMA, max_tokens=LOCAL_REPLY_TOKENS)
@@ -143,6 +165,8 @@ def run(config_file: Path, *, wait_model: bool = False) -> None:
             def complete(self, system: str, user: str) -> str:
                 if not _allowed(load_config(config_file)):
                     raise ReaderUnavailable("local reading was paused or the AI mode changed")
+                if _stopped(cfg):
+                    raise ReaderUnavailable("asked")
                 began = time.monotonic()
                 reply = provider.complete(system, user)
                 # How long one call takes, so setup can time the merges still to come.

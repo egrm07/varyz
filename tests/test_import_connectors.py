@@ -1031,6 +1031,20 @@ def test_a_utf16_document_is_not_mistaken_for_binary(tmp_path):
     assert found == ["wide.md"]
 
 
+def test_json_lone_surrogates_stay_escaped_and_ingestible():
+    from varyz.connectors.documents import extract_document_text
+    from varyz.db.dao import content_hash
+
+    text = extract_document_text(b'{"value": "caf\\u00e9 \\udc90 \\ud800 \\ud83d\\ude80"}', ".json")
+
+    assert "café" in text
+    assert "🚀" in text
+    assert r"\udc90" in text
+    assert r"\ud800" in text
+    assert content_hash(None, text)
+    assert json.loads(text)["value"] == "café \udc90 \ud800 🚀"
+
+
 def test_a_file_saved_as_ansi_keeps_its_punctuation():
     """The bytes Notepad writes when the encoding box says ANSI. An em-dash is
     0x97 there, which is not valid UTF-8, so decoding with errors="replace"

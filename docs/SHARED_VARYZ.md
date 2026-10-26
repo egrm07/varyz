@@ -47,6 +47,51 @@ records remain pending until the owner reviews and publishes. Deletion, loss of
 eligibility and scope changes suppress affected items in the sync transaction.
 The owner can remove an explicitly shared answer without changing private knowledge.
 
+## Portable rule packs (2026-10-25)
+
+In **Shared**, choose **Make a rule pack**, or ask your agent to share your design,
+automation or other rules. `collaboration(action="pack", query="my design rules")`
+and the hosted `rule_pack_review_link` return the private `/account/packs` page.
+This action creates no publication and sends no messages.
+
+1. Describe the rules in your own words. Existing synced rules, workflows, recipes
+   and answers are offered; nothing is invented. Matches are suggested using topic
+   and word matching without an AI call. Inspect the selection, especially for
+   unfamiliar topics. Answers about you are never preselected.
+2. Choose each rule's applicability. **Stored in** shows its source scope, while
+   **Applies in this pack** can be across projects or only the source project.
+   A project-stored favicon requirement can be suggested as reusable. A particular
+   colour scheme, logo file or branded favicon stays project-only by default.
+   These suggestions require review and never change the original rule's scope.
+3. Review the exact selected text and scope, then make the sendable pack. Copy
+   it into any chat, save the Markdown file, or use **Send pack** to open the
+   device's share chooser when supported. The recipient needs no Varyz account.
+   No app is selected and no message is sent automatically.
+
+Each pack says when the recipient's AI may activate it: a request such as
+**use Egors rules**, **use Egors Varyz**, or explicit selection of the pack.
+Receiving or reading it alone does not activate it. The recipient's current
+request wins, then their own applicable rules, then the shared rules. A clear
+own rule resolves a conflict without another question. A necessary unresolved
+choice goes to the recipient. Project-only rules require explicit selection
+of that source project or its choices, not a coincidentally matching name.
+Shared text is attributed guidance, never the recipient's own preference or
+permission to spend, publish or send messages.
+
+The builder uses only records already synced to this account under existing
+sharing approvals. It does not read or upload local archives. It requires the
+existing Shared feature gate, pilot admission and a username, but no additional
+publishing plan check. At most 500 candidates are displayed, with an explicit
+truncation notice; a pack is limited to 100 selected items and 128 KiB. Preview
+and download are encrypted at rest, account/session-bound and expire after ten
+minutes. Sources are checked again before release or download. Saved copies
+are snapshots: they do not update automatically and cannot be recalled.
+
+Public following also recognizes apostrophe-free creator phrases. Explicitly
+named creators no longer fall through to someone else's topic. Two named
+creators covering the same topic leave that choice unresolved for the recipient.
+Existing project collaboration authority and invitations are unchanged.
+
 ## Public Varyz: follow someone's standards by username (2026-10-11)
 
 "Use my Varyz", not "look what Varyz learned about me". A creator publishes the

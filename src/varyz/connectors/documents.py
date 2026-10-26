@@ -575,7 +575,10 @@ def _extract(raw: bytes, ext: str) -> str:
         return strip_html(text)
     if ext == ".json":
         try:
-            return json.dumps(json.loads(text), ensure_ascii=False, indent=2)
+            rendered = json.dumps(json.loads(text), ensure_ascii=False, indent=2)
+            # JSON accepts escaped lone surrogates, but SQLite and UTF-8 do not.
+            # Keep their original escaped representation without losing data.
+            return re.sub(r"[\ud800-\udfff]", lambda match: f"\\u{ord(match[0]):04x}", rendered)
         except json.JSONDecodeError:
             return text
     if ext == ".rtf":

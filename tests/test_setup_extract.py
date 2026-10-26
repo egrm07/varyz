@@ -156,16 +156,17 @@ def _started(**extra: Any) -> dict[str, Any]:
             "five_hour_used": 10.0, "weekly_used": 30.0, "merging_since": None, **extra}
 
 
-def test_reading_says_how_far_it_got_at_its_own_pace_and_what_it_used(cfg) -> None:
+def test_progress_reports_account_totals_without_attributing_other_activity(cfg) -> None:
     _status(cfg, state="running", pending=["full"],
             usage={"codex": _usage("codex", 86, 69, at=T0 + 90).as_dict()})
 
     view = setup_extract.progress(cfg, _started(), T0 + 100, work=(500, 0, 500, 0))
 
     assert view["phase"] == "reading" and view["fraction"] == 0.5
-    # 500 turns in 100 s leaves 100 s to read, then the merge.
-    assert view["seconds_left"] == pytest.approx(100 + 58)
-    assert (view["used_five_hour"], view["used_weekly"]) == (4.0, 1.0)
+    assert view["seconds_left"] is None  # One batch cannot establish a pace.
+    assert view["reading_seconds_range"] is None
+    assert (view["account_five_hour"], view["account_weekly"]) == (14.0, 31.0)
+    assert "used_five_hour" not in view  # Shared-account movement is not a job cost.
 
 
 def test_stuck_reader_reports_elapsed_time_without_a_countdown(cfg):
@@ -176,30 +177,32 @@ def test_stuck_reader_reports_elapsed_time_without_a_countdown(cfg):
     assert view["seconds_left"] is None
 
 
-def test_before_its_pace_shows_the_estimate_counts_down(cfg) -> None:
+def test_no_historical_countdown_before_this_run_has_a_measured_pace(cfg) -> None:
     _status(cfg, state="queued", pending=["full"])
 
     view = setup_extract.progress(cfg, _started(), T0 + 10, work=(1000, 0, 0, 0))
 
     assert view["phase"] == "reading"
-    assert view["seconds_left"] == 211.0
-    assert view["used_five_hour"] is None
+    assert view["seconds_left"] is None
+    assert view["reading_seconds_range"] is None
+    assert view["account_five_hour"] is None
 
 
-def test_reading_follows_its_recent_pace_and_counts_down_between_reads(cfg) -> None:
+def test_reading_range_needs_three_batches_and_expires_when_progress_stalls(cfg) -> None:
     started = _started()
     _status(cfg, state="running", pending=["full"])
-    # 400 turns in the first 100 s, then 100 in the next 200 s: it slowed down.
-    setup_extract.progress(cfg, started, T0 + 100, work=(600, 0, 400, 0))
-    view = setup_extract.progress(cfg, started, T0 + 300, work=(500, 0, 500, 0))
-    # The last 2 minutes and more: 100 turns in 200 s, so 500 more take 1000 s.
-    assert view["seconds_left"] == pytest.approx(1000 + 58)
+    setup_extract.progress(cfg, started, T0 + 30, work=(900, 0, 100, 0))
+    second = setup_extract.progress(cfg, started, T0 + 60, work=(800, 0, 200, 0))
+    assert second["reading_seconds_range"] is None
+    third = setup_extract.progress(cfg, started, T0 + 90, work=(700, 0, 300, 0))
+    assert third["reading_seconds_range"] == [210, 210]  # Reading only; no invented merge.
+    quiet = setup_extract.progress(cfg, started, T0 + 120, work=(700, 0, 300, 0))
+    assert quiet["reading_seconds_range"] == [210, 210]  # No countdown between real batches.
+    stale = setup_extract.progress(cfg, started, T0 + 180, work=(700, 0, 300, 0))
+    assert stale["reading_seconds_range"] is None
 
-    view = setup_extract.progress(cfg, started, T0 + 330, work=(500, 0, 500, 0))
-    assert view["seconds_left"] == pytest.approx(1000 + 58 - 30)
 
-
-def test_local_reading_times_the_merges_by_its_own_calls(cfg, monkeypatch) -> None:
+def test_local_reading_never_invents_a_finish_time_from_a_single_call(cfg, monkeypatch) -> None:
     from varyz.resolution import local_reader
 
     started = {"at": T0, "turns": 200, "runner": "local", "seconds": 260.0}
@@ -213,12 +216,11 @@ def test_local_reading_times_the_merges_by_its_own_calls(cfg, monkeypatch) -> No
 
     status(100, 4, call_seconds=8.0)
     view = setup_extract.progress(cfg, started, T0 + 100)
-    # 100 turns in 100 s leaves 100 s to read, then 4 merges of 8 s.
-    assert (view["phase"], view["seconds_left"]) == ("reading", pytest.approx(100 + 32))
+    assert (view["phase"], view["seconds_left"]) == ("reading", None)
 
     status(0, 10, call_seconds=8.0)
     view = setup_extract.progress(cfg, started, T0 + 200)
-    assert (view["phase"], view["seconds_left"]) == ("merging", 80.0)
+    assert (view["phase"], view["seconds_left"]) == ("merging", None)
 
     status(0, 10)  # no call timed yet: no figure rather than a wrong one
     assert setup_extract.progress(cfg, started, T0 + 200)["seconds_left"] is None
@@ -230,7 +232,7 @@ def test_with_every_turn_read_it_merges_then_is_done(cfg) -> None:
 
     view = setup_extract.progress(cfg, started, T0 + 300, work=(0, 3, 1000, 0))
     assert (view["phase"], started["merging_since"]) == ("merging", T0 + 300)
-    assert view["seconds_left"] == 58.0
+    assert view["seconds_left"] is None
 
     _status(cfg, state="idle", pending=[])
     view = setup_extract.progress(cfg, started, T0 + 400, work=(0, 0, 1000, 0))
@@ -248,6 +250,120 @@ def test_waiting_for_the_limits_and_failing_say_so(cfg) -> None:
 
 
 # -- the downloads ------------------------------------------------------------------
+
+
+def test_findings_are_short_distinct_and_stable_instead_of_latest_raw_rules(cfg) -> None:
+    from datetime import UTC, datetime
+
+    from varyz.db.connection import open_db
+    from varyz.resolution.models import Caller
+    from varyz.resolution.principles import SQLitePrincipleStore
+
+    assert setup_extract.noticed(cfg, T0) == []  # no archive yet
+    owner = Caller(agent_id="owner:local", display_name="Local owner",
+                   purpose="owner_knowledge", device_id="device:test", transport="stdio")
+    clock = [datetime.fromtimestamp(T0 - 60, UTC)]
+    conn = open_db(cfg.db_path)
+    store = SQLitePrincipleStore(conn, clock=lambda: clock[0])
+
+    def found(statement: str, source: str = "cloud:profile", kind: str = "rule") -> None:
+        store.propose(statement=statement, caller=owner, device_id="device:test",
+                      source=source, kind=kind, scope="varyz" if kind == "vision" else None)
+
+    try:
+        found("Read before an earlier setup.")
+        clock[0] = datetime.fromtimestamp(T0 + 10, UTC)
+        found("Keep tests offline.")
+        found("Said by the owner, not read.", source="owner")
+        found("A product vision, not a rule.", kind="vision")
+        clock[0] = datetime.fromtimestamp(T0 + 20, UTC)
+        found("Measure   every claim\n before it ships. " + "Really " * 30)
+        found("Keep tests offline.")  # A repeated idea keeps one display identity.
+    finally:
+        conn.close()
+
+    lines = setup_extract.noticed(cfg, T0)
+    assert {line["title"] for line in lines} == {
+        "Keep tests offline", "Measure every claim before it ships"}
+    assert len(lines) == 2
+    assert all(len(line["title"]) <= setup_extract.NOTICED_CHARS for line in lines)
+    assert setup_extract.noticed(cfg, T0, limit=1) == lines[:1]
+    assert setup_extract.noticed(cfg, T0) == lines
+
+
+def test_stale_or_different_runner_usage_cannot_be_called_this_readings_spend(cfg) -> None:
+    _status(cfg, state="running", pending=["full"], runner="claude",
+            usage={"codex": _usage("codex", 50, 50, at=T0 + 90).as_dict()})
+    view = setup_extract.progress(cfg, _started(), T0 + 100, work=(500, 0, 500, 0))
+    assert view["account_five_hour"] is None and view["account_plan"] == "Claude"
+    _status(cfg, state="running", pending=["full"],
+            usage={"codex": _usage("codex", 50, 50, at=T0).as_dict()})
+    view = setup_extract.progress(cfg, _started(), T0 + 300, work=(500, 0, 500, 0))
+    assert view["account_five_hour"] is None
+
+
+def test_wildly_variable_batches_do_not_produce_an_eta():
+    started = {}
+    for at, read in [(30, 100), (60, 200), (600, 300)]:
+        estimate = setup_extract._reading_range(started, at, read, 700, 0)
+    assert estimate is None
+
+
+def test_completion_tracks_original_messages_not_new_live_conversation_turns(cfg) -> None:
+    from datetime import UTC, datetime
+
+    from tests.test_profile_reader import _entry
+    from varyz.db.connection import open_db
+    from varyz.resolution.profile_reader import ProfileState
+
+    conn = open_db(cfg.db_path)
+    try:
+        _entry(conn, "original", "Always use local fonts and keep the final report concise.", day=1)
+        before = datetime(2026, 9, 1, 12, tzinfo=UTC).timestamp()
+        cohort = setup_extract.reading_cohort(cfg, "codex", before=before)
+        assert cohort == ["original"]
+        _entry(conn, "later", "Keep working on the newer feature and check its mobile layout.",
+               day=2)
+    finally:
+        conn.close()
+    profile = ProfileState(profile_path(cfg, "cloud"))
+    profile.read["original"] = "original"
+    profile.save()
+    _status(cfg, state="running", kind="live", pending=["live"])
+    started = _started(at=before, turns=1, cohort=cohort)
+    now = datetime(2026, 9, 3, tzinfo=UTC).timestamp()
+    view = setup_extract.progress(cfg, started, now)
+    assert view["phase"] == "done" and view["fraction"] == 1
+
+    # A changed original message is unfinished until its new content is read.
+    conn = open_db(cfg.db_path)
+    conn.execute("UPDATE entries SET content_hash='changed' WHERE id='original'")
+    conn.commit()
+    conn.close()
+    view = setup_extract.progress(cfg, started, now)
+    assert view["phase"] != "done" and view["turns_left"] == 1
+
+
+def test_completed_reads_still_wait_for_merges(cfg, monkeypatch) -> None:
+    monkeypatch.setattr(setup_extract, "_cohort_left", lambda *_a: 0)
+    monkeypatch.setattr(hr, "_work_left", lambda *_a: (1, 2, 100, 8))
+    _status(cfg, state="running", pending=["full"])
+    view = setup_extract.progress(cfg, _started(cohort=["original"]), T0 + 50)
+    assert view["phase"] == "merging"
+    _status(cfg, state="running", kind="live", pending=["live"])
+    view = setup_extract.progress(cfg, _started(cohort=["original"]), T0 + 50)
+    assert view["phase"] == "merging"  # Work handed to the live reader is still moving.
+
+
+def test_stopping_a_local_reading_asks_the_local_reader(cfg, monkeypatch) -> None:
+    from varyz.resolution import local_reader
+
+    asked = []
+    monkeypatch.setattr(local_reader, "stop", lambda found: asked.append(found))
+    _status(cfg, state="idle", pending=["full"])
+    setup_extract.stop(cfg, runner="local")
+    assert asked == [cfg]
+    assert hr.load_status(cfg)["pending"] == ["full"]  # the cloud reading is not touched
 
 
 def test_the_downloads_take_as_long_as_their_measured_speed_says() -> None:

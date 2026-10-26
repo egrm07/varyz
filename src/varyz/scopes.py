@@ -63,6 +63,33 @@ def normalize_scope(scope: str | None) -> str:
         value = canonical
 
 
+# Folders that hold projects, and sessions that ran in no project folder at all
+# (a scratch or cowork session, an agent's own home): none names a project.
+_NO_PROJECT = re.compile(
+    r"projects?|documents?|desktop|downloads?|home|tmp|temp|codex|claude|"
+    r"session-workspace|cowork-recents|scratch(?:-\d{4}-\d{2}-\d{2}-[0-9a-f]+)?|"
+    # A worktree's generated name ("nifty-tereshkova-96e180") names the run, not the repo.
+    r"[a-z]+-[a-z]+-[0-9a-f]{6}"
+)
+_WORKTREE = re.compile(r"([^\\/]+)[\\/]\.(?:claude|codex)[\\/]worktrees[\\/]", re.IGNORECASE)
+
+
+def session_project(where: str, folder: str = "") -> str:
+    """The project a coding session ran in, or "" for none.
+
+    A session in a worktree belongs to the repository the worktree was cut from:
+    the same project under a run's name. A folder that only holds projects, or a
+    scratch session in no folder, names no project. Exact folder identity only;
+    two similar names stay two projects.
+    """
+    worktree = _WORKTREE.search(folder or "")
+    name = worktree.group(1) if worktree else where
+    label = " ".join(unicodedata.normalize("NFKC", name or "").casefold().split())
+    if not label or _NO_PROJECT.fullmatch(label):
+        return ""
+    return label
+
+
 def stored_scope(scope: str | None) -> str:
     """Read legacy scopes canonically without rewriting append-only records."""
     try:
