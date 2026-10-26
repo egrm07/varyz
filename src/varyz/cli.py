@@ -34,6 +34,7 @@ from varyz.db import dao
 from varyz.db.connection import LockHeldError, WriteLock, connect, open_db
 from varyz.diskspace import bytes_label, directory_bytes, free_bytes
 from varyz.domain import IngestStats, local_day, local_stamp, utc_now
+from varyz.feedback_cli import app as feedback_app
 from varyz.pipeline.embed import Embedder, embed_pending
 from varyz.pipeline.ingest import ingest_item, sync_connector
 from varyz.pipeline.model_download import fetch_search_models
@@ -149,6 +150,7 @@ app.add_typer(cloud_app, name="cloud")
 cloud_app.add_typer(archive_cloud_app, name="archive")
 app.add_typer(analytics_app, name="analytics")
 app.add_typer(data_app, name="data")
+app.add_typer(feedback_app, name="feedback")
 
 plugin_app = typer.Typer(help="Local plugin adapters: serve, hook and migrate an existing grant.")
 app.add_typer(plugin_app, name="plugin")

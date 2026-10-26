@@ -22,7 +22,7 @@ no subscription. The owner needs active Cloud access to serve its publications.
 | `shared_github` | Report repository access checks and get the next step |
 | `shared_answer` | Decide partners only: record a partner's answer to a project question |
 | `follow` | Follow a creator's public Varyz by username, pick one per topic, list, read standards |
-| `followed_brief` | The followed standards that fit a task, one creator per topic |
+| `followed_brief` | The followed standards that fit a task: every named creator, else one per topic |
 | `followed_ask` | A followed creator's published answer to a preference question |
 
 Following a public Varyz (cloud.varyzai.com/@username) is free; the creator

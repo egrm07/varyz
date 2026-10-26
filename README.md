@@ -773,6 +773,13 @@ question use the same resolution rules regardless of who operates the hardware.
 
 **Commercial and company enquiries** are welcome at hello@varyzai.com.
 
+The Cloud plan is USD 12/month or USD 108/year and shares project preferences with
+up to two people. Varyz Expertise is USD 29/month or USD 290/year and removes
+the account-wide sharing limit. It adds client subscriptions with Cloud included:
+the expert receives 80% after discounts, excluding tax and refunds; Varyz keeps
+20% and covers processing fees. Client plans are sold through Stripe and stay
+closed until Stripe is set up. See [Varyz Expertise](https://varyzai.com/expertise).
+
 To remove the installed package after unregistering integrations, run
 `uv tool uninstall varyzai`.
 

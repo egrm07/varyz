@@ -1,5 +1,21 @@
 # Plugin and cloud
 
+## Expert billing (2026-10-20, local implementation)
+
+Cloud costs USD 12/month or USD 108/year and shares with two people across projects.
+Expert (Varyz Expertise) costs USD 29/month or USD 290/year, removes the
+account-wide sharing limit, and offers monthly client subscriptions for selected project
+preferences. Clients receive Cloud with their plan. The expert keeps 80% of the net
+after tax, refunds and lost disputes; Varyz covers processing fees from its 20%.
+
+Cloud and Expertise bill through Paddle. Client plans bill through Stripe (2026-10-22):
+Varyz sells them with Stripe Tax, signed Stripe events at `/api/billing/stripe` control
+access and earnings, and experts are paid by automatic Connect transfers to their
+Express accounts after the 30-day hold. `/expert` manages the payout account, offers
+and earnings; `/client/{token}` binds checkout to the invited email. Lapsed experts
+keep client management and clients keep their own paid access. Purchases stay closed
+until the Paddle prices and Stripe keys are configured. See [Varyz Expertise](https://varyzai.com/expertise).
+
 ## Access expiry (2026-10-16)
 
 Cloud checks access on every protected request and stops at the end of the paid or

@@ -56,7 +56,7 @@ from varyz.session_progress import PROGRESS_POLICY
 from varyz.session_progress import TOOLS as PROGRESS_TOOLS
 
 SERVER_NAME = "varyz"
-SERVER_VERSION = "0.1.4"
+SERVER_VERSION = "0.1.5"
 
 _COLOUR_LITERAL = re.compile(
     r"\b(?:red|orange|yellow|green|blue|purple|pink|brown|black|white|grey|gray|"
@@ -1059,6 +1059,12 @@ INSTRUCTIONS += (
     "\n\nAway mode takes precedence over the immediate-question relay above. "
     + RECOGNITION + " " + AWAY_POLICY
 )
+INSTRUCTIONS += (
+    "\n\nWhen you or the user notice something in Varyz that did not work or was wrong "
+    "and `varyz doctor` did not report it, call send_feedback once for that problem, "
+    "without asking first, then tell the user its tell_user line in one sentence. If "
+    "the Varyz tools themselves keep failing, run `varyz feedback send` instead."
+)
 _CONVERSATION_PROPERTY = {
     "type": "string", "minLength": 1, "maxLength": 200,
     "description": "Stable id of this task from the hook; reuse it on every call.",
@@ -1738,6 +1744,29 @@ class VaryzServer:
         except (ValueError, OSError, sqlite3.Error):
             return False
 
+    def _call_feedback(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Works while the archive is busy or broken: that is often what it reports."""
+        from varyz import feedback
+        from varyz.contribute import _agent
+
+        fields = ("title", "details", "expected", "area", "noticed_by", "model")
+        if set(arguments) - set(fields):
+            raise ValueError("send_feedback takes " + ", ".join(fields))
+        if any(not isinstance(arguments.get(field, ""), str) for field in fields):
+            raise ValueError("send_feedback fields must be strings")
+        agent = feedback.client()
+        with contextlib.suppress(Exception):
+            agent = _agent(self._caller(purpose="owner_context", tool_name="resolve").agent_id)
+        archive = None
+        with contextlib.suppress(Exception):
+            archive = self.conn
+        return feedback.send(
+            self.cfg, title=arguments.get("title", ""), details=arguments.get("details", ""),
+            expected=arguments.get("expected", ""), area=arguments.get("area") or "other",
+            noticed_by=arguments.get("noticed_by") or "agent", agent=agent,
+            model=arguments.get("model", ""), archive=archive,
+        )
+
     def _call_cloud_offer(self, arguments: dict[str, Any]) -> dict[str, Any]:
         from varyz import promotions
         from varyz.resolution.away import status as away_status
@@ -1861,6 +1890,25 @@ class VaryzServer:
         timer.start()
         self._release_timer = timer
 
+    def _end_transaction(self, failed: bool) -> None:
+        """No call leaves a transaction open for the next one.
+
+        A write that met a busy archive left its transaction open, and the next
+        read pinned an old snapshot in it. From then on every write in this
+        session failed at once with "database is locked", until the client was
+        restarted, and the archive's log could not be folded back in.
+        """
+        if self._conn is None or not self._conn.in_transaction:
+            return
+        try:
+            if failed:
+                self._conn.rollback()
+            else:
+                self._conn.commit()
+        except sqlite3.Error:
+            with contextlib.suppress(sqlite3.Error):
+                self._conn.rollback()
+
     def close(self) -> None:
         if self._release_timer is not None:
             self._release_timer.cancel()
@@ -1878,6 +1926,7 @@ class VaryzServer:
         accidentally omit credential scanning.
         """
         with self._busy:
+            failed = True
             try:
                 from varyz.trust import AgentAuthenticationError
 
@@ -1890,7 +1939,9 @@ class VaryzServer:
                         "error": "agent authentication failed",
                         "hint": "Reconnect this client with varyz connect, then restart it.",
                     }
+                failed = False
             finally:
+                self._end_transaction(failed)
                 self._release_models_later()
         with contextlib.suppress(Exception):
             from varyz.doctor import session_notice
@@ -3435,6 +3486,8 @@ class VaryzServer:
                 self.conn, "local", {**arguments, "project": project}, "local", name)
             if delegated is not None:
                 return delegated
+        if name == "send_feedback":
+            return self._call_feedback(arguments)
         if name == "cloud_offer":
             # Commercial controls do not trigger update/feed checks or archive retrieval.
             return self._call_cloud_offer(arguments)
@@ -4214,6 +4267,9 @@ def handle(server: VaryzServer, message: dict[str, Any]) -> dict[str, Any] | Non
             from varyz.promotions import TOOL
 
             tools.append(TOOL)
+        from varyz.feedback import TOOL as FEEDBACK_TOOL
+
+        tools.append(FEEDBACK_TOOL)
         from varyz.cloud import collaboration
 
         if collaboration.connected(server.config_path):

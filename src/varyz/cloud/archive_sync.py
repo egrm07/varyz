@@ -37,11 +37,15 @@ def read_archive_journal(path: Path) -> dict[str, Any]:
 
 
 def document(conn: sqlite3.Connection, identity: str, project: str) -> Document:
-    from varyz.connectors.ai_conversations import is_machine_entry
-
     row = conn.execute("SELECT * FROM entries WHERE id=?", (identity,)).fetchone()
     if row is None:
         raise ValueError("Archive entry unavailable")
+    return _document(row, project)
+
+
+def _document(row: Any, project: str) -> Document:
+    from varyz.connectors.ai_conversations import is_machine_entry
+
     text = row["body"]
     return Document(
         id=row["id"],
@@ -62,6 +66,34 @@ def fingerprint(payload: dict[str, Any] | None) -> str:
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     ).hexdigest()
+
+
+# Checking a document for credentials and prohibited records reads all of its
+# text, so planning a large archive took most of a minute, and the daemon plans
+# again whenever the database changes. Each entry's result is kept until its row
+# changes; the checks themselves are fixed for the life of the process.
+_CHECKED: dict[tuple[str, str], tuple[bytes, str | None]] = {}
+_CHECKED_LIMIT = 100_000
+
+
+def _checked(row: Any, project: str) -> str:
+    """The fingerprint of the entry's checked payload; ValueError if it may not be sent."""
+    key = (row["id"], project)
+    digest = hashlib.blake2b(
+        repr(tuple(row)).encode("utf-8", "surrogatepass"), digest_size=16
+    ).digest()
+    cached = _CHECKED.get(key)
+    if cached is None or cached[0] != digest:
+        try:
+            value: str | None = fingerprint(_document(row, project).model_dump())
+        except ValueError:
+            value = None
+        if len(_CHECKED) >= _CHECKED_LIMIT:
+            _CHECKED.clear()
+        cached = _CHECKED[key] = (digest, value)
+    if cached[1] is None:
+        raise ValueError("Archive entry is not permitted")
+    return cached[1]
 
 
 def allow_project(
@@ -191,23 +223,32 @@ class ArchiveSync:
             key: approval for key, approval in journal["selected"].items()
             if normalize_scope(approval["project"]) not in excluded
         }
+        roots = {
+            project: Path(approval["root"]).resolve()
+            for project, approval in journal["projects"].items()
+            if approval.get("root")
+        }
         for row in self.conn.execute(
             "SELECT * FROM entries WHERE source IN ('ai_conversations','documents','git','github')"
         ):
-            project = entry_project(row, journal["projects"])
+            project = entry_project(row, journal["projects"], resolved_roots=roots)
             if (project in journal["projects"] and project not in excluded
                     and row["id"] not in journal["excluded"]):
                 selections[row["id"]] = {"project": project, "hash": None}
         for identity, approval in selections.items():
             try:
-                doc = document(self.conn, identity, approval["project"])
-                payload = doc.model_dump()
-                if approval["hash"] is not None and fingerprint(payload) != approval["hash"]:
+                row = self.conn.execute(
+                    "SELECT * FROM entries WHERE id=?", (identity,)
+                ).fetchone()
+                if row is None:
+                    raise ValueError("Archive entry unavailable")
+                checked = _checked(row, approval["project"])
+                if approval["hash"] is not None and checked != approval["hash"]:
                     raise ValueError("Approval expired after content or metadata changed")
                 valid.add(identity)
                 saved = journal["records"].get(identity, {})
                 if (
-                    saved.get("approval_hash") != fingerprint(payload)
+                    saved.get("approval_hash") != checked
                     or saved.get("deleted")
                     or semantic
                     and not saved.get("semantic")
@@ -216,7 +257,7 @@ class ArchiveSync:
                         {
                             "id": identity,
                             "base_version": saved.get("version", 0),
-                            "payload": payload,
+                            "payload": _document(row, approval["project"]).model_dump(),
                         }
                     )
             except ValueError:

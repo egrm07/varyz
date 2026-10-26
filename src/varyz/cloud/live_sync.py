@@ -10,6 +10,10 @@ as soon as the cloud has it:
   wakes the watcher to sync. A cloud that does not hold the request (no
   ``waited`` in its answer) is polled every ``POLL_SECONDS`` instead.
 
+History (approved conversations and documents) is checked at most every
+``ARCHIVE_SECONDS``: its plan reads the whole archive. While the Cloud archive is
+full it is left to autosync, which retries every 15 minutes.
+
 Only what the owner selected for Cloud (`varyz cloud enable`) moves, through
 `LocalSync`, as in every other sync; nothing runs until it is enabled. Errors are
 never logged with their payloads: a failing cloud is retried with backoff and the
@@ -21,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import sqlite3
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -30,6 +35,7 @@ POLL_SECONDS = 15.0
 WATCH_SECONDS = 1.0
 IDLE_SECONDS = 30.0  # how often a disabled or disconnected sync looks again
 MAX_BACKOFF_SECONDS = 300.0
+ARCHIVE_SECONDS = 300.0
 
 
 def journal_path(config: Path) -> Path:
@@ -77,6 +83,7 @@ class LiveCloudSync:
         self._stop = threading.Event()
         self._kick = threading.Event()
         self._threads: list[threading.Thread] = []
+        self._archive_at = time.monotonic()  # the last history check
         self.syncs = 0  # syncs that ran, for status and tests
 
     def start(self) -> None:
@@ -134,10 +141,11 @@ class LiveCloudSync:
             report_journal = read_report_journal(report_path(self.config))
             report_sync = ReportSync(conn, self.config)
             preferences_enabled = bool(sync.journal.get("enabled"))
+            archive_due = bool(archive_journal["enabled"]) and self._archive_due(archive_journal)
             if only_if_planned and not (
                 preferences_enabled
                 and sync.plan()
-                or archive_journal["enabled"]
+                or archive_due
                 and (archive_journal.get("pending_permits") or archive.plan()["changes"])
                 or report_journal["enabled"]
                 and (
@@ -159,7 +167,7 @@ class LiveCloudSync:
                         sync.sync(client)
                     except CloudStorageLimit:
                         storage_full = True
-                if archive_journal["enabled"]:
+                if archive_due:
                     from varyz.cloud.archive import CachedEmbedder
 
                     embedder = (
@@ -190,6 +198,15 @@ class LiveCloudSync:
             # which; nothing private is logged from a background thread.
             return False
         self.syncs += 1
+        return True
+
+    def _archive_due(self, journal: dict[str, Any]) -> bool:
+        """Owner approvals go at once; otherwise every ARCHIVE_SECONDS, never while full."""
+        if journal.get("pending_permits"):
+            return True
+        if journal.get("storage_full") or time.monotonic() - self._archive_at < ARCHIVE_SECONDS:
+            return False
+        self._archive_at = time.monotonic()
         return True
 
     # -- the listener: waits on the cloud for another device's change ------------

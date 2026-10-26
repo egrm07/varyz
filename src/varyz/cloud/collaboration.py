@@ -11,6 +11,7 @@ Cloud only when the person follows someone, and nothing waits on Cloud for long.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from pathlib import Path
@@ -67,9 +68,10 @@ TOOL: dict[str, Any] = {
         "publish with a topic ('code review') returns the page where the owner ticks the "
         "standards anyone may follow and reviews the exact text; give them the link and "
         "never publish for them. public shows what is published, followers and uses. "
-        "pack with query, the person's own description of which rules to share, returns "
-        "a private review link to make a portable copy. The owner checks scope and text "
-        "before copying or sending; no rules are published or sent by this action."
+        "pack with query, the person's own description of which rules to share ('my "
+        "design rules'), and optional to (usernames or emails) returns the Share page with "
+        "the rules picked and the people filled in. The owner presses Send there and the "
+        "people have the pack at once; this action sends nothing itself."
     ),
     "inputSchema": {
         "type": "object",
@@ -129,6 +131,7 @@ TOOL: dict[str, Any] = {
             "reason": {"type": "string", "maxLength": 500},
             "topic": _TOPIC,
             "query": {"type": "string", "minLength": 2, "maxLength": 500},
+            "to": {"type": "string", "maxLength": 500},
         },
         "additionalProperties": False,
     },
@@ -140,22 +143,28 @@ FOLLOW_TOOL: dict[str, Any] = {
     "description": (
         "Public Varyz: creators publish the standards they actually apply, such as their "
         "code review or writing standards. When the person says 'follow @name' or 'use "
-        "name's Varyz' or 'use Egors rules', call follow with the username. When two "
-        "followed creators cover "
-        "one topic, pick chooses whose standards it uses ('use @name for code review'). "
+        "name's Varyz' or 'use egrs rules', call follow with the username. A task that "
+        "names several creators uses all of them. When two followed creators cover one "
+        "topic and none is named, pick chooses whose standards it uses ('use @name for "
+        "code review'). "
         "list shows who the person follows and those choices; standards reads one "
         "topic's standards in full. Following is free. Afterwards start_task carries the "
         "standards that fit each task as followed, and ask can answer from them. The "
-        "person's own Varyz wins where they differ; say whose standard you used."
+        "person's own Varyz wins where they differ; say whose standard you used. "
+        "People can also send the person a rule pack; list shows them under received. "
+        "When the person says 'use egr's design pack' (or several, or all of them), "
+        "start_task carries their rules; "
+        "pack with pack_id and offset reads the rest of a long one."
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["list", "follow", "unfollow", "pick", "standards"],
+                "enum": ["list", "follow", "unfollow", "pick", "standards", "pack"],
             },
             "username": {"type": "string", "pattern": "^@?[A-Za-z0-9_]{3,30}$"},
+            "pack_id": {"type": "string", "minLength": 16, "maxLength": 128},
             "topic": _TOPIC,
             "offset": {"type": "integer", "minimum": 0, "maximum": 500},
         },
@@ -279,7 +288,7 @@ def _quiet(key: str) -> None:
 
 
 def follows_anyone(config_path: Path | None) -> bool:
-    """Whether the person follows a creator. Asked at most once a minute; never raises."""
+    """Whether the person follows a creator or was sent a pack. At most once a minute."""
     account = _account(config_path)
     if account is None:
         return False
@@ -293,16 +302,20 @@ def follows_anyone(config_path: Path | None) -> bool:
     except Exception:  # noqa: BLE001 - following never delays or fails a briefing
         _quiet(key)
         return False
-    found = bool(isinstance(value, dict) and value.get("following"))
+    if isinstance(value, dict) and "following" in value:
+        _keep(account[0], value, None)  # Drops saved packs no longer shared.
+    found = bool(isinstance(value, dict) and (value.get("following") or value.get("received")))
     _follows[key] = (now + FRESH, found)
     return found
 
 
 def followed_brief(config_path: Path | None, task: str) -> dict[str, Any] | None:
-    """Followed creators' standards that fit the task, or None. Never raises."""
+    """Followed creators' standards and named packs that fit the task, or None."""
     account = _account(config_path)
-    if account is None or not task.strip() or not follows_anyone(config_path):
+    if account is None or not task.strip():
         return None
+    if not follows_anyone(config_path):
+        return _saved_brief(account[0], task)
     key = (str(account[0]), task[:8000])
     now = time.monotonic()
     cached = _briefs.get(key)
@@ -312,16 +325,41 @@ def followed_brief(config_path: Path | None, task: str) -> dict[str, Any] | None
         value = call(config_path, {"task": key[1]}, timeout=4.0, path=FOLLOWING + "/brief")
     except Exception:  # noqa: BLE001 - a briefing never waits on or fails for following
         _quiet(key[0])
-        return None
-    if not isinstance(value, dict) or not value.get("following"):
+        return _saved_brief(account[0], task)
+    if isinstance(value, dict) and "following" in value:
+        _keep(account[0], value, lambda pack_id, offset: call(
+            config_path, {"action": "pack", "pack_id": pack_id, "offset": offset},
+            timeout=8.0, path=FOLLOWING,
+        ))
+    if not isinstance(value, dict) or not (value.get("following") or value.get("received")):
         _follows[key[0]] = (now + FRESH, False)
         return None
-    result = value if (value.get("standards") or value.get("unresolved")
-                       or value.get("missing_topics")) else None
+    result = value if any(
+        value.get(name)
+        for name in ("standards", "unresolved", "missing_topics", "packs", "unresolved_packs")
+    ) else None
     if len(_briefs) >= 64:
         _briefs.clear()
     _briefs[key] = (now + FRESH, result)
     return result
+
+
+def _keep(config: Path, value: dict[str, Any], read: Any) -> None:
+    """Save asked-for packs on this computer; a failure never touches the briefing."""
+    from . import shared_packs
+
+    with contextlib.suppress(Exception):
+        shared_packs.keep(config, value, read)
+
+
+def _saved_brief(config: Path, task: str) -> dict[str, Any] | None:
+    """Asked-for packs from the saved copies, when Cloud did not answer."""
+    from . import shared_packs
+
+    try:
+        return shared_packs.brief(config, task)
+    except Exception:  # noqa: BLE001 - a briefing never fails for saved packs
+        return None
 
 
 def followed_answers(

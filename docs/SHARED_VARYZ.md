@@ -5,9 +5,23 @@ their AI consults that publication and asks the owner missing decisions. A creat
 can also publish the standards they actually apply for anyone to follow by
 username (Public Varyz, below).**
 
-Implementation date: 2026-10-09. The feature is disabled by default. Pilot access
-can be limited to verified account usernames. No pricing or license changes are
-part of this implementation.
+Implementation date: 2026-10-09; billing extension: 2026-10-20. The feature is disabled
+by default. Pilot access can be limited to verified account usernames.
+
+The Cloud plan (USD 12/month or USD 108/year) shares with up to two distinct people
+across the owner's projects, counting active members and unexpired pending invites.
+Varyz Expertise (USD 29/month or USD 290/year) removes this account-wide limit
+and allows paid client offers. Each project retains its operational recipient limit.
+Public following does not count against personal sharing limits.
+After a downgrade to Cloud, the earliest two distinct active free recipients keep
+access; later recipients resume on upgrade or when earlier recipients are removed.
+No stored memberships are deleted by a plan change.
+
+A client plan includes Cloud and access to one shared project. Paying clients can
+discover and consult that project outside the pilot allowlist, including when the
+expert's own plan lapses. They receive no access to unrelated collaborations.
+Ordinary free recipients still depend on the owner's active plan and pilot access.
+See [Varyz Expertise](https://varyzai.com/expertise) for the plan and the 80/20 split.
 
 ## Use it
 
@@ -47,49 +61,96 @@ records remain pending until the owner reviews and publishes. Deletion, loss of
 eligibility and scope changes suppress affected items in the sync transaction.
 The owner can remove an explicitly shared answer without changing private knowledge.
 
-## Portable rule packs (2026-10-25)
+## Share rules like a document (2026-10-26)
 
-In **Shared**, choose **Make a rule pack**, or ask your agent to share your design,
-automation or other rules. `collaboration(action="pack", query="my design rules")`
-and the hosted `rule_pack_review_link` return the private `/account/packs` page.
-This action creates no publication and sends no messages.
+**Shared** has one **Share** button. It opens one page that asks what you would
+like to share: a topic of rules ("my design rules"), or a whole project. Agents
+open the same page with `collaboration(action="pack", query="my design rules",
+to="@ann")` or the hosted `rule_pack_review_link`, with the rules picked and the
+people filled in. The agent sends nothing; the owner presses **Send**.
 
-1. Describe the rules in your own words. Existing synced rules, workflows, recipes
-   and answers are offered; nothing is invented. Matches are suggested using topic
-   and word matching without an AI call. Inspect the selection, especially for
-   unfamiliar topics. Answers about you are never preselected.
-2. Choose each rule's applicability. **Stored in** shows its source scope, while
-   **Applies in this pack** can be across projects or only the source project.
-   A project-stored favicon requirement can be suggested as reusable. A particular
-   colour scheme, logo file or branded favicon stays project-only by default.
-   These suggestions require review and never change the original rule's scope.
-3. Review the exact selected text and scope, then make the sendable pack. Copy
-   it into any chat, save the Markdown file, or use **Send pack** to open the
-   device's share chooser when supported. The recipient needs no Varyz account.
-   No app is selected and no message is sent automatically.
+1. **Type a topic, then Next.** There is no separate step to pick rules: the
+   existing synced rules, workflows, recipes and answers that fit the words go
+   along, using topic and word matching without an AI call. The next screen asks
+   who should get it. **See what's included** is optional and lets the owner untick
+   or add rules. Nothing is invented and answers about you are never preselected. Each rule shows where it
+   applies: **Any project**, or **Only for** its source project. A project-stored
+   favicon requirement can be suggested as reusable; a particular colour scheme,
+   logo file or branded favicon stays project-only. The original rule's scope
+   never changes.
+2. **Send to.** Usernames or emails, separated by commas. A person with Varyz has
+   the pack at once. An email with no account waits, and the pack appears when an
+   account with that verified email signs in. Nothing is downloaded or copied.
+3. **The words to use.** The page shows what recipients say to their AI, by
+   username first: **use egr's design pack**. The sender can add the name they go
+   by (Egor), and then **use Egor's design pack** works too; the page shows both.
+   The name defaults to the last one used.
+4. **Optionally public.** With the Cloud plan, **Also share with anyone on my
+   public page** puts the pack's any-project rules on the public profile in the
+   same step. Project-only rules stay with the people it was sent to.
 
-Each pack says when the recipient's AI may activate it: a request such as
-**use Egors rules**, **use Egors Varyz**, or explicit selection of the pack.
-Receiving or reading it alone does not activate it. The recipient's current
-request wins, then their own applicable rules, then the shared rules. A clear
-own rule resolves a conflict without another question. A necessary unresolved
-choice goes to the recipient. Project-only rules require explicit selection
-of that source project or its choices, not a coincidentally matching name.
-Shared text is attributed guidance, never the recipient's own preference or
-permission to spend, publish or send messages.
+After sending, the pack's page lists who has it. The owner can add or remove
+people, edit the rules (everyone gets the new version) or stop sharing. A
+recipient sees the pack under **Shared > With me** and can remove it. Each new
+recipient gets one email: members get the words to say, people without an
+account get a signup note. Members who turned off sharing email get none.
 
-The builder uses only records already synced to this account under existing
-sharing approvals. It does not read or upload local archives. It requires the
-existing Shared feature gate, pilot admission and a username, but no additional
-publishing plan check. At most 500 candidates are displayed, with an explicit
-truncation notice; a pack is limited to 100 selected items and 128 KiB. Preview
-and download are encrypted at rest, account/session-bound and expire after ten
-minutes. Sources are checked again before release or download. Saved copies
-are snapshots: they do not update automatically and cannot be recalled.
+A pack applies only when the recipient asks for it, in plain words, by username
+or by name: **use egr's design pack**, **use Egor's design pack**, **use Egor
+design**, **use egors designs**, **the design rules Egor sent me**, **use @egr**,
+or the pack's name (**use the design pack**). Senders show username first, as
+**@egr (Egor)**.
 
-Public following also recognizes apostrophe-free creator phrases. Explicitly
-named creators no longer fall through to someone else's topic. Two named
-creators covering the same topic leave that choice unresolved for the recipient.
+Several packs apply together when the request names several people or asks for
+all of them: **use egr's, ann's and maria's design packs**, **use @egr @ann
+@maria**, **the design packs from egr, Ann and Maria**, **combine egr's and ann's
+design rules**, **use all my design packs**, **use every rule pack**. A refusal
+inside the list is kept: **use egr's and ann's rules but not maria's** uses two. Plurals and
+one typo in a longer word are understood ("desing"). Having a pack, or a task that
+fits its topic, does not activate it, and neither does a mention that is not a
+request: "I like Egor's design", "ask Egor about the design", "don't use Egor's
+design pack", or another person's pack ("gregor's design pack"). A longer pack name
+wins ("web design pack" over "design pack"). A single title-only match from several
+senders ("use the design pack") goes back to the recipient as a choice; the
+plural or a word like "all" or "both" uses all of them. `start_task` carries the asked-for
+pack under `followed.packs`; `follow(action="pack", pack_id=...)` (hosted:
+`following_read_pack`) pages through a long one, and `follow(action="list")`
+shows received packs.
+
+Limits of the matching, by design: it is word matching without an AI call, so it
+does not cover other languages, a misspelt sender name, or loose wording with no
+sender, pack word or pack name ("make it look like what Egor does"). "use the
+design rules" means the recipient's own rules.
+
+**Saved on this computer.** The first time a task uses a pack, the local Varyz
+saves all of its rules to `data/shared-packs/<pack id>.json`, in the background so
+the briefing never waits. The folder is separate from the recipient's own archive:
+nothing in it is read as their rules or learned from. From then on the briefing
+names the file as `local_copy` and the agent reads the whole pack there. When
+Varyz Cloud cannot be reached, the saved copy still answers a request, marked as a
+saved copy. An edited pack is saved again on its next use; a pack the sender
+stopped sharing, or the recipient removed, is deleted at the next check. The recipient's current request wins, then their own
+applicable rules, then the pack. A clear own rule resolves a conflict without
+another question. Project-only rules apply only to that source project. Shared
+text is attributed guidance, never the recipient's own preference or permission
+to spend, publish or send messages.
+
+Sharing a whole project from the same page keeps the existing invitation: the
+person joins from it, at Follow preferences, Contribute or Decide.
+
+Limits: the builder uses only records already synced under existing sharing
+approvals and never reads local archives. It requires the Shared feature gate,
+pilot admission and a username. During the pilot, packs go to pilot usernames or
+their verified emails only. At most 500 candidates are shown; a pack holds 1 to
+100 rules and 128 KiB, an owner keeps 100 packs, a pack reaches 50 people and an
+owner adds at most 50 people a day. Packs and pending emails are encrypted at
+rest; an email is stored only until its account claims it.
+
+Public following also recognizes apostrophe-free creator phrases, lists of
+creators ("egr's, ann's and maria's rules") and the name a creator goes by on
+their packs ("Egor's rules" for egr). Explicitly named creators never fall through
+to someone else's topic. Every named creator applies together; where two disagree,
+the agent asks the recipient which to follow.
 Existing project collaboration authority and invitations are unchanged.
 
 ## Public Varyz: follow someone's standards by username (2026-10-11)
@@ -133,17 +194,21 @@ plan is inactive and return when it is active again.
 1. **The follower's own Varyz always wins.** Followed standards are labelled as
    someone else's (`basis: followed`), are never recorded as owner rules, and the
    agent says whose standard it used.
-2. **One creator per topic**, chosen in this order:
-   - **named** in the task: "@ann" or "ann's Varyz";
+2. **Every creator named** in the task applies together, for each topic they
+   cover: "@ann", "ann's Varyz", "with @egr, @ann and @maria", or the name they
+   go by ("Egor's rules"). The brief notes when several apply; where their
+   standards disagree the agent asks the owner, and `ask` returns
+   `creators_differ` with each answer instead of picking one.
+3. **Otherwise one creator per topic**, chosen in this order:
    - **picked**: when two followed creators cover one topic, Shared → With me →
      Following shows "Who answers code review?", or "use @ann for code review"
      (`follow` action `pick`, `varyz cloud follow ann --for "code review"`);
    - **latest**: otherwise the most recent follow.
-3. A topic matches the task from plain text, with no model call: the topic's own
+4. A topic matches the task from plain text, with no model call: the topic's own
    words, the built-in kinds of work, and everyday aliases ("review this PR" is
    code review; "fix the failing test" is testing and debugging). A named creator
    with no matching topic lends all of their topics to that task.
-4. `ask` uses a followed answer only for preference and delegated questions, never
+5. `ask` uses a followed answer only for preference and delegated questions, never
    permissions or blockers, and only when the owner has no answer of their own. If
    the owner has an answer this agent may not see, the followed one is dropped and
    the question goes the usual way.

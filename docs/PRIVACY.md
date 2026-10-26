@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: 22 October 2026
+Last updated: 26 October 2026
 
 This is the privacy notice for the Varyz website (varyzai.com) and for the Varyz software it
 distributes. It is the canonical copy: the website's privacy page is generated from this file
@@ -128,8 +128,21 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
   nothing about you or your archive. Like any page request it reaches the website's server
   logs with your IP address, the time and the Varyz version. News is on by default; run
   `varyz news off` to stop the requests, and `varyz news on` to start them again.
-- Apart from the news check, it only connects to outside services you choose to connect it
-  to yourself, such as a mail account you ask it to read, or an AI provider you configure.
+- Feedback reports: when something in Varyz does not work and `varyz doctor` did not
+  catch it, your AI agent can send a short report to Egor Menshikov at cloud.varyzai.com,
+  and it tells you each time it does. A report holds the problem in a few words, what
+  happened and what was expected, the area, whether you or the agent noticed it, the
+  agent and model, the Varyz version, the OS family, the day and which doctor checks
+  failed. Before it leaves, Varyz replaces names of people it knows, project names,
+  emails, links and file paths with placeholders, and a report holding a password, key
+  or token is refused. Reports are linked only to a random key your installation
+  creates; the server stores a hash of it, and your network address is used only as a
+  temporary hashed rate limit. Reports are used to fix Varyz and are kept until you
+  delete them. `varyz feedback off` stops sending and drops unsent reports, and
+  `varyz feedback forget` deletes every report your installation sent.
+- Apart from the news check and feedback reports, it only connects to outside services you
+  choose to connect it to yourself, such as a mail account you ask it to read, or an AI
+  provider you configure.
   Those connections go directly from your computer to that service.
 - Sensitive or unclassified personal content is withheld from AI agents and from cloud
   services by default.
@@ -146,6 +159,14 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
 
 ## Optional cloud accounts
 
+- Expert client offers store the client's name, encrypted email address, an
+  email-matching hash, project and plan identifiers, and subscription status. The
+  expert sees their own clients' details and earnings. Offer email delivery sends
+  the recipient address and offer content through the configured email provider.
+  Payout details are encrypted with the archive key and available to the operator
+  for manual payouts. Full card details are never stored by Varyz. Account deletion
+  removes offer names, emails, matching hashes and saved payout details; necessary
+  financial records remain. Expert deletion waits until clients' paid periods end.
 - Varyz Cloud has a deployed account service with live Paddle billing. Local Varyz remains usable without an account. The processing below applies to the deployed Cloud service. Public release checks for installers, directory listings and retention remain separate from payment availability.
 - Cloud stores your account email, a salted password hash, subscription status and identifiers, selected confirmed rules, explicit answers, stated workflows and task recipes, pending questions, authorized connections and synchronization history. Raw passwords and connection credentials are not stored in plaintext.
 - Connecting an account does not itself upload preferences. You explicitly select what to sync. Your local archive, documents, transcripts, source snippets and candidate preferences are not part of that synchronization.

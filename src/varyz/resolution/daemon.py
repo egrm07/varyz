@@ -542,6 +542,10 @@ class ResolutionDaemon:
                     from varyz.analytics import tick
 
                     tick(daemon.service.shadow_config)
+                    from varyz import feedback
+
+                    with contextlib.suppress(Exception):
+                        feedback.tick(daemon.service.shadow_config)
                     from varyz.resolution import rule_signals
 
                     rule_signals.tick(daemon.service.knowledge._conn,

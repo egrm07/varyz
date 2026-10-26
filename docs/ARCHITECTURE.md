@@ -131,6 +131,12 @@ without copying tokens to the website. The site builder adds a plain sign-in lin
 on every public page; JavaScript failure leaves that link usable.
 Local app OAuth grants and upload consent remain separate from browser navigation.
 
+Shared rule packs (2026-10-26): `cloud/pack_words.py` reads how a task asks for a pack
+("use egr's design pack", several senders, "all my packs", refusals) with words only.
+Cloud uses it to choose the packs a briefing carries; the local `cloud/shared_packs.py`
+uses it on the copies saved in the data folder's `shared-packs/` when Cloud cannot
+answer. Saved packs never enter the owner's archive.
+
 Away mode (2026-09-27): `resolution/away.py` holds durable mode state and return
 reviews (migration `0042`). MCP's `away` and the local `varyz away` command share it.
 The working agent recognises owner instructions and judges delegation, reversibility

@@ -125,6 +125,60 @@ def test_models_are_let_go_after_the_session_goes_quiet(archive, monkeypatch):
     server.close()
 
 
+@pytest.mark.parametrize("swallowed", [False, True])
+def test_a_write_that_met_a_busy_archive_does_not_lock_the_session(server, monkeypatch,
+                                                                   swallowed):
+    # One failed write left its transaction open and the next read pinned an old
+    # snapshot, so every later write failed with "database is locked".
+    server.conn.execute("CREATE TABLE probe(x)")
+    server.conn.commit()
+    server.conn.execute("PRAGMA busy_timeout=50")
+    other = sqlite3.connect(server.cfg.db_path, isolation_level=None)
+    action = {"run": "INSERT INTO probe VALUES(1)"}
+
+    def fake_call(name, arguments):
+        try:
+            server.conn.execute(action["run"]).fetchall()
+        except sqlite3.OperationalError:
+            if not swallowed:
+                raise
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "_call", fake_call)
+    other.execute("BEGIN IMMEDIATE")
+    other.execute("INSERT INTO probe VALUES(0)")
+    first = _call(server, "record_progress")
+    assert swallowed or "locked" in json.dumps(first)
+    other.execute("COMMIT")
+    action["run"] = "SELECT COUNT(*) FROM probe"
+    _call(server, "session_history")
+    other.execute("INSERT INTO probe VALUES(2)")
+    action["run"] = "INSERT INTO probe VALUES(3)"
+    assert not _call(server, "record_progress").get("isError")
+    assert not server.conn.in_transaction
+    assert other.execute("SELECT COUNT(*) FROM probe").fetchone()[0] == 3
+    other.close()
+
+
+def test_agents_can_send_feedback_and_are_told_what_to_tell_the_user(server, monkeypatch):
+    from varyz import feedback
+
+    monkeypatch.setattr(feedback, "_doctor", lambda cfg: (22, []))
+    monkeypatch.setattr(feedback, "flush", lambda cfg, transport=None: set())
+    listing = handle(server, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    assert "send_feedback" in [tool["name"] for tool in listing["result"]["tools"]]
+    assert "send_feedback" in handle(
+        server, {"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}}
+    )["result"]["instructions"]
+
+    sent = _call(server, "send_feedback", title="Varyz context timed out",
+                 details="It timed out twice in one task.", area="speed")
+    assert sent["structuredContent"]["status"] == "queued"
+    assert sent["structuredContent"]["tell_user"].endswith(": Varyz context timed out.")
+    assert _call(server, "send_feedback", title="Varyz froze", details="Froze.",
+                 email="x")["isError"]
+
+
 def test_a_server_that_loaded_nothing_arms_no_release(server):
     server._release_models_later()
     assert server._release_timer is None

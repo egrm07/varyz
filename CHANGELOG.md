@@ -9,6 +9,76 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-26
+
+### Added
+
+- **Varyz Expertise (2026-10-20, client plans on Stripe 2026-10-22).** USD 29/month or
+  USD 290/year on Paddle, with no account-wide sharing limit; Cloud shares with two
+  people. Experts can offer monthly client subscriptions for selected project
+  preferences, with Cloud included. Client plans are sold by Varyz through Stripe
+  Checkout with Stripe Tax; signed Stripe events grant access and record the
+  expert's 80% of the net after tax, less refunds and lost disputes. Varyz pays
+  processing fees from its 20%. Experts connect a Stripe Express account and are paid
+  by automatic Connect transfers after the 30-day hold and monthly cutoff. The
+  Expertise plan opens with this release; client plans stay closed until Stripe is
+  set up. The old Freelancer name is gone and `/freelancers` now leads to
+  `/expertise`. See [Varyz Expertise](https://varyzai.com/expertise). No real payments were used in tests.
+- **Received packs are kept on your computer (2026-10-26).** The first time a task
+  uses a pack someone sent you, the local Varyz saves all its rules as one file in the
+  data folder's `shared-packs/`, apart from your own rules; nothing in it is learned
+  from or treated as yours. The agent reads the whole pack there, and "use egr's design
+  pack" still works when Varyz Cloud cannot be reached, marked as a saved copy. An
+  edited pack is saved again on its next use; a pack the sender stops sharing, or you
+  remove, is deleted at the next check.
+- **Agents can tell the developer when Varyz goes wrong (2026-10-26).** When an agent
+  or you notice something that did not work and `varyz doctor` did not catch it, the
+  agent sends a short report to the Varyz developer and tells you in one line what it
+  sent. People's names, email addresses, file paths and project names are removed
+  first, and a report holding a password or key is refused. At most ten reports a
+  day, and one problem is sent once a week. A report that cannot be sent waits and is
+  retried later. `varyz feedback status` shows what was sent, `varyz feedback off`
+  stops it and drops anything waiting, and `varyz feedback forget` deletes what this
+  computer sent.
+
+### Changed
+
+- **Sharing rules is three steps (2026-10-26).** On Varyz Shared there is one Share
+  button: type a topic such as "design", press Next, add usernames or email addresses
+  and press Send. Every rule that fits the topic goes along; "See what's included" shows
+  them if you want to check. People with a Varyz account have the pack at once; an
+  email address without an account gets one invite and the pack once it is verified.
+  Afterwards you can add or remove people, edit the rules (everyone gets the new
+  version) or stop sharing. "Make public" opens the same page with your public page
+  ticked. Recipients find packs under Shared, With me.
+- **Packs are asked for in plain words (2026-10-26).** "use Egor design", "use egors
+  designs", "the design rules Egor sent me" and one typo ("desing") turn on the right
+  pack. "don't use Egor's design pack" and "I like Egor's design" stay off. "use the
+  web design pack" picks the web design pack over a plain design pack, and when two
+  people sent a pack with the same name the agent asks whose. Matching uses words only,
+  with no AI call, so other languages and a misspelt sender name are not understood.
+- **Several people's Varyz in one task (2026-10-26).** Naming several people uses all
+  of them, for followed Varyz and for sent packs: "use egr's, ann's and maria's design
+  packs", "Review this PR with @egr, @ann and @maria", "use all my design packs".
+  "but not maria's" leaves one out. When two of them answer the same question
+  differently, the agent sees both and asks you which to follow.
+- **Usernames first (2026-10-26).** Packs and followed Varyz name people by username,
+  with the name after it: "use egr's design pack", "From @egr (Egor)". Names still
+  work, so "Egor's rules" finds egr once Egor has sent a pack.
+
+### Fixed
+
+- Varyz no longer keeps a CPU core busy, and the computer warm, while your Varyz
+  Cloud history storage is full. It read and checked the whole history again every time
+  the database changed. It now checks history at most every five minutes, waits while
+  Cloud storage is full (autosync still tries every 15 minutes) and remembers
+  which entries it already checked.
+- After one failed write, Varyz tools could answer "database is locked" for the rest
+  of an agent's session. A failed call now ends its database transaction, so the next
+  call works.
+- Shared pages said "Sign in" in the header when you were signed in; they now say
+  "Account", and the header fits on 320px phones.
+
 ## [0.1.4] - 2026-10-26
 
 ### Added
