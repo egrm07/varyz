@@ -598,11 +598,11 @@ def upgrade(
         write_state(folder, state)
         try:
             execute([uv, "tool", "install", *args])
-            python = str(python_in(environment))
-            execute([python, "-c", "import varyz.cli, varyz.mcp_server, varyz.autosync_daemon"])
+            installed_python = str(python_in(environment))
+            execute([installed_python, "-c", "import varyz.cli, varyz.mcp_server, varyz.autosync_daemon"])
             execute(
                 [
-                    python,
+                    installed_python,
                     "-c",
                     "import sys; from varyz.config import load_config; "
                     "from pathlib import Path; load_config(Path(sys.argv[1])); "
