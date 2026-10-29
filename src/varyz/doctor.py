@@ -55,9 +55,15 @@ def diagnose(cfg: Any, *, client_configs: dict[str, Path] | None = None,
         checks = [(name, ok, "recent session hook failure; inspect the local hook log"
                    if name == "hook errors" and not ok else detail)
                   for name, ok, detail in checks]
-    except Exception:
+    except Exception as exc:
+        # A session hook once failed this twice and passed a minute later, and
+        # with no cause kept a repair agent had nothing to go on. The type and
+        # line are kept, never the message: it can carry paths or SQL.
+        kind, where = type(exc).__name__, _where(exc)
+        _keep_integration_error(cfg, kind, where)
         checks.append(("integration checks", False,
-                       "could not complete; check the archive and agent configuration"))
+                       f"could not complete ({kind} at {where}); "
+                       "check the archive and agent configuration"))
     if not cfg.db_path.exists():
         return checks
     try:
@@ -296,6 +302,30 @@ def integrity_check(cfg: Any, *, start: bool,
         return False, (f"damage found {when}{again}; back up the archive before any repair, "
                        "then run varyz doctor --full")
     return True, f"ok, scanned {when}{again}"
+
+
+def _where(exc: BaseException) -> str:
+    """The innermost Varyz line an exception passed through, as file:line."""
+    import traceback
+
+    try:
+        package = Path(__file__).resolve().parent
+        for frame in reversed(traceback.extract_tb(exc.__traceback__)):
+            path = Path(frame.filename).resolve()
+            if path.is_relative_to(package):
+                return f"{path.relative_to(package).as_posix()}:{frame.lineno}"
+    except (OSError, ValueError):
+        pass
+    return "outside Varyz"
+
+
+def _keep_integration_error(cfg: Any, kind: str, where: str) -> None:
+    """The last integration failure, for `varyz doctor` and a repair agent."""
+    with contextlib.suppress(OSError):
+        path = cfg.data_dir / "runtime" / "doctor" / "integration-error.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"at": time.time(), "type": kind, "where": where}),
+                        encoding="utf-8")
 
 
 def session_notice(cfg: Any, session_id: str, *, active_token: str | None = None,

@@ -45,7 +45,10 @@ def update_job(cfg: Any, job_id: str, state: str, *, now: float | None = None) -
         job = _load_state(path)
         if job.get("job_id") != job_id:
             raise ValueError("repair job is no longer current")
-        if state == "fixed" and any(not ok for _, ok, _ in diagnose(cfg)):
+        # A failure only the owner can fix (Cloud storage full) was never this
+        # job's to repair, and counting it held every job unfixable for days.
+        if state == "fixed" and any(not ok and name not in OWNER_ACTION_CHECKS
+                                    for name, ok, _ in diagnose(cfg)):
             raise ValueError("doctor still reports failures; keep repairing or report a blocker")
         now = time.time() if now is None else now
         previous_state = job.get("state")
@@ -107,8 +110,13 @@ def fix(cfg: Any, config_path: Path) -> dict[str, Any]:
 
 
 def observe_health(cfg: Any, failures: list[str], *, now: float | None = None) -> None:
-    """A verified healthy interval ends the failure episode across all chats."""
-    if failures:
+    """A verified healthy interval ends the failure episode across all chats.
+
+    Owner-only failures are left out, as offer leaves them out: while Cloud
+    storage stayed full no episode ever ended, so a check that failed once and
+    recovered counted toward MAX_ATTEMPTS the next time it failed.
+    """
+    if any(name not in OWNER_ACTION_CHECKS for name in failures):
         return
     from varyz.db.connection import FileLock
     from varyz.hooks import _load_state

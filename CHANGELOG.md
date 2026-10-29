@@ -9,6 +9,25 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-29
+
+### Fixed
+
+- **A low weekly limit no longer reads as nearly out.** Varyz compared the share of
+  the week left with the share of the five hours as if they were the same amount of
+  work, so an agent with 40% of its five hours and 8% of its week left was told its
+  usage was nearly out, and it cut its task short. The week now has its own lower
+  marks: the note at 3% left, hand-offs at 2% and 1% (the five hours keep 10%, 5% and
+  3%). The status line says "weekly usage left" for the week, and `varyz doctor`
+  names the window.
+- **The usage note never invites stopping early.** It gives no figures or reset time.
+  It asks the agent to journal after every step and to keep the full task: no step is
+  shortened, deferred or stopped, and you are not told usage is low.
+- **`varyz doctor` says why the integration checks failed.** The detail names the
+  error type and the Varyz file and line (never the message), and the last failure is
+  kept for a repair agent. Failures only you can fix, such as full Cloud storage, no
+  longer hold a repair job open or count toward its retry limit.
+
 ## [0.1.6] - 2026-10-29
 
 ### Consent (2026-10-29)

@@ -2,10 +2,12 @@
 
 Claude Code tells a status line command how much of its five-hour and weekly
 limits is used; Codex writes the same figures into its chat files. When an
-agent has 5% or less left, Varyz journals that chat in the background and marks
-its thread as nearly out of usage, and does both again at 3%: the next agent
-then knows the work may have stopped mid-task and where it got to. An agent
-that is nearly out is also told, at its next prompt, to journal its own state.
+agent has 5% of its five hours left, Varyz journals that chat in the background
+and marks its thread as nearly out of usage, and does both again at 3%: the next
+agent then knows the work may have stopped mid-task and where it got to. The
+week's limit holds many five-hour windows, so it has lower marks of its own
+(`MARKS`). An agent near either limit is also told, at its next prompt, to
+journal after every step, and never to cut the work short because of usage.
 When the limit is reached, the agent keeps working until the client cuts the
 turn off, so the client resumes the session by itself after the reset.
 
@@ -27,8 +29,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-LOW_LEFT = (5, 3)  # percent left at which a hand-off is saved
-NOTE_LEFT = 10  # percent left from which the agent is told to journal as it goes
+# Percent left at which the agent is told to journal as it goes, then at which a
+# hand-off is saved, and saved again. The week's limit holds many five-hour
+# windows, so the same share of it is far more work: 8% of the week left, with
+# 40% of the five hours, is no reason for a note (the 2026-10-29 HQ session cut
+# its task short on exactly that).
+MARKS = {"five_hour": (10, 5, 3), "week": (3, 2, 1)}
 WATCH_SECONDS = 30  # how often agent connections look at Codex's figures
 RECENT_SECONDS = 15 * 60  # a Codex chat written this recently counts as running
 TAIL_BYTES = 512_000  # how much of a chat file's end is read for its figures
@@ -60,30 +66,34 @@ def _number(value: Any) -> float | None:
     return float(value)
 
 
-def claude_windows(rate_limits: Any) -> list[tuple[float, float | None]]:
-    """(percent used, reset time) of each limit in a Claude Code status line input."""
+Window = tuple[float, float | None, str]  # percent used, reset time, "five_hour" or "week"
+
+
+def claude_windows(rate_limits: Any) -> list[Window]:
+    """(percent used, reset time, window) of each limit in a Claude Code status line input."""
     if not isinstance(rate_limits, dict):
         return []
     windows = []
-    for name in ("five_hour", "seven_day"):
+    for name, window_name in (("five_hour", "five_hour"), ("seven_day", "week")):
         window = rate_limits.get(name)
         if isinstance(window, dict):
             used = _number(window.get("used_percentage"))
             if used is not None:
-                windows.append((used, _seconds(window.get("resets_at"))))
+                windows.append((used, _seconds(window.get("resets_at")), window_name))
     return windows
 
 
-def codex_windows(rate_limits: Any, at: float | None = None) -> list[tuple[float, float | None]]:
-    """(percent used, reset time) of each limit in a Codex token_count event.
+def codex_windows(rate_limits: Any, at: float | None = None) -> list[Window]:
+    """(percent used, reset time, window) of each limit in a Codex token_count event.
 
     Only the plan's own limit counts: others, such as "premium", cover some
-    models and are usually empty.
+    models and are usually empty. The primary limit is the five hours and the
+    secondary the week, unless their length says otherwise.
     """
     if not isinstance(rate_limits, dict) or rate_limits.get("limit_id") not in {None, "codex"}:
         return []
     windows = []
-    for name in ("primary", "secondary"):
+    for name, usual in (("primary", "five_hour"), ("secondary", "week")):
         window = rate_limits.get(name)
         if not isinstance(window, dict):
             continue
@@ -94,20 +104,28 @@ def codex_windows(rate_limits: Any, at: float | None = None) -> list[tuple[float
         after = _number(window.get("resets_in_seconds"))
         if resets is None and after is not None and at is not None:
             resets = at + after
-        windows.append((used, resets))
+        minutes = _number(window.get("window_minutes"))
+        window_name = usual if minutes is None else "week" if minutes >= 24 * 60 else "five_hour"
+        windows.append((used, resets, window_name))
     return windows
 
 
-def reading(windows: list[tuple[float, float | None]], now: float | None = None,
-            ) -> dict[str, Any] | None:
-    """The tightest limit that has not reset yet: percent left and when it resets."""
+def marks(value: dict[str, Any]) -> tuple[int, int, int]:
+    """A reading's note mark and two hand-off marks, by its window."""
+    return MARKS.get(str(value.get("window") or ""), MARKS["five_hour"])
+
+
+def reading(windows: list[Window], now: float | None = None) -> dict[str, Any] | None:
+    """The limit nearest its marks that has not reset yet: percent left, window
+    and when it resets."""
     now = time.time() if now is None else now
-    live = [(used, resets) for used, resets in windows if resets is None or resets > now]
+    live = [window for window in windows if window[1] is None or window[1] > now]
     if not live:
         return None
-    used, resets = max(live, key=lambda window: window[0])
+    used, resets, name = min(
+        live, key=lambda window: (100.0 - window[0]) / MARKS[window[2]][0])
     left = max(0.0, min(100.0, 100.0 - used))
-    return {"left": round(left, 1), "resets_at": resets}
+    return {"left": round(left, 1), "resets_at": resets, "window": name}
 
 
 # -- the hand-off at low usage -------------------------------------------------------
@@ -162,20 +180,22 @@ def _same_window(before: Any, now: Any) -> bool:
     return a is not None and b is not None and abs(a - b) < 600
 
 
-def level(left: float) -> int | None:
-    """The hand-off level a reading has reached: 5, then 3; None above 5% left."""
-    reached = [mark for mark in LOW_LEFT if left <= mark]
+def level(value: dict[str, Any]) -> int | None:
+    """The hand-off level a reading has reached: 5, then 3 for the five hours
+    (2, then 1 for the week); None above the first."""
+    reached = [mark for mark in marks(value)[1:] if float(value["left"]) <= mark]
     return min(reached) if reached else None
 
 
 def low(data_dir: Path, config_file: Path | None, *, agent: str, session_id: str,
         transcript: str, cwd: str, value: dict[str, Any]) -> int | None:
-    """Save a hand-off when a chat's agent first reaches 5%, and again at 3%, left.
+    """Save a hand-off when a chat's agent first reaches 5%, and again at 3%, left
+    (2% and 1% of the week).
 
     Returns the level saved now, or None. Each level is saved once per chat and
     limit window; a window that resets starts the count again.
     """
-    mark = level(float(value["left"]))
+    mark = level(value)
     folder = Path(cwd) if cwd else None
     project = folder.name if folder is not None else ""
     if mark is None or not session_id or not project:
@@ -195,7 +215,7 @@ def low(data_dir: Path, config_file: Path | None, *, agent: str, session_id: str
             saved = [int(x) for x in state.get("levels") or [] if isinstance(x, int)]
         if mark in saved:
             return None
-        _write_json(path, {"levels": sorted({*saved, *(m for m in LOW_LEFT if m >= mark)}),
+        _write_json(path, {"levels": sorted({*saved, *(m for m in marks(value)[1:] if m >= mark)}),
                            "resets_at": value.get("resets_at"), "at": time.time()})
     finally:
         lock.release()
@@ -209,23 +229,28 @@ def low(data_dir: Path, config_file: Path | None, *, agent: str, session_id: str
     return mark
 
 
+# The note gives no figures: an agent told how little is left rations it, cuts
+# steps and tells the owner it stopped for usage, which is never wanted.
+NOTE = (
+    "Usage: this plan's limit may be reached during this session. Do not change the work "
+    "because of it: keep the full scope, do not shorten, defer or stop any step, and do "
+    "not tell the owner usage is low. If the limit is reached, the client stops the "
+    "session itself, so stopping sooner only loses work. Call record_progress after each "
+    "step, with what is done, what is still open and the next step."
+)
+
+
 def note(data_dir: Path, event: dict[str, Any], now: float | None = None) -> str:
-    """For the agent's next prompt: journal as you go, your usage is nearly out."""
+    """For the agent's next prompt: journal as you go, and keep working."""
     transcript = event.get("transcript_path")
     value: dict[str, Any] | None = None
     if isinstance(transcript, str) and Path(transcript).name.startswith("rollout-"):
         value = codex_reading(Path(transcript), now=now)
     elif transcript:
         value = latest(data_dir, "claude_code", now=now)
-    if value is None or float(value["left"]) > NOTE_LEFT:
+    if value is None or float(value["left"]) > marks(value)[0]:
         return ""
-    resets = _number(value.get("resets_at"))
-    until = (" until " + datetime.fromtimestamp(resets, UTC).strftime("%H:%M") + " UTC"
-             if resets else "")
-    return (f"Your plan's usage is nearly out ({float(value['left']):.0f}% left{until}), so "
-            "this session may stop mid-task. Call record_progress now and after every step, "
-            "with what is done, what is still open and the next step, so another agent "
-            "can continue from there.")
+    return NOTE
 
 
 # -- Claude Code: the limit itself ---------------------------------------------------
@@ -329,10 +354,11 @@ def statusline(data_dir: Path, config_file: Path | None, event: dict[str, Any],
         low(data_dir, config_file, agent="claude_code", session_id=session_id,
             transcript=str(event.get("transcript_path") or ""), cwd=cwd, value=value)
     left = float(value["left"])
-    if left > NOTE_LEFT:
+    if left > marks(value)[0]:
         return ""
-    saved = level(left) is not None and bool(session_id) and bool(cwd and Path(cwd).name)
-    return f"Varyz: {left:.0f}% usage left" + (", hand-off saved" if saved else "")
+    saved = level(value) is not None and bool(session_id) and bool(cwd and Path(cwd).name)
+    week = "weekly " if value.get("window") == "week" else ""
+    return f"Varyz: {left:.0f}% {week}usage left" + (", hand-off saved" if saved else "")
 
 
 # -- Codex: its chat files -----------------------------------------------------------

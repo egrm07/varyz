@@ -31,19 +31,25 @@ def claude_event(used, *, resets=LATER, session="chat", cwd="C:/projects/varyz",
                             "seven_day": {"used_percentage": week, "resets_at": LATER + 9e5}}}
 
 
-def test_reading_takes_the_tightest_limit_that_has_not_reset():
-    assert usage.reading([(40, LATER), (97, LATER)], now=NOW) == {"left": 3.0,
-                                                                  "resets_at": LATER}
+def test_reading_takes_the_limit_nearest_its_marks_that_has_not_reset():
+    hours, week = "five_hour", "week"
+    assert usage.reading([(40, LATER, hours), (97, LATER, hours)], now=NOW) == {
+        "left": 3.0, "resets_at": LATER, "window": hours}
+    # 8% of the week is further from its marks than 40% of the five hours, and 5%
+    # of the five hours is nearer than 8% of the week.
+    assert usage.reading([(60, LATER, hours), (92, LATER, week)], now=NOW)["window"] == week
+    assert usage.reading([(95, LATER, hours), (92, LATER, week)], now=NOW)["window"] == hours
     # A limit that reset since it was reported is not counted.
-    assert usage.reading([(99, NOW - 1), (20, LATER)], now=NOW)["left"] == 80.0
-    assert usage.reading([(99, NOW - 1)], now=NOW) is None
-    assert usage.reading([(120, None)], now=NOW)["left"] == 0.0
+    assert usage.reading([(99, NOW - 1, hours), (20, LATER, week)], now=NOW)["left"] == 80.0
+    assert usage.reading([(99, NOW - 1, hours)], now=NOW) is None
+    assert usage.reading([(120, None, hours)], now=NOW)["left"] == 0.0
     # Reset times in milliseconds or as ISO dates, and junk that is not a number.
     iso = datetime.fromtimestamp(LATER, UTC).isoformat().replace("+00:00", "Z")
     assert usage.claude_windows({"five_hour": {"used_percentage": 96,
-                                               "resets_at": LATER * 1000}}) == [(96.0, LATER)]
-    assert usage.claude_windows({"five_hour": {"used_percentage": 96,
-                                               "resets_at": iso}}) == [(96.0, LATER)]
+                                               "resets_at": LATER * 1000}}) == [
+        (96.0, LATER, hours)]
+    assert usage.claude_windows({"seven_day": {"used_percentage": 96,
+                                               "resets_at": iso}}) == [(96.0, LATER, week)]
     assert usage.claude_windows({"five_hour": {"used_percentage": True},
                                  "seven_day": None}) == []
     assert usage.claude_windows("bad") == []
@@ -52,7 +58,11 @@ def test_reading_takes_the_tightest_limit_that_has_not_reset():
 def test_codex_reads_only_its_plan_limit_and_reset_in_seconds():
     limits = {"limit_id": "codex", "primary": {"used_percent": 96, "resets_in_seconds": 60},
               "secondary": {"used_percent": 50, "resets_at": LATER}}
-    assert usage.codex_windows(limits, at=NOW) == [(96.0, NOW + 60), (50.0, LATER)]
+    assert usage.codex_windows(limits, at=NOW) == [(96.0, NOW + 60, "five_hour"),
+                                                   (50.0, LATER, "week")]
+    # A window's stated length wins over its place.
+    limits["primary"]["window_minutes"] = 10080
+    assert usage.codex_windows(limits, at=NOW)[0] == (96.0, NOW + 60, "week")
     assert usage.codex_windows({"limit_id": "premium", "primary": None,
                                 "secondary": None}) == []
     assert usage.codex_windows({"limit_id": "premium",
@@ -82,6 +92,28 @@ def test_statusline_saves_a_hand_off_at_five_and_again_at_three(tmp_path, saved)
     assert len(saved) == 3
     signal = handoff._signals(data)["varyz\nchat"]
     assert signal["kind"] == "usage_low" and signal["left"] == 4.0
+
+
+def test_eight_percent_of_the_week_is_not_nearly_out(tmp_path, saved):
+    """The 2026-10-29 HQ session: 40% of the five hours and 8% of the week left.
+    Varyz said "Your plan's usage is nearly out (8% left until 12:00 UTC)", with
+    the reset two days away, and the agent cut its task short."""
+    data, config = tmp_path / "data", tmp_path / "c.toml"
+    event = claude_event(60, week=92)
+    assert usage.statusline(data, config, event, now=NOW) == ""
+    assert usage.note(data, event, now=NOW) == ""
+    assert saved == [] and handoff._signals(data) == {}
+    assert usage.latest(data, "claude_code", now=NOW)["window"] == "week"
+    # Near the end of the week it notes, then saves hand-offs, naming the limit.
+    assert usage.statusline(data, config, claude_event(60, week=97), now=NOW) == (
+        "Varyz: 3% weekly usage left")
+    assert usage.note(data, event, now=NOW) == usage.NOTE
+    assert saved == []
+    assert usage.statusline(data, config, claude_event(60, week=98.2), now=NOW) == (
+        "Varyz: 2% weekly usage left, hand-off saved")
+    assert len(saved) == 1
+    usage.statusline(data, config, claude_event(60, week=99.2), now=NOW)
+    assert len(saved) == 2
 
 
 def test_a_first_reading_below_three_saves_once(tmp_path, saved):
@@ -136,8 +168,19 @@ def test_prompt_note_only_when_nearly_out(tmp_path):
     assert usage.note(data, event, now=NOW) == ""
     usage.record(data, "claude_code", {"left": 7.0, "resets_at": LATER})
     text = usage.note(data, event, now=NOW)
-    assert "7% left" in text and "record_progress" in text
+    assert text == usage.NOTE and "record_progress" in text
     assert usage.note(data, {}, now=NOW) == ""  # no transcript: not an agent's chat
+    usage.record(data, "claude_code", {"left": 7.0, "resets_at": LATER, "window": "week"})
+    assert usage.note(data, event, now=NOW) == ""
+
+
+def test_the_note_never_invites_cutting_work_short():
+    """No figures or reset time to ration by, and an explicit 'keep going'."""
+    assert "%" not in usage.NOTE and "UTC" not in usage.NOTE
+    assert "nearly out" not in usage.NOTE and "may stop" not in usage.NOTE
+    assert "keep the full scope" in usage.NOTE and "do not shorten, defer or stop" in usage.NOTE
+    assert "do not tell the owner usage is low" in usage.NOTE
+    assert "\u2014" not in usage.NOTE and len(usage.NOTE) < 450
 
 
 def rollout(path, rows, session="codex-chat", cwd="C:/projects/varyz"):
@@ -203,7 +246,7 @@ def test_codex_reset_time_that_drifts_is_one_window(tmp_path, saved):
 def test_prompt_note_reads_a_codex_chat_itself(tmp_path):
     path = tmp_path / "rollout-1.jsonl"
     rollout(path, [counts(95)])
-    assert "5% left" in usage.note(tmp_path, {"transcript_path": str(path)}, now=NOW)
+    assert usage.note(tmp_path, {"transcript_path": str(path)}, now=NOW) == usage.NOTE
 
 
 def test_statusline_keeps_the_owners_own_and_restores_it(tmp_path):

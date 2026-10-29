@@ -275,6 +275,43 @@ it is over two minutes old. Session start and every capture that sends reports a
 renew it. The section is shown once per session. Agents can ask again any time with the read-only MCP tool
 `catch_up(project, task?)`; `start_task.open_threads` uses the same source.
 
+**Usage watch.** Varyz reads how much of each agent's plan is left and saves a
+hand-off before it runs out:
+
+| Agent | Where the figure comes from | What runs the check |
+|---|---|---|
+| Claude Code | `rate_limits` in the status line input (5-hour and weekly windows) | the status line, `python -m varyz.usage statusline`, which `varyz connect` installs |
+| Codex | `token_count` events in its chat files (`~/.codex/sessions`, or `CODEX_HOME`) | a thread in each Varyz MCP server, at most every 30 seconds across servers |
+
+Each window has its own marks, because the week's limit holds many five-hour
+windows and the same share of it is far more work:
+
+| Window | Note to the agent | Hand-off saved |
+|---|---|---|
+| Five hours | 10% left | 5%, then 3% |
+| Week | 3% left | 2%, then 1% |
+
+The window nearest its marks that has not reset counts. When a chat first reaches
+its first hand-off mark, and again at the second, Varyz writes a `usage_low` label
+for it and mines the chat at once (the capture waits up to 90 seconds for a sweep
+that holds the mining lock), so the next agent sees the work and "its usage was
+nearly out (4% left)". Each level is saved once per chat and window. From the note
+mark, the agent's next prompt asks it to journal after every step and tells it not
+to change the work: keep the full scope, do not shorten, defer or stop any step,
+and do not tell the owner usage is low. The note gives no figures or reset time,
+since an agent told how little is left rations it. The Claude Code status line
+shows "Varyz: 4% usage left, hand-off saved" (or "weekly usage left"); above the
+note mark it adds nothing. On 2026-10-29 an agent with 40% of its five hours and 8%
+of its week left was told its usage was "nearly out (8% left until 12:00 UTC)",
+with the reset two days away, and cut its task short; these marks and the note's
+wording fix that.
+
+If you already had a status line, `varyz connect` keeps it: both commands get the
+same input, your line is shown first and Varyz's goes below it only when usage is
+low. Your original is saved in `data/hooks/statusline-previous.json` and
+`varyz uninstall` puts it back. `varyz doctor` shows the status line, the last
+reading for each agent and whether Cloud adds hand-offs from other computers.
+
 The recency fallback and newest-wins rule went live in Cloud on 2026-10-22: a
 vague "continue" now returns the three most recent open threads (`match: "recent"`).
 Tests: `tests/test_handoff.py`, `tests/test_cloud_progress.py`.

@@ -200,6 +200,42 @@ def test_failures_only_the_owner_can_fix_start_no_repair_agent(tmp_path):
 
 
 @pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX file modes")
+def test_owner_only_failures_neither_hold_a_job_unfixed_nor_keep_an_episode_open(
+        tmp_path, monkeypatch):
+    cfg, path = config(tmp_path)
+    job = doctor_repair.offer(cfg, ["cloud sync", "integration checks"], path, now=0)
+    monkeypatch.setattr(doctor, "diagnose", lambda *a, **kw: [
+        ("integration checks", False, "could not complete")])
+    with pytest.raises(ValueError, match="still reports failures"):
+        doctor_repair.update_job(cfg, job["job_id"], "fixed", now=10)
+    monkeypatch.setattr(doctor, "diagnose", lambda *a, **kw: [
+        ("daemon", True, "up"), ("cloud sync", False, "Cloud storage is full")])
+    doctor_repair.update_job(cfg, job["job_id"], "fixed", now=20)
+    doctor_repair.observe_health(cfg, ["cloud sync"], now=30)
+    assert doctor_repair.offer(cfg, ["integration checks"], path, now=40)
+
+
+def test_failed_integration_checks_name_their_cause_without_its_message(
+        tmp_path, monkeypatch):
+    import json
+    import sqlite3
+
+    cfg, _path = config(tmp_path)
+
+    def broken(*_a, **_kw):
+        raise sqlite3.OperationalError("secret path C:/private.db")
+
+    monkeypatch.setattr(hooks, "doctor", broken)
+    checks = {name: (ok, detail) for name, ok, detail in doctor.diagnose(cfg, quick=True)}
+    ok, detail = checks["integration checks"]
+    assert not ok and "OperationalError at doctor.py:" in detail
+    assert "secret" not in detail
+    kept = json.loads((cfg.data_dir / "runtime" / "doctor" / "integration-error.json")
+                      .read_text(encoding="utf-8"))
+    assert kept["type"] == "OperationalError" and "secret" not in json.dumps(kept)
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX file modes")
 def test_archive_and_config_are_closed_to_other_accounts(tmp_path, monkeypatch, posix_permissions):
     from varyz.filesystem import exposed, make_private
 

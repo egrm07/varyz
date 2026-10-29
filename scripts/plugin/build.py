@@ -51,7 +51,7 @@ def generated() -> dict[Path, bytes]:
     ).read_bytes()
     metadata = {
         "name": "varyz",
-        "version": "0.1.6",
+        "version": "0.1.7",
         "description": (
             "Apply your preferences and retrieve relevant background from selected sources."
         ),

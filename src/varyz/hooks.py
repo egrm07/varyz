@@ -389,7 +389,7 @@ def user_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
         if updates:
             previous = (result or {}).get("hookSpecificOutput", {}).get("additionalContext", "")
             result = _context("UserPromptSubmit", _joined(previous, updates))
-    # An agent nearly out of usage may stop mid-task: it journals as it goes.
+    # An agent near its usage limit journals as it goes, without cutting work short.
     with contextlib.suppress(Exception):
         from varyz.usage import note
 
@@ -1235,15 +1235,18 @@ def _usage_status(cfg: Any, configs: dict[str, Path],
         parts.append("Codex " + _usage_reading(usage.latest(cfg.data_dir, "codex")))
     if not parts:
         return True, "no Claude Code or Codex to watch"
-    first, second = usage.LOW_LEFT
-    return True, "; ".join(parts) + f"; a hand-off is saved at {first}% and {second}% left"
+    hours, week = usage.MARKS["five_hour"][1:], usage.MARKS["week"][1:]
+    return True, "; ".join(parts) + (
+        f"; a hand-off is saved at {hours[0]}% and {hours[1]}% left of the five hours, "
+        f"{week[0]}% and {week[1]}% of the week")
 
 
 def _usage_reading(value: dict[str, Any] | None) -> str:
     if not value:
         return "no reading yet"
     when = datetime.fromtimestamp(float(value.get("at") or 0)).strftime("%d %b %H:%M")
-    return f"{float(value['left']):.0f}% left at {when}"
+    of = " of the week" if value.get("window") == "week" else ""
+    return f"{float(value['left']):.0f}% left{of} at {when}"
 
 
 def _reader_status(cfg: Any) -> tuple[bool, str]:
