@@ -563,6 +563,23 @@ def pytest_pycollect_makemodule(module_path, parent):
 MIN_FREE_TEMP_BYTES = 2 * 1024**3
 
 
+@pytest.fixture
+def posix_permissions():
+    """Set temporary POSIX modes and restore them even when a test fails."""
+    if os.name == "nt":
+        pytest.skip("POSIX file modes")
+    original = {}
+
+    def set_mode(path, mode):
+        original.setdefault(path, stat.S_IMODE(path.stat().st_mode))
+        path.chmod(mode)
+
+    yield set_mode
+    for path, mode in reversed(list(original.items())):
+        if path.exists():
+            path.chmod(mode)
+
+
 def pytest_sessionstart(session):
     import shutil
     import tempfile

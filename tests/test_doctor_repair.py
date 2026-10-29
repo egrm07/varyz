@@ -200,7 +200,7 @@ def test_failures_only_the_owner_can_fix_start_no_repair_agent(tmp_path):
 
 
 @pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX file modes")
-def test_archive_and_config_are_closed_to_other_accounts(tmp_path, monkeypatch):
+def test_archive_and_config_are_closed_to_other_accounts(tmp_path, monkeypatch, posix_permissions):
     from varyz.filesystem import exposed, make_private
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -211,7 +211,7 @@ def test_archive_and_config_are_closed_to_other_accounts(tmp_path, monkeypatch):
     cfg = load_config(path)
     cfg.data_dir.mkdir()
     for item, mode in ((folder, 0o755), (cfg.data_dir, 0o755), (path, 0o644)):
-        item.chmod(mode)
+        posix_permissions(item, mode)
     assert set(exposed(cfg)) == {folder, cfg.data_dir, path}
     make_private(cfg)
     assert exposed(cfg) == []

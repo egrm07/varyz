@@ -60,6 +60,8 @@ All notable changes to Varyz are recorded here. The format follows
 
 ### Fixed
 
+- Preference-learning caches are isolated by database connection, so recreating an
+  archive at the same path cannot reuse another archive's turns.
 - **An agent keeps working when its usage runs out.** Claude Code tells an agent near
   the limit to wrap up and report, and an agent that did so ended its turn, so the
   desktop app never resumed it after the reset (5 of 5 such sessions waited for the

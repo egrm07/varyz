@@ -605,14 +605,10 @@ READ_WINDOW_TURNS = 4_000
 # Every task, answer and progress check needs the turns, and parsing 28,000 of
 # them took 1.5 to 2 s, five times a task. Kept per archive until a turn the
 # readers see is added, edited, removed or reclassified.
-_TURN_CACHE: dict[tuple[str, bool], tuple[str, list[Turn]]] = {}
+# A new connection may open a recreated archive at the same path. Never reuse
+# another connection's turns just because its row metadata happens to match.
+_TURN_CACHE: dict[tuple[sqlite3.Connection, bool], tuple[str, list[Turn]]] = {}
 _TURN_CACHE_SIZE = 4
-
-
-def _archive_name(conn: sqlite3.Connection) -> str:
-    row = conn.execute("PRAGMA database_list").fetchone()
-    name = str(row[2] or "") if row is not None else ""
-    return name or f"memory:{id(conn)}"
 
 
 def _turns_mark(conn: sqlite3.Connection) -> str:
@@ -632,7 +628,7 @@ def _turns_mark(conn: sqlite3.Connection) -> str:
 
 def _turns(conn: sqlite3.Connection, tier: str) -> list[Turn]:
     cloud = tier != "local"
-    key = (_archive_name(conn), cloud)
+    key = (conn, cloud)
     mark = _turns_mark(conn)
     cached = _TURN_CACHE.get(key)
     if cached is not None and cached[0] == mark:

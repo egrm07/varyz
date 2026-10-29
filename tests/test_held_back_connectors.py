@@ -109,6 +109,8 @@ from varyz.config import GraphConfig
 from varyz.graph import builder_is_shipped
 from varyz.pipeline import windows_are_shipped
 import varyz.retrieval.answer
+import varyz.setup_machine as machine
+machine.memory = lambda _system: (32 * 1024**3, None)
 from varyz.llm.local_runtime import compile_command, install_hint
 connect = sorted(i.name for i in cli.connect_app.registered_commands if i.name)
 top = sorted(i.name or i.callback.__name__ for i in cli.app.registered_commands)

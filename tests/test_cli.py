@@ -461,6 +461,8 @@ def test_an_install_that_cannot_fit_is_a_sentence_not_a_traceback(project, monke
     """
     import varyz.llm.local_runtime as local_runtime
 
+    monkeypatch.setattr(local_runtime, "too_little_memory", lambda: None)
+
     monkeypatch.setattr(
         local_runtime.shutil, "disk_usage", lambda path: SimpleNamespace(total=1, used=1, free=0)
     )

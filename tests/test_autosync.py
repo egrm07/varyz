@@ -448,6 +448,7 @@ def test_stale_mcp_use_launches_only_one_detached_refresh(tmp_path, monkeypatch)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
     launches = []
+    monkeypatch.setattr(autosync, "process_started_at", lambda _pid: 1.0)
 
     def fake_popen(command, **kwargs):
         launches.append((command, kwargs))
@@ -1272,6 +1273,7 @@ def test_doctor_output_keeps_bracketed_config_sections(tmp_path):
     assert "[update] mode" in result.output, result.output
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows sharing violations")
 def test_heartbeat_write_survives_a_brief_sharing_violation(tmp_path, monkeypatch):
     """A reader holding daemon.json open for a moment must not end the daemon."""
     target = tmp_path / "daemon.json"

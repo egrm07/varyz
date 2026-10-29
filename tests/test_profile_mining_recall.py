@@ -18,6 +18,23 @@ def conn(tmp_path):
     db.close()
 
 
+def test_recreated_archive_does_not_reuse_another_connections_turns(tmp_path):
+    path = tmp_path / "reused.db"
+    first = open_db(path)
+    try:
+        _entry(first, "a", "Always ask before removing a saved report.")
+        assert "saved report" in reader._turns(first, "cloud")[0].text
+    finally:
+        first.close()
+    path.unlink()
+    second = open_db(path)
+    try:
+        _entry(second, "a", "Always keep changes small enough to review.")
+        assert "changes small" in reader._turns(second, "cloud")[0].text
+    finally:
+        second.close()
+
+
 @pytest.mark.parametrize("same_conversation", [False, True])
 def test_recurrence_across_read_windows_still_needs_independent_conversations(
     conn, tmp_path: Path, monkeypatch, same_conversation: bool,
