@@ -599,7 +599,13 @@ def upgrade(
         try:
             execute([uv, "tool", "install", *args])
             installed_python = str(python_in(environment))
-            execute([installed_python, "-c", "import varyz.cli, varyz.mcp_server, varyz.autosync_daemon"])
+            execute(
+                [
+                    installed_python,
+                    "-c",
+                    "import varyz.cli, varyz.mcp_server, varyz.autosync_daemon",
+                ]
+            )
             execute(
                 [
                     installed_python,
