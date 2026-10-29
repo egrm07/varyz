@@ -207,6 +207,20 @@ def test_analytics_setup_choice_is_separate_and_persisted(machine, share):
     assert SetupSession(machine.config).plan()["analytics"]["sharing"] is share
 
 
+def test_opening_setup_preserves_existing_sharing_without_new_consent(machine):
+    from varyz import analytics
+
+    first = SetupSession(machine.config)
+    assert first.start([], [], True) is None
+    _finished(first)
+    rerun = SetupSession(machine.config)
+    assert rerun.plan()["analytics"]["sharing"] is True
+    assert analytics.status(load_config(machine.config))["consent"] is True
+    assert rerun.start([], []) is None
+    _finished(rerun)
+    assert analytics.status(load_config(machine.config))["consent"] is True
+
+
 def test_a_run_approves_only_what_was_ticked(machine):
     session = SetupSession(machine.config)
 
@@ -622,6 +636,25 @@ def test_a_run_through_the_api(server):
     assert _request(server, "POST", "/api/close", token=token)[0] == 200
     # The handler replies before it raises the flag, so the client can get here first.
     assert server.closed.wait(5)
+
+
+@pytest.mark.parametrize("share", [True, False])
+def test_consent_choice_from_page_is_persisted_through_api(server, share):
+    from varyz import analytics
+
+    status, _, body = _request(server, "POST", "/api/run", token=server.session.token,
+                               body={"agents": [], "sources": [], "analytics": share})
+    assert status == 202, body
+    _finished(server.session)
+    assert analytics.status(load_config(server.session.config_path))["consent"] is share
+
+
+@pytest.mark.parametrize("invalid", ["yes", 1, [], {}])
+def test_setup_rejects_non_boolean_consent(server, invalid):
+    status, _, _ = _request(server, "POST", "/api/run", token=server.session.token,
+                            body={"agents": [], "sources": [], "analytics": invalid})
+    assert status == 400
+    assert server.session.snapshot()["started"] is False
 
 
 def test_a_download_paused_and_resumed_through_the_api(server, machine, monkeypatch):

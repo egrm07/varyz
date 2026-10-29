@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sqlite3
@@ -10,9 +11,10 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
-from varyz import update
+from varyz import update, update_worker
 from varyz.config import Config
 from varyz.domain import local_day, utc_now
 
@@ -105,8 +107,12 @@ def _run(
     return update.run(cfg, root=repos.clone, sync=steps.sync, verify=steps.verify, **kwargs)
 
 
-def test_default_mode_is_off_and_an_automatic_trigger_does_nothing(cfg, repos):
-    assert cfg.update.mode == "off"
+def test_default_mode_is_notify():
+    assert Config().update.mode == "notify"
+
+
+def test_off_mode_and_an_automatic_trigger_does_nothing(cfg, repos):
+    cfg.update.mode = "off"
     before = repos.head()
     repos.publish({"src/varyz/a.py": "A = 2\n"})
     result = _run(cfg, repos, trigger="on-use")
@@ -202,6 +208,7 @@ class Installed:
         monkeypatch.setattr(update, "install_source", lambda: source)
         monkeypatch.setattr(update, "_starts", lambda: None)
         monkeypatch.setattr(update, "_reinstall", self._reinstall)
+        monkeypatch.setattr(update, "_libraries_locked_while_loaded", lambda: False)
         monkeypatch.setattr(
             update, "_refresh_agents", lambda config, _python: self.refreshed.append(config)
         )
@@ -332,15 +339,104 @@ def test_an_automatic_update_never_installs_uncommitted_work(cfg, monkeypatch, r
 
 
 def test_on_windows_an_automatic_reinstall_waits_for_the_sessions(cfg, monkeypatch, tmp_path):
+    """Without a Python outside the environment to install from, nothing can."""
     cfg.update.mode = "auto"
     folder = _source_folder(tmp_path / "source", "A = 2\n")
     package = _package(tmp_path / "installed", "A = 1\n")
     installed = Installed(monkeypatch, {"name": "varyzai", "directory": str(folder)}, package)
     monkeypatch.setattr(update, "_libraries_locked_while_loaded", lambda: True)
+    monkeypatch.setattr(update_worker, "base_python", lambda _environment: None)
     result = update.run(cfg, trigger="on-use")
     assert result.status == "waiting"
     assert "varyz update apply" in result.detail
     assert installed.reinstalled == 0
+
+
+def _config_file(tmp_path: Path) -> Path:
+    config = tmp_path / "config.toml"
+    config.write_text("", encoding="utf-8")
+    return config
+
+
+def test_on_windows_the_install_runs_in_the_background_and_agents_stay_open(
+    cfg, monkeypatch, tmp_path
+):
+    folder = _source_folder(tmp_path / "source", "A = 2\n")
+    package = _package(tmp_path / "installed", "A = 1\n")
+    installed = Installed(monkeypatch, {"name": "varyzai", "directory": str(folder)}, package)
+    monkeypatch.setattr(update, "_libraries_locked_while_loaded", lambda: True)
+    monkeypatch.setattr(update, "_uv", lambda: "uv")
+    python = tmp_path / "base" / "pythonw.exe"
+    monkeypatch.setattr(update_worker, "base_python", lambda _environment: python)
+    launched: list[list[str]] = []
+    monkeypatch.setattr(update, "_launch", lambda command, _cwd: launched.append(command))
+    result = update.run(cfg, apply=True, config_path=_config_file(tmp_path))
+    assert result.status == "started", result.detail
+    assert "Nothing needs restarting" in result.detail
+    assert installed.reinstalled == 0 and installed.refreshed == []
+    assert launched and launched[0][:3] == [str(python), "-I", "-B"]
+    job = json.loads(Path(launched[0][4]).read_text(encoding="utf-8"))
+    assert job["command"] == ["uv", "tool", "upgrade", "varyzai", "--reinstall"]
+    assert update_worker.updating(cfg.data_dir)
+    # A second apply meanwhile does not start another install.
+    assert update.run(cfg, apply=True).status == "busy"
+
+
+def test_finishing_a_background_install_records_it_and_releases_the_agents(
+    cfg, monkeypatch, tmp_path
+):
+    config = _config_file(tmp_path)
+    monkeypatch.setattr(update, "load_config", lambda _path: cfg)
+    monkeypatch.setattr(update, "_starts", lambda: None)
+    brought: list[bool] = []
+    monkeypatch.setattr(update, "_bring_back", lambda _path, *, refresh: brought.append(refresh))
+    job = {"id": "job", "config": str(config), "brings": "Varyz 0.2.0",
+           "found": {"current": "0.1.5", "target": "0.2.0"}, "backup": None}
+    path = tmp_path / "job.json"
+    path.write_text(json.dumps(job), encoding="utf-8")
+    update_worker.mark(cfg.data_dir, "job")
+    assert update.main(["--finish", str(path)]) == 0
+    state = update.load_state(cfg)
+    assert state["status"] == "applied" and state["trigger"] == update_worker.TRIGGER
+    assert not update_worker.updating(cfg.data_dir)
+    assert update_worker.installed(cfg.data_dir) == state["checked_at"]
+    assert brought == [True]
+    notice = update.agent_notice(cfg)
+    assert notice is not None and "0.2.0" in notice and "nothing needs restarting" in notice
+    assert update.agent_notice(cfg) is None
+
+
+def test_a_background_install_that_could_not_run_is_told_once(cfg, monkeypatch, tmp_path):
+    config = _config_file(tmp_path)
+    monkeypatch.setattr(update, "load_config", lambda _path: cfg)
+    monkeypatch.setattr(update, "_bring_back", lambda _path, *, refresh: None)
+    job = {"id": "job", "config": str(config), "brings": "Varyz 0.2.0", "found": {},
+           "outcome": {"status": "waiting", "detail": update_worker.OLD_SESSIONS}}
+    path = tmp_path / "job.json"
+    path.write_text(json.dumps(job), encoding="utf-8")
+    assert update.finish(path) == 0
+    assert update.load_state(cfg)["status"] == "waiting"
+    assert update_worker.installed(cfg.data_dir) == ""  # nothing new: no agent restarts
+    notice = update.agent_notice(cfg)
+    assert notice is not None and "Close them" in notice
+    assert update.agent_notice(cfg) is None
+
+
+def test_elsewhere_the_agents_pause_while_varyz_reinstalls_and_then_restart_onto_it(
+    cfg, monkeypatch, tmp_path
+):
+    folder = _source_folder(tmp_path / "source", "A = 2\n")
+    package = _package(tmp_path / "installed", "A = 1\n")
+    Installed(monkeypatch, {"name": "varyzai", "directory": str(folder)}, package)
+    during: list[bool] = []
+    monkeypatch.setattr(update, "_reinstall",
+                        lambda: during.append(update_worker.updating(cfg.data_dir)))
+    before = update_worker.installed(cfg.data_dir)
+    result = update.run(cfg, apply=True)
+    assert result.status == "applied" and "nothing needs restarting" in result.detail
+    assert during == [True]
+    assert not update_worker.updating(cfg.data_dir)
+    assert update_worker.installed(cfg.data_dir) != before
 
 
 def _database(cfg: Config) -> None:
@@ -455,7 +551,7 @@ def test_every_attempt_is_appended_to_the_log(cfg, repos):
 def test_the_check_runs_once_a_day_on_first_use(cfg, monkeypatch):
     cfg.update.mode = "auto"
     launched: list[list[str]] = []
-    monkeypatch.setattr(update.subprocess, "Popen", lambda command, **kw: launched.append(command))
+    monkeypatch.setattr(update, "_launch", lambda command, _cwd: launched.append(command))
     config_path = cfg.base_dir / "config.toml"
     config_path.write_text("", encoding="utf-8")
 
@@ -471,6 +567,7 @@ def test_the_check_runs_once_a_day_on_first_use(cfg, monkeypatch):
 
 
 def test_doctor_reports_the_update_mode(cfg):
+    cfg.update.mode = "off"
     ok, detail = update.doctor_detail(cfg)
     assert ok and detail.startswith("off")
     cfg.update.mode = "auto"
@@ -507,12 +604,181 @@ def test_no_update_notice_when_nothing_is_new_or_the_owner_checked_by_hand(cfg):
     assert update.agent_notice(cfg) is None
 
 
-@pytest.mark.parametrize("source", [{"name": "varyzai", "path": "release.whl"},
-                                    {"name": "varyzai", "url": "file:///release.whl"}])
-def test_downloaded_release_never_becomes_an_index_update(cfg, monkeypatch, source):
-    monkeypatch.setattr(update, "install_source", lambda: source)
-    monkeypatch.setattr(update, "_reinstall", lambda: pytest.fail("must not contact package index"))
-    result = update._run_installed(cfg, {}, apply=True, dry_run=False,
-                                   automatic=False, config_path=None)
-    assert result.status == "skipped"
-    assert "release installer" in result.detail
+RELEASE_SOURCES = [{"name": "varyzai", "path": "release.whl"},
+                   {"name": "varyzai", "url": "file:///release.whl"}]
+INSTALLER = b"installer bytes"
+DOWNLOADS = "https://github.com/egrm07/varyz/releases/download/v0.2.0/"
+
+
+class Release:
+    """GitHub's latest release, the release's checksums and its installer download."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, tag: str = "v0.2.0",
+                 digest: str | None = None) -> None:
+        self.name = "VaryzSetup-0.2.0-windows-x64.exe"
+        self.digest = digest or hashlib.sha256(INSTALLER).hexdigest()
+        self.tag = tag
+        self.gets: list[str] = []
+        self.downloads: list[str] = []
+        self.opened: list[Path] = []
+        monkeypatch.setattr(update, "installed_version", lambda: "0.1.5")
+        monkeypatch.setattr(update, "installer_name",
+                            lambda version: f"VaryzSetup-{version}-windows-x64.exe")
+        monkeypatch.setattr(update, "_http_get", self.get)
+        monkeypatch.setattr(update, "_download", self.download)
+        monkeypatch.setattr(update, "_open", self.opened.append)
+        # Opened as on a Mac; on Windows the background worker runs it silently.
+        monkeypatch.setattr(update, "_libraries_locked_while_loaded", lambda: False)
+        monkeypatch.setattr(update, "_reinstall",
+                            lambda: pytest.fail("must not contact a package index"))
+
+    def get(self, url: str) -> bytes:
+        self.gets.append(url)
+        if url == update.LATEST_RELEASE:
+            assets = [{"name": name, "browser_download_url": DOWNLOADS + name}
+                      for name in (self.name, update.CHECKSUMS)]
+            return json.dumps({"tag_name": self.tag, "assets": assets}).encode()
+        assert url == DOWNLOADS + update.CHECKSUMS
+        return f"{'0' * 64}  other.whl\n{self.digest}  {self.name}\n".encode()
+
+    def download(self, url: str, target: Path, expected: str) -> None:
+        self.downloads.append(url)
+        if hashlib.sha256(INSTALLER).hexdigest() != expected:
+            raise ValueError("its checksum does not match the release's")
+        target.write_bytes(INSTALLER)
+
+
+def _release_run(cfg: Config, monkeypatch: pytest.MonkeyPatch, *, trigger: str = "manual",
+                 apply: bool | None = None, source: dict | None = None) -> update.UpdateResult:
+    monkeypatch.setattr(update, "install_source", lambda: source or RELEASE_SOURCES[0])
+    monkeypatch.setattr(update, "checkout_root", lambda: None)
+    return update.run(cfg, trigger=trigger, apply=apply)
+
+
+@pytest.mark.parametrize("source", RELEASE_SOURCES)
+def test_a_release_install_hears_of_a_new_release(cfg, monkeypatch, source):
+    release = Release(monkeypatch)
+    result = _release_run(cfg, monkeypatch, trigger="on-use", source=source)
+    assert result.status == "available"
+    assert (result.current, result.target) == ("0.1.5", "0.2.0")
+    assert "Varyz 0.2.0 is out" in result.detail and "varyz update apply" in result.detail
+    assert release.downloads == [] and release.opened == []
+    notice = update.agent_notice(cfg)
+    assert notice is not None and "0.2.0" in notice
+    assert update.agent_notice(cfg) is None
+
+
+def test_auto_mode_never_downloads_an_installer_by_itself(cfg, monkeypatch):
+    cfg.update.mode = "auto"
+    release = Release(monkeypatch)
+    result = _release_run(cfg, monkeypatch, trigger="on-use")
+    assert result.status == "available"
+    assert release.downloads == [] and release.opened == []
+
+
+def test_a_release_install_on_the_latest_release_is_up_to_date(cfg, monkeypatch):
+    Release(monkeypatch, tag="v0.1.5")
+    assert _release_run(cfg, monkeypatch, apply=False).status == "up_to_date"
+    Release(monkeypatch, tag="v0.1.4")
+    assert _release_run(cfg, monkeypatch, apply=False).status == "up_to_date"
+
+
+def test_a_prerelease_tag_is_not_offered(cfg, monkeypatch):
+    Release(monkeypatch, tag="v0.2.0-rc1")
+    assert _release_run(cfg, monkeypatch, apply=True).status == "failed"
+
+
+def test_apply_downloads_the_checked_installer_and_opens_it(cfg, monkeypatch):
+    release = Release(monkeypatch)
+    old = update.installers_path(cfg) / "VaryzSetup-0.1.5-windows-x64.exe"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(b"old")
+    result = _release_run(cfg, monkeypatch, apply=True)
+    target = update.installers_path(cfg) / release.name
+    assert result.status == "opened", result.detail
+    assert "Close your AI agents" in result.detail
+    assert release.downloads == [DOWNLOADS + release.name]
+    assert release.opened == [target]
+    assert target.read_bytes() == INSTALLER
+    assert not old.exists()
+    # A second apply opens the installer already here instead of downloading again.
+    _release_run(cfg, monkeypatch, apply=True)
+    assert len(release.downloads) == 1 and release.opened == [target, target]
+
+
+def test_on_windows_the_checked_installer_runs_silently_in_the_background(
+    cfg, monkeypatch, tmp_path
+):
+    release = Release(monkeypatch)
+    monkeypatch.setattr(update, "_libraries_locked_while_loaded", lambda: True)
+    monkeypatch.setattr(update_worker, "base_python",
+                        lambda _environment: tmp_path / "pythonw.exe")
+    launched: list[list[str]] = []
+    monkeypatch.setattr(update, "_launch", lambda command, _cwd: launched.append(command))
+    monkeypatch.setattr(update, "install_source", lambda: RELEASE_SOURCES[0])
+    monkeypatch.setattr(update, "checkout_root", lambda: None)
+    result = update.run(cfg, apply=True, config_path=_config_file(tmp_path))
+    assert result.status == "started", result.detail
+    assert release.opened == []
+    job = json.loads(Path(launched[0][4]).read_text(encoding="utf-8"))
+    target = update.installers_path(cfg) / release.name
+    assert job["command"][:3] == [str(target), "/VERYSILENT", "/SUPPRESSMSGBOXES"]
+
+
+def test_an_installer_that_fails_its_checksum_is_never_opened(cfg, monkeypatch):
+    release = Release(monkeypatch, digest="f" * 64)
+    result = _release_run(cfg, monkeypatch, apply=True)
+    assert result.status == "failed" and "checksum" in result.detail
+    assert release.opened == []
+    assert not (update.installers_path(cfg) / release.name).exists()
+
+
+def test_an_installer_outside_the_release_downloads_is_refused(cfg, monkeypatch):
+    release = Release(monkeypatch)
+
+    def elsewhere(url: str) -> bytes:
+        data = json.loads(release.get(url))
+        data["assets"][0]["browser_download_url"] = "https://example.com/VaryzSetup.exe"
+        return json.dumps(data).encode()
+
+    monkeypatch.setattr(update, "_http_get", elsewhere)
+    result = _release_run(cfg, monkeypatch, apply=True)
+    assert result.status == "failed"
+    assert release.downloads == [] and release.opened == []
+
+
+def test_an_unreachable_github_is_a_failure_for_a_release_install(cfg, monkeypatch):
+    Release(monkeypatch)
+
+    def offline(_url: str) -> bytes:
+        raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr(update, "_http_get", offline)
+    result = _release_run(cfg, monkeypatch, trigger="on-use")
+    assert result.status == "failed" and "GitHub" in result.detail
+    assert update.agent_notice(cfg) is None
+
+
+def test_a_computer_without_an_installer_gets_the_releases_page(cfg, monkeypatch):
+    release = Release(monkeypatch)
+    monkeypatch.setattr(update, "installer_name", lambda _version: None)
+    result = _release_run(cfg, monkeypatch, apply=True)
+    assert result.status == "available" and update.RELEASES_PAGE in result.detail
+    assert release.downloads == []
+
+
+@pytest.mark.parametrize(("system", "machine", "name"), [
+    ("win32", "AMD64", "VaryzSetup-0.2.0-windows-x64.exe"),
+    ("darwin", "arm64", "VaryzSetup-0.2.0-macos-arm64.pkg"),
+    ("darwin", "x86_64", "VaryzSetup-0.2.0-macos-x86_64.pkg"),
+    ("linux", "x86_64", None),
+])
+def test_installer_names_match_the_release_assets(monkeypatch, system, machine, name):
+    monkeypatch.setattr(update.sys, "platform", system)
+    monkeypatch.setattr(update.platform, "machine", lambda: machine)
+    assert update.installer_name("0.2.0") == name
+
+
+def test_release_checksums_are_read_like_sha256sum():
+    text = f"{'a' * 64}  VaryzSetup-0.2.0-windows-x64.exe\n{'b' * 64} *x.pkg\nbad line\n"
+    assert update._checksums(text) == {"VaryzSetup-0.2.0-windows-x64.exe": "a" * 64}

@@ -156,3 +156,80 @@ def test_mcp_invalid_token_returns_notice_without_disclosing_data(tmp_path, monk
         assert "how_owner_works" not in result
     finally:
         server.close()
+
+
+def integrity_line(cfg, **kwargs):
+    return dict((name, (ok, detail)) for name, ok, detail in doctor.diagnose(
+        cfg, client_configs={}, **kwargs)).get("archive integrity")
+
+
+def test_archive_scan_runs_in_background_and_doctor_shows_last_result(tmp_path, monkeypatch):
+    cfg = config(tmp_path)
+    with contextlib.closing(open_db(cfg.db_path)):
+        pass
+    monkeypatch.setattr(hooks, "doctor", lambda *a, **kw: [])
+    started = []
+    monkeypatch.setattr(doctor, "_start_scan", lambda cfg: started.append(True))
+    # Agents' quick checks never start the scan and say nothing before one ran.
+    assert integrity_line(cfg, quick=True) is None and not started
+    ok, detail = integrity_line(cfg)
+    assert ok and "scanning in the background" in detail and len(started) == 1
+
+    record = doctor.scan_integrity(cfg)
+    assert record["ok"] and record["seconds"] >= 0
+    assert integrity_line(cfg) == (True, "ok, scanned just now")
+    assert integrity_line(cfg, quick=True) == (True, "ok, scanned just now")
+    assert len(started) == 1
+
+    later = record["checked_at"] + doctor.INTEGRITY_MAX_AGE + 3600
+    ok, detail = doctor.integrity_check(cfg, start=True, now=later)
+    assert ok and detail == "ok, scanned 25 h ago; scanning again in the background"
+    assert len(started) == 2
+    lock = doctor._integrity_lock(cfg)
+    assert lock.acquire()
+    try:
+        assert doctor.scan_running(cfg)
+        assert doctor.scan_integrity(cfg) is None
+        doctor.integrity_check(cfg, start=True, now=later)
+        assert len(started) == 2
+    finally:
+        lock.release()
+
+
+def test_damaged_archive_fails_and_is_left_to_the_owner(tmp_path, monkeypatch):
+    from varyz import doctor_repair
+
+    cfg = config(tmp_path)
+    cfg.db_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.db_path.write_bytes(b"not a database" * 512)
+    assert doctor.scan_integrity(cfg)["ok"] is False
+    ok, detail = doctor.integrity_check(cfg, start=False)
+    assert not ok and "damage found just now" in detail and "back up" in detail
+    assert doctor_repair.offer(cfg, ["archive integrity"], tmp_path / "config.toml") is None
+
+
+def test_doctor_full_waits_for_a_fresh_scan(tmp_path, monkeypatch):
+    from varyz.cli import app
+
+    cfg = config(tmp_path)
+    with contextlib.closing(open_db(cfg.db_path)):
+        pass
+    monkeypatch.setattr(hooks, "doctor", lambda *a, **kw: [])
+    started = []
+    monkeypatch.setattr(doctor, "_start_scan", lambda cfg: started.append(True))
+    result = CliRunner().invoke(app, ["doctor", "--full", "--json", "--config",
+                                      str(tmp_path / "config.toml")])
+    checks = {c["name"]: c for c in json.loads(result.stdout)["checks"]}
+    assert checks["archive integrity"]["detail"] == "ok, scanned just now"
+    assert not started
+    result = CliRunner().invoke(app, ["doctor", "--full", "--config",
+                                      str(tmp_path / "config.toml")])
+    assert "Scanning the archive for damage" in result.stdout
+
+
+def test_background_scan_entry_point_records_result(tmp_path):
+    cfg = config(tmp_path)
+    with contextlib.closing(open_db(cfg.db_path)):
+        pass
+    assert doctor.main(["scan", "--config", str(tmp_path / "config.toml")]) == 0
+    assert doctor.last_scan(cfg)["ok"] is True

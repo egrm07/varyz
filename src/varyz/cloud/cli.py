@@ -348,6 +348,15 @@ def status(config: ConfigOpt = None) -> None:
             typer.echo("Cloud disconnected. Local Varyz remains available.")
             return
         typer.echo("Uploads selected." if journal.get("enabled") else "Uploads off.")
+        from varyz.cloud.background import health, read_health
+
+        # What is wrong comes first, and does not need the network.
+        state = health(_resolved)
+        if state is not None:
+            typer.echo(("Background sync: " if state[0] else "Needs attention: ") + state[1])
+        withheld = read_health(_resolved).get("withheld")
+        if withheld:
+            typer.echo(f"Withheld as private, never uploaded: {withheld}.")
         with _connected(config) as (_resolved, _path, client):
             account = client.request("GET", "/api/account")
         # Print status only: never full account or server-returned private fields.

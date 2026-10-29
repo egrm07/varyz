@@ -13,6 +13,7 @@ import pytest
 
 from tests.conftest import FakeEmbedder
 from varyz import autosync, autosync_daemon
+from varyz.autosync import maybe_revive_daemon
 from varyz.config import load_config
 from varyz.db.connection import open_db
 
@@ -69,7 +70,7 @@ def test_run_syncs_all_sources_embeds_and_writes_digest(tmp_path, monkeypatch):
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     first = autosync.run_once(config_path, trigger="test")
     second = autosync.run_once(config_path, trigger="test")
@@ -111,7 +112,7 @@ def test_contextual_graph_never_starts_local_model_in_background_by_default(
     cfg = load_config(config_path)
     open_db(cfg.db_path).close()
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     from varyz.graph import service as graph_service
 
@@ -137,7 +138,7 @@ def test_one_broken_source_does_not_stop_the_others(tmp_path, monkeypatch):
     config_path = _project(tmp_path, broken_source=True)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     result = autosync.run_once(config_path, trigger="test")
 
@@ -153,7 +154,7 @@ def test_graph_update_releases_writer_lock_and_keeps_wal_readers_available(tmp_p
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     from varyz.graph import service as graph_service
 
@@ -182,7 +183,7 @@ def test_graph_failure_is_reported_without_rolling_back_ingestion(tmp_path, monk
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     from varyz.graph import service as graph_service
 
@@ -207,7 +208,7 @@ def test_graph_prune_failure_is_a_visible_warning_not_a_failed_cycle(
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     from varyz.graph import prune as graph_prune
 
@@ -239,7 +240,7 @@ def test_pause_is_a_persistent_no_op_kill_switch(tmp_path, monkeypatch):
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
     autosync.pause(cfg)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     result = autosync.run_once(config_path, trigger="scheduled")
     assert result.status == "paused"
@@ -257,7 +258,7 @@ def test_kill_switch_stops_a_run_already_in_flight(tmp_path, monkeypatch):
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     from varyz.graph import service as graph_service
 
@@ -291,7 +292,7 @@ def test_paused_run_skips_the_sources_it_has_not_reached(tmp_path, monkeypatch):
     config_path = _project(tmp_path, broken_source=True)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     real_sync = autosync.sync_connector
 
@@ -566,6 +567,8 @@ def test_macos_launch_agent_round_trip_is_idempotent_and_owned(tmp_path, monkeyp
     assert plist["StandardOutPath"] == plist["StandardErrorPath"]
     assert "Home With Space" in plist["WorkingDirectory"]
     assert plist["ProcessType"] == "Background"
+    # A crash restarts it; a clean stop (disabled, another copy) does not.
+    assert plist["KeepAlive"] == {"SuccessfulExit": False}
     assert "/opt/homebrew/bin" in plist["EnvironmentVariables"]["PATH"].split(":")
     # No launchctl: it still starts now, as a plain background process.
     assert spawned == [config_path.resolve(), config_path.resolve()]
@@ -958,6 +961,116 @@ def test_daemon_singleton_exits_when_lock_is_owned(tmp_path):
         autosync_daemon._release_lock(lock)
 
 
+def test_daemon_survives_a_full_disk_and_keeps_polling(tmp_path, monkeypatch):
+    """On a full Mac disk the heartbeat write raised ENOSPC and the daemon exited."""
+    config_path = _project(tmp_path)
+    cfg = load_config(config_path)
+    autosync.enable(cfg, config_path)
+    writes = []
+
+    def full_disk(path, payload):
+        writes.append(payload["status"])
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(autosync_daemon, "_atomic_json", full_disk)
+    monkeypatch.setattr(autosync_daemon, "is_schedule_due", lambda _cfg: False)
+    slept: list[float] = []
+
+    assert autosync_daemon.run_daemon(config_path, max_loops=4, sleep=slept.append) == 0
+    assert writes.count("idle") == 4  # every poll tried again
+    assert slept == [5.0, 5.0, 5.0]
+
+
+def test_daemon_backs_off_after_a_failed_poll_and_recovers(tmp_path, monkeypatch):
+    config_path = _project(tmp_path)
+    cfg = load_config(config_path)
+    autosync.enable(cfg, config_path)
+    outcomes = iter([RuntimeError("connector raised"), RuntimeError("again"), None, None])
+
+    def due(_cfg):
+        failure = next(outcomes)
+        if failure is not None:
+            raise failure
+        return False
+
+    monkeypatch.setattr(autosync_daemon, "is_schedule_due", due)
+    slept: list[float] = []
+
+    assert autosync_daemon.run_daemon(config_path, max_loops=4, sleep=slept.append) == 0
+    assert slept == [10.0, 20.0, 5.0]
+    assert autosync_daemon._backoff(10) == 300.0
+
+
+def test_a_failed_json_write_leaves_no_partial_file(tmp_path, monkeypatch):
+    target = tmp_path / "daemon.json"
+    target.write_text('{"status": "idle"}', encoding="utf-8")
+
+    def full(self, *args, **kwargs):
+        Path.write_bytes(self, b'{"sta')
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "write_text", full)
+    with pytest.raises(OSError):
+        autosync._atomic_json(target, {"status": "syncing"})
+    monkeypatch.undo()
+    assert [value.name for value in tmp_path.iterdir()] == ["daemon.json"]
+    assert json.loads(target.read_text(encoding="utf-8")) == {"status": "idle"}
+
+
+def test_a_dead_daemon_is_started_again_when_an_agent_uses_varyz(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    config_path = _project(tmp_path)
+    cfg = load_config(config_path)
+    autosync.enable(cfg, config_path)
+    now = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
+    # What the Mac showed: "idle" with a pid that had died hours before.
+    autosync._atomic_json(
+        autosync.daemon_heartbeat_path(cfg),
+        {"pid": 11890, "heartbeat_at": "2026-10-27T08:00:00+00:00", "status": "idle"},
+    )
+    started: list[Path] = []
+
+    def start(path: Path) -> bool:
+        started.append(path)
+        return True
+
+    assert maybe_revive_daemon(cfg, config_path, now=now, start=start)
+    # Once per interval, however many agents ask meanwhile.
+    later = now + timedelta(minutes=3)
+    assert not maybe_revive_daemon(cfg, config_path, now=later, start=start)
+    assert started == [config_path]
+    status = autosync.daemon_status(config_path, now=now)
+    assert not status.running and status.detail.startswith("not running")
+
+
+def test_a_live_daemon_is_left_alone(tmp_path):
+    from datetime import UTC, datetime
+
+    config_path = _project(tmp_path)
+    cfg = load_config(config_path)
+    autosync.enable(cfg, config_path)
+    now = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
+    autosync._atomic_json(
+        autosync.daemon_heartbeat_path(cfg),
+        {"pid": 1, "heartbeat_at": "2026-10-27T08:00:00+00:00", "status": "syncing"},
+    )
+    lock = autosync_daemon._acquire_lock(autosync.daemon_lock_path(cfg))
+    assert lock is not None
+    try:
+        # A stale heartbeat, but the lock is held: alive, in a long hand-off.
+        assert not maybe_revive_daemon(
+            cfg, config_path, now=now, start=lambda _path: pytest.fail("must not start")
+        )
+    finally:
+        autosync_daemon._release_lock(lock)
+    # Turned off by the owner: stays off.
+    autosync.disable(cfg)
+    assert not maybe_revive_daemon(
+        cfg, config_path, now=now, start=lambda _path: pytest.fail("must not start")
+    )
+
+
 def test_doctor_checks_every_configured_source(tmp_path):
     config_path = _project(tmp_path)
     checks = autosync.doctor(config_path)
@@ -977,7 +1090,7 @@ def test_a_sync_re_cuts_the_conversation_partition_and_its_index(tmp_path, monke
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     # Chat messages that arrived without anything having partitioned them: the
     # state an archive is in between a connector writing and anyone asking.
@@ -1070,7 +1183,7 @@ def test_a_sync_reads_the_conversations_nobody_has_read(tmp_path, monkeypatch):
     config_path = _project(tmp_path, background_inference=True)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     _chat(cfg)
     author = FakeAuthor()
     _read_with(monkeypatch, author)
@@ -1093,7 +1206,7 @@ def test_a_sync_reads_at_most_its_budget_and_leaves_the_rest(tmp_path, monkeypat
     config_path = _project(tmp_path, background_inference=True, max_per_sync=2)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     _chat(cfg, threads=5)
     author = FakeAuthor()
     _read_with(monkeypatch, author)
@@ -1114,7 +1227,7 @@ def test_without_the_background_opt_in_a_sync_says_how_many_are_waiting(
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     _chat(cfg, threads=3)
     author = FakeAuthor()
     _read_with(monkeypatch, author)
@@ -1129,7 +1242,7 @@ def test_a_sync_with_nothing_unread_never_reaches_for_the_model(tmp_path, monkey
     config_path = _project(tmp_path, background_inference=True)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     _chat(cfg)
     author = FakeAuthor()
     _read_with(monkeypatch, author)
@@ -1157,3 +1270,85 @@ def test_doctor_output_keeps_bracketed_config_sections(tmp_path):
     config_path = _project(tmp_path)
     result = CliRunner().invoke(app, ["autosync", "doctor", "--config", str(config_path)])
     assert "[update] mode" in result.output, result.output
+
+
+def test_heartbeat_write_survives_a_brief_sharing_violation(tmp_path, monkeypatch):
+    """A reader holding daemon.json open for a moment must not end the daemon."""
+    target = tmp_path / "daemon.json"
+    real_replace = os.replace
+    calls = []
+
+    def flaky_replace(source, destination):
+        calls.append(destination)
+        if len(calls) < 3:
+            raise PermissionError(13, "Access is denied", str(destination))
+        real_replace(source, destination)
+
+    monkeypatch.setattr(autosync.os, "replace", flaky_replace)
+    monkeypatch.setattr(autosync.time, "sleep", lambda _seconds: None)
+    autosync._atomic_json(target, {"status": "idle"})
+    assert json.loads(target.read_text(encoding="utf-8")) == {"status": "idle"}
+    assert len(calls) == 3
+
+
+def test_the_launch_log_is_trimmed_and_keeps_its_last_lines(tmp_path, monkeypatch):
+    from varyz import autosync_daemon
+
+    monkeypatch.setattr(autosync_daemon, "LOG_LIMIT", 100)
+    monkeypatch.setattr(autosync_daemon, "LOG_KEEP", 10)
+    log = tmp_path / "daemon-launch.log"
+    log.write_bytes(b"x" * 200 + b"last line\n")
+    autosync_daemon._trim_log(log)
+    assert log.read_bytes() == b""
+    assert (tmp_path / "daemon-launch.log.1").read_bytes() == b"last line\n"
+    log.write_bytes(b"small")
+    autosync_daemon._trim_log(log)
+    assert log.read_bytes() == b"small"
+
+
+def test_an_offline_thread_failure_is_one_line(monkeypatch, capsys):
+    import threading
+
+    import httpx
+
+    from varyz import autosync_daemon
+
+    monkeypatch.setattr(threading, "excepthook", threading.excepthook)
+    autosync_daemon._last_logged.clear()
+    autosync_daemon._one_line_network_errors()
+
+    def offline():
+        try:
+            raise OSError("nodename nor servname provided")
+        except OSError as exc:
+            raise httpx.ConnectError("[Errno 8] nodename nor servname provided") from exc
+
+    worker = threading.Thread(target=offline, name="news")
+    worker.start()
+    worker.join()
+    err = capsys.readouterr().err
+    assert "offline? ConnectError" in err and "Traceback" not in err
+    assert len(err.strip().splitlines()) == 1
+
+
+def test_the_launch_agent_path_holds_tool_folders_not_the_whole_shell_path(monkeypatch):
+    monkeypatch.setenv("PATH", "/Users/me/secret-project/bin:/usr/bin")
+    monkeypatch.setattr(autosync.shutil, "which",
+                        lambda name: "/opt/tools/bin/claude" if name == "claude" else None)
+    entries = autosync._launchd_path().split(":")
+    assert "/opt/tools/bin" in entries and "/opt/homebrew/bin" in entries
+    assert "/Users/me/secret-project/bin" not in entries
+
+
+def test_a_reused_pid_does_not_hold_a_claim(tmp_path):
+    """On the test Mac several lock files named pids that were dead or reused."""
+    import os
+    import time
+
+    me = os.getpid()
+    started = autosync.process_started_at(me)
+    assert started is not None and started <= time.time()
+    assert autosync.still_held_by(me, time.time())
+    # Written down before this process existed: this pid is someone else now.
+    assert not autosync.still_held_by(me, started - 3600)
+    assert not autosync.still_held_by(2**22 + 12345, time.time())

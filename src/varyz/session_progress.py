@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -222,6 +223,34 @@ def _agent_filter(agent: str | None) -> tuple[str, list[Any]]:
     return "agent_id=?", [agent]
 
 
+def _visible(conn: sqlite3.Connection, row: sqlite3.Row, evidence: dict[str, Any] | None,
+             cfg: Any) -> bool:
+    """Whether a stored report may be shown: personal, and a mined one only under the
+    current approval and privacy settings and from no conversation held back."""
+    if row["sensitivity"] != "personal":
+        return False
+    if evidence is None or cfg is None:
+        return True
+    from varyz.pipeline.sensitivity import SensitivityGate
+    from varyz.session_miner import approval_scope, privacy_scope
+
+    if not (
+        evidence.get("approval_scope") == approval_scope(cfg)
+        and approval_scope(cfg) is not None
+        and evidence.get("privacy_scope") == privacy_scope(cfg)
+        and str(SensitivityGate(cfg.sensitivity).label(
+            "ai_conversations", row["task"], row["payload_json"])) in {"personal", "public"}
+    ):
+        return False
+    refs = [evidence.get("task_reference"), evidence.get("response_reference")]
+    return not conn.execute(
+        "SELECT 1 FROM entries WHERE source='ai_conversations' "
+        "AND external_id IN (?,?) AND sensitivity IN "
+        "('sensitive','unclassified') LIMIT 1",
+        refs,
+    ).fetchone()
+
+
 def history(
     conn: sqlite3.Connection, query: HistoryQuery, *, max_chars: int = 4000, cfg: Any = None
 ) -> dict[str, Any]:
@@ -320,31 +349,7 @@ def history(
             truncated = True
             break
         evidence = json.loads(row["evidence_json"]) if row["evidence_json"] else None
-        mined_allowed = True
-        if evidence is not None and cfg is not None:
-            from varyz.pipeline.sensitivity import SensitivityGate
-            from varyz.session_miner import approval_scope, privacy_scope
-
-            mined_allowed = (
-                evidence.get("approval_scope") == approval_scope(cfg)
-                and approval_scope(cfg) is not None
-                and evidence.get("privacy_scope") == privacy_scope(cfg)
-                and str(
-                    SensitivityGate(cfg.sensitivity).label(
-                        "ai_conversations", row["task"], row["payload_json"]
-                    )
-                )
-                in {"personal", "public"}
-            )
-            refs = [evidence.get("task_reference"), evidence.get("response_reference")]
-            if conn.execute(
-                "SELECT 1 FROM entries WHERE source='ai_conversations' "
-                "AND external_id IN (?,?) AND sensitivity IN "
-                "('sensitive','unclassified') LIMIT 1",
-                refs,
-            ).fetchone():
-                mined_allowed = False
-        if row["sensitivity"] != "personal" or not mined_allowed:
+        if not _visible(conn, row, evidence, cfg):
             withheld += 1
             next_before = row["seq"]
             continue
@@ -415,6 +420,54 @@ def history(
         "latest_means": "latest source time among recorded matching sessions; "
         "undated mined reports sort last; claims require corroboration",
     }
+
+
+# Work older than this is not offered for pickup on this computer.
+THREAD_DAYS = 30
+
+
+def work_threads(conn: sqlite3.Connection, project: str, *, cfg: Any = None,
+                 days: int = THREAD_DAYS) -> list[dict[str, Any]]:
+    """The current state of every work thread in a project, open or not, newest first.
+
+    A thread is one chat, or several joined by thread_id when an agent picked up
+    another's work. Its state is the newest report from any agent, so Codex finishing
+    what Claude started closes the thread for both. The thread_id of a chat nobody
+    picked up is its first report's reference, as Varyz Cloud names it. A withheld
+    newest report hides its thread rather than letting an older report stand in.
+    """
+    since = iso(utc_now() - timedelta(days=days))
+    rows = conn.execute(
+        "SELECT * FROM (SELECT p.*,ROW_NUMBER() OVER (PARTITION BY p.conversation_id "
+        "ORDER BY p.occurred_at DESC,(p.origin='agent_report') DESC,p.seq DESC) AS current_rank,"
+        "FIRST_VALUE(p.id) OVER (PARTITION BY p.conversation_id "
+        "ORDER BY p.occurred_at,p.seq) AS first_id,"
+        "MAX(json_extract(p.payload_json,'$.thread_id')) OVER "
+        "(PARTITION BY p.conversation_id) AS joined "
+        "FROM session_progress p WHERE p.project=?) "
+        "WHERE current_rank=1 AND occurred_at>=? ORDER BY occurred_at DESC,seq DESC LIMIT 200",
+        (project.casefold(), since),
+    ).fetchall()
+    found: dict[str, dict[str, Any] | None] = {}
+    for row in rows:
+        root = row["joined"] or f"varyz-progress:{row['first_id']}"
+        if root in found:
+            continue
+        evidence = json.loads(row["evidence_json"]) if row["evidence_json"] else None
+        if not _visible(conn, row, evidence, cfg):
+            found[root] = None
+            continue
+        payload = json.loads(row["payload_json"])
+        thread = {key: payload.get(key) or [] for key in ("done", "checks", "pending",
+                                                          "artifacts")}
+        thread.update(task=payload["task"], status=payload["status"],
+                      conversation_id=row["conversation_id"], agent=row["agent_id"],
+                      occurred_at=row["occurred_at"], provenance=row["origin"],
+                      reference=f"varyz-progress:{row['id']}", thread_id=root)
+        if evidence and evidence.get("stopped"):
+            thread["stopped"] = evidence["stopped"]
+        found[root] = thread
+    return [thread for thread in found.values() if thread is not None]
 
 
 def forget(conn: sqlite3.Connection, project: str, conversation_id: str) -> int:
@@ -506,8 +559,10 @@ TOOLS = [
 
 TOOLS.append({
     "name": "claim_work",
-    "description": "Claim, renew or release an unfinished Cloud work thread for 15 minutes. "
-                   "Use its thread_id in pickup checkpoints. Requires approved report syncing.",
+    "description": "Claim, renew or release an unfinished work thread for 15 minutes before "
+                   "picking it up, so no other agent takes it at the same time. Works on "
+                   "this computer without Cloud, and on Cloud too when it is approved. Use "
+                   "its thread_id in record_progress; complete or abandoned releases it.",
     "inputSchema": {"type": "object", "properties": {
         "project": {"type": "string"}, "conversation_id": {"type": "string"},
         "thread_id": {"type": "string"},
@@ -525,7 +580,8 @@ TOOLS.append({
                    "task, done, still open, artifacts, newest and most related first. Call "
                    "it before asking the owner what they were doing, and when they say "
                    "continue or resume. project defaults to the working folder; task "
-                   "ranks related work first. Uses Cloud when approved, else this computer.",
+                   "ranks related work first. This computer's journal always answers; Cloud "
+                   "adds other computers when approved.",
     "inputSchema": {"type": "object", "properties": {
         "project": {"type": "string"}, "task": {"type": "string", "maxLength": 240},
         "conversation_id": {"type": "string"}},

@@ -7,6 +7,7 @@ never hands over in place of a withheld record.
 """
 
 import threading
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -20,13 +21,16 @@ from varyz.mcp_server import VaryzServer
 from varyz.retrieval.answer import recall
 from varyz.retrieval.rerank import (
     CALIBRATIONS,
+    CPU_THREADS,
     DEFAULT_RERANK_MODEL,
+    RerankBudgetSpent,
     RerankCalibration,
     Reranker,
     _providers,
     asks_for_current_state,
     fetch_reranker,
     load_reranker,
+    machine_slot,
 )
 
 CALIBRATION = RerankCalibration(margin=4.0, confident=-6.0, floor=-8.0)
@@ -227,6 +231,7 @@ def test_rerank_off_loads_nothing(tmp_path):
 
 def test_auto_waits_for_the_model_to_be_on_disk(tmp_path, monkeypatch):
     monkeypatch.setenv("VARYZ_EMBEDDING_CACHE", str(tmp_path / "models"))
+    monkeypatch.setattr("varyz.retrieval.rerank.gpu_reachable", lambda: True)
     cfg = Config(base_dir=tmp_path)
     assert cfg.retrieval.rerank == "auto"
     assert load_reranker(cfg) is None
@@ -236,6 +241,21 @@ def test_auto_waits_for_the_model_to_be_on_disk(tmp_path, monkeypatch):
     reranker = load_reranker(cfg)
     assert isinstance(reranker, Reranker)
     assert reranker.model_name == DEFAULT_RERANK_MODEL
+
+
+def test_auto_leaves_the_model_off_on_a_machine_without_a_card(tmp_path, monkeypatch):
+    # Every Mac: on the processor one question cost 25-38 s of CPU.
+    monkeypatch.setenv("VARYZ_EMBEDDING_CACHE", str(tmp_path / "models"))
+    monkeypatch.setattr("varyz.retrieval.rerank.gpu_reachable", lambda: False)
+    monkeypatch.setattr(Reranker, "load", lambda self: pytest.fail("fetched"))
+    (tmp_path / "models" / ("models--" + DEFAULT_RERANK_MODEL.replace("/", "--"))).mkdir(
+        parents=True
+    )
+    cfg = Config(base_dir=tmp_path)
+    assert load_reranker(cfg) is None
+    assert fetch_reranker(cfg) is False
+    cfg.retrieval.rerank = "on"  # the owner's explicit choice still holds
+    assert isinstance(load_reranker(cfg), Reranker)
 
 
 def test_an_uncalibrated_model_is_not_used(tmp_path):
@@ -266,6 +286,7 @@ def test_the_server_hands_recall_its_reranker(archive, monkeypatch):
 
 def test_the_index_build_fetches_a_missing_model_once(tmp_path, monkeypatch):
     monkeypatch.setenv("VARYZ_EMBEDDING_CACHE", str(tmp_path / "models"))
+    monkeypatch.setattr("varyz.retrieval.rerank.gpu_reachable", lambda: True)
     monkeypatch.delenv("VARYZ_DISABLE_EMBEDDINGS", raising=False)
     loads: list[str] = []
     monkeypatch.setattr(Reranker, "load", lambda self: loads.append(self.model_name))
@@ -282,6 +303,7 @@ def test_the_index_build_fetches_a_missing_model_once(tmp_path, monkeypatch):
 
 def test_a_failed_fetch_does_not_stop_the_index_build(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("VARYZ_EMBEDDING_CACHE", str(tmp_path / "models"))
+    monkeypatch.setattr("varyz.retrieval.rerank.gpu_reachable", lambda: True)
     monkeypatch.delenv("VARYZ_DISABLE_EMBEDDINGS", raising=False)
 
     def offline(self):
@@ -315,13 +337,15 @@ class FakeCrossEncoder:
     """Stands in for fastembed's model: scores a passage by its length."""
 
     opened: list[list[str] | None] = []
+    threads: list[int | None] = []
     refuse: set[str] = set()
     inside = 0
     most_inside = 0
     entered: threading.Event
     release: threading.Event
 
-    def __init__(self, model_name, cache_dir=None, providers=None):
+    def __init__(self, model_name, cache_dir=None, providers=None, threads=None):
+        FakeCrossEncoder.threads.append(threads)
         if providers and providers[0] in self.refuse:
             raise RuntimeError("the device would not open")
         FakeCrossEncoder.opened.append(providers)
@@ -346,6 +370,7 @@ def devices(tmp_path, monkeypatch):
     import varyz.resolution.local_classifier as local_classifier
 
     FakeCrossEncoder.opened = []
+    FakeCrossEncoder.threads = []
     FakeCrossEncoder.refuse = set()
     FakeCrossEncoder.inside = FakeCrossEncoder.most_inside = 0
     FakeCrossEncoder.entered = threading.Event()
@@ -394,6 +419,55 @@ def test_an_nvidia_card_without_a_gpu_runtime_stays_on_the_processor(devices):
     assert _providers() is None
     reranker.load()
     assert FakeCrossEncoder.opened == [None]
+    assert FakeCrossEncoder.threads == [CPU_THREADS]  # not every core
+    assert reranker.on_gpu is False
+
+
+class SlowReranker(ScriptedReranker):
+    """On the processor, and past any budget once it starts."""
+
+    on_gpu = False
+
+    def score(self, question, passages):
+        from varyz.retrieval.rerank import _past_deadline
+
+        self.calls += 1
+        time.sleep(0.05)
+        if _past_deadline():
+            raise RerankBudgetSpent
+        return [self.default] * len(passages)
+
+
+def test_a_slow_second_look_answers_from_search_with_a_note(archive):
+    cfg, conn = archive
+    reranker = SlowReranker({})
+    evidence = recall(conn, cfg, "Flexidesk standing desk", reranker=reranker,
+                      budget_seconds=0.01)
+    assert evidence.note == answer_module.SLOW_NOTE
+    assert "delivery" in refs(evidence)  # search alone still answers
+    assert evidence.as_dict()["note"].startswith("The local answer check ran past")
+
+
+def test_a_second_process_on_the_processor_does_not_wait_for_the_first(archive):
+    cfg, conn = archive
+    reranker = SlowReranker({})
+    with machine_slot(cfg) as mine:
+        assert mine
+        # Same lock file, another holder: the registry treats it as taken.
+        evidence = recall(conn, cfg, "Flexidesk standing desk", reranker=reranker)
+    assert reranker.calls == 0
+    assert evidence.note == answer_module.BUSY_NOTE
+    assert "delivery" in refs(evidence)
+    with machine_slot(cfg) as again:
+        assert again  # released
+
+
+def test_a_card_reranker_takes_no_machine_slot(archive):
+    cfg, conn = archive
+    reranker = ScriptedReranker({"standing desk": 2.0})  # no on_gpu: a stand-in
+    with machine_slot(cfg):
+        evidence = recall(conn, cfg, "Flexidesk standing desk", reranker=reranker)
+    assert reranker.calls >= 1 and evidence.note is None
 
 
 def test_a_card_without_room_for_it_stays_on_the_processor(devices):

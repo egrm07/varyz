@@ -112,7 +112,7 @@ def test_ingestion_succeeds_while_compile_waits_in_observation(
     conn.close()
     assert stable.activated
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     annotator = BlockingAnnotator()
     thread, results, errors = _start_blocked_compile(cfg, annotator)
 

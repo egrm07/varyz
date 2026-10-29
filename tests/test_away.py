@@ -505,6 +505,10 @@ def test_cli_requires_scope_and_can_end_absence(config: Path, monkeypatch) -> No
     args = ["--scope", "project", "--project", "lumen", "--config", str(config)]
     started = runner.invoke(app, ["away", "on", *args])
     assert started.exit_code == 0, started.output
+    # Reading needs no task; on the test Mac it refused without --task.
+    shown = runner.invoke(app, ["away", "status", "--project", "lumen", "--config", str(config)])
+    assert shown.exit_code == 0, shown.output
+    assert json.loads(shown.output)["away_mode"]["active"] is True
     ended = runner.invoke(app, ["away", "off", *args])
     assert ended.exit_code == 0, ended.output
     conn = open_db(load_config(config).db_path)

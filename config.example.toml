@@ -252,7 +252,6 @@ done_gate_small_changes = "skip"
 # true: a finished reply that used a mark an owner rule forbids (an em dash, an
 # emoji) is sent back once to be corrected. Off by default for the same reason.
 writing_check = false
-
 [workflows]
 # Setup assesses memory, free disk, CPU and GPU headroom before any Qwen download.
 # legacy preserves existing settings. Setup writes local (More privacy) or
@@ -315,16 +314,10 @@ live_reading_hours = 24
 reader_runner = "auto"           # auto | claude | codex | agent
 reader_claude_model = "haiku"    # Claude's cheapest
 reader_codex_model = "auto"      # auto: Codex's newest luna model you can use
-# Plan limits, in percent left. A large reading (the full backlog, `varyz rules
-# mine` through a Claude or ChatGPT sign-in) neither starts nor goes on at or
-# below either large limit; a small (live) one at or below either small limit.
-# Usage is checked every reader_usage_poll_seconds while it reads; a reader that
-# crosses a limit is stopped (what it submitted is kept) and resumes once the
-# window resets. Unknown usage: only small readings run, and stop if it stays unknown.
-large_reading_min_left_5h = 30
-large_reading_min_left_weekly = 25
-small_reading_min_left_5h = 10
-small_reading_min_left_weekly = 5
+# Plan usage never limits reading. Usage is read every reader_usage_poll_seconds
+# only to pick the sign-in with more left. When Claude or ChatGPT refuses because
+# a limit is reached, the reader stops (what it submitted is kept) and resumes by
+# itself once the window resets.
 reader_usage_poll_seconds = 60
 reader_max_minutes = 90          # one reader run at most this long
 reader_tasks_per_run = 8
@@ -387,15 +380,16 @@ notify_server = "https://ntfy.sh"
 notify_topic = ""                    # optional; failures only, never routine success
 
 # [update]
-# Keep a git checkout of Varyz on the latest commit of the branch it tracks.
-# "notify" checks and your agent tells you, once per new version; "auto" also
-# applies it. Checked once a day, on the
-# first use of the day, by fetching from the branch's remote. It changes the
-# code, so it stays off until you turn it on. Only a
-# fast-forward is applied; local changes and local commits are left alone. The
-# database is backed up before an update that migrates it, and new code that
-# fails to import is rolled back. `varyz update status | check | apply | pause`.
-# mode = "off"
+# Checked once a day, on the first use of the day. "notify" (the default) has
+# your agent tell you once per new version; nothing changes until you say
+# "update Varyz" or run `varyz update apply`. "auto" also applies it to a git
+# checkout or a uv install; a copy from the release installers is only
+# announced, and `varyz update apply` downloads and opens its new installer.
+# "off" makes no check. Only a fast-forward is applied; local changes and local
+# commits are left alone. The database is backed up before an update that
+# migrates it, and new code that fails to import is rolled back.
+# `varyz update status | check | apply | pause`.
+# mode = "notify"
 
 # [news]
 # Posts from varyzai.com/news, checked once an hour while Varyz is in use and
@@ -435,7 +429,10 @@ notify_topic = ""                    # optional; failures only, never routine su
 # adapters = ["claude_code", "codex", "openclaw", "hermes"]   # omit for all
 # include_assistant = false          # your turns only, by default
 # paths = ["~/path/to/sessions"]    # read these INSTEAD of the default locations,
-#                                    # which are otherwise found automatically
+#                                    # which are otherwise found automatically.
+#                                    # A tool's own folder is read only by that
+#                                    # tool; in any other folder each file goes
+#                                    # to the one tool whose format it has
 # since = "2025-01-01"
 # max_turn_chars = 12000
 

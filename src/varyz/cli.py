@@ -1452,6 +1452,11 @@ def local_model_install(
     if runtime.available():
         console.print("[green]Local model is already installed and ready.[/green]")
         return
+    from varyz.llm.local_runtime import install_hint, too_little_memory
+
+    if too_little_memory() is not None and not dry_run:
+        console.print(f"[yellow]Not installed: {escape(install_hint())}.[/yellow]")
+        raise typer.Exit(1)
 
     console.print("Managed local inference plan:")
     for item in managed_downloads(cfg):
@@ -1937,6 +1942,10 @@ def away_mode(
     if action == "complete" and scope != "task":
         raise typer.BadParameter("complete only ends task scope")
     task = task or os.environ.get("CODEX_THREAD_ID")
+    if action == "status" and scope == "task" and not task:
+        # Reading changes nothing, so it needs no task: it shows the project's
+        # and the global setting, the way the owner asks "am I away?".
+        scope = "project"
     if scope == "task" and not task:
         raise typer.BadParameter(
             "pass --task <conversation-id>, or explicitly use --scope project/all"
@@ -2184,6 +2193,10 @@ def operational_doctor(
     ] = False,
     repair_job: Annotated[str | None, typer.Option(help="Current repair job ID")] = None,
     repair_state: Annotated[str | None, typer.Option(help="running, fixed or blocked")] = None,
+    full: Annotated[bool, typer.Option(
+        "--full", help="Also scan the whole archive for damage now and wait for it "
+                       "(minutes on a large archive; otherwise it runs in the background)",
+    )] = False,
     config: ConfigOpt = None,
 ) -> None:
     """Check Varyz's archive, daemon, credentials, hooks, sync and background reader."""
@@ -2207,6 +2220,8 @@ def operational_doctor(
         from varyz.install import resolve_config_path
 
         repair = repair_local(cfg, resolve_config_path(config))
+    if full and cfg.db_path.exists():
+        _scan_archive_now(cfg, quiet=as_json)
     checks = diagnose(cfg)
     healthy = all(ok for _, ok, _ in checks)
     if as_json:
@@ -2229,6 +2244,29 @@ def operational_doctor(
                       else "Varyz needs attention; see failed checks above.")
     if not healthy:
         raise typer.Exit(1)
+
+
+def _scan_archive_now(cfg: Any, *, quiet: bool) -> None:
+    """Wait for a background scan already running, else run one here."""
+    import time
+
+    from varyz.doctor import last_scan, scan_integrity, scan_running
+
+    asked_at = time.time()
+    size = cfg.db_path.stat().st_size / 1e9
+    took = last_scan(cfg).get("seconds")
+    if not quiet:
+        last = (f", {max(1, round(took / 60))} min last time"
+                if isinstance(took, int | float) else "")
+        console.print(f"Scanning the archive for damage ({size:.1f} GB{last}). "
+                      "The other checks follow.")
+    if scan_running(cfg):
+        while scan_running(cfg):
+            time.sleep(2)
+        checked_at = last_scan(cfg).get("checked_at")
+        if isinstance(checked_at, int | float) and checked_at >= asked_at:
+            return
+    scan_integrity(cfg)
 
 
 @hooks_app.command("doctor")
@@ -5098,7 +5136,11 @@ def update_apply(
     """Update Varyz now, whatever the mode (not while paused), and refresh its agents.
 
     A checkout is fast-forwarded to the branch it tracks; an installed Varyz is
-    reinstalled by uv from GitHub or from the folder it was installed from.
+    reinstalled by uv from GitHub or from the folder it was installed from. A
+    Varyz from the release installers downloads the latest release's installer
+    and checks its checksum; on Windows it runs it silently, on a Mac it opens it.
+    On Windows the install runs in the background and this returns at once.
+    Open agents keep going: their Varyz tools pause, then reconnect by themselves.
     """
     from varyz.update import run
 
@@ -5186,7 +5228,8 @@ def news_check(config: ConfigOpt = None) -> None:
 
 
 def _print_update(result: UpdateResult) -> None:
-    colour = {"applied": "green", "failed": "red", "available": "yellow", "waiting": "yellow"}
+    colour = {"applied": "green", "started": "green", "opened": "green", "failed": "red",
+              "available": "yellow", "waiting": "yellow"}
     tint = colour.get(result.status)
     label = f"[{tint}]{result.status}[/{tint}]" if tint else result.status
     console.print(f"{label}: {escape(result.detail)}")
@@ -5247,6 +5290,9 @@ def _print_stats(stats: IngestStats) -> None:
 def search(
     query: Annotated[str, typer.Argument(help="What to look for")],
     limit: Annotated[int, typer.Option("--limit", "-n", min=1, help="How many to show")] = 10,
+    show_all: Annotated[
+        bool, typer.Option("--all", help="Show the nearest entries even when none fit")
+    ] = False,
     config: ConfigOpt = None,
 ) -> None:
     """Hybrid keyword + semantic search over all entries."""
@@ -5266,7 +5312,15 @@ def search(
     # one downloads 220 MB of embedding model to discover that. Searching
     # before the first sync spent that download on the words "No matches."
     embedder = Embedder(cfg) if corpus_vectors(conn) else None
-    hits = hybrid_search(conn, query, embedder, limit=limit)
+    # Abstains by default: on the test Mac every search listed ten rows, fitting
+    # or not, and a list of guesses reads as an answer.
+    hits = hybrid_search(conn, query, embedder, limit=limit, abstain=not show_all)
+    if not hits and not show_all and dao.count_entries(conn):
+        hits = hybrid_search(conn, query, embedder, limit=1)
+        if hits:
+            console.print("Nothing in the archive fits this closely.")
+            console.print("[dim]varyz search --all shows the nearest entries anyway.[/dim]")
+            raise typer.Exit(0)
     if not hits:
         if analyze_behavior_query(query):
             console.print(
@@ -5285,6 +5339,14 @@ def search(
         else:
             console.print("No matches.")
         raise typer.Exit(0)
+    if console.width < 100:
+        # Five columns in an 80-column terminal left the match a few letters wide.
+        for h in hits:
+            console.print(f"[cyan]{local_day(h.entry.occurred_start)}[/cyan]  "
+                          f"[dim]{h.entry.kind}  {'; '.join(h.match_reasons)}  {h.entry.id}[/dim]")
+            console.print(_match_cell(h.snippet or (h.entry.title or h.entry.body[:80])))
+            console.print()
+        return
     table = Table(show_lines=False)
     table.add_column("date", style="cyan", no_wrap=True)
     table.add_column("kind", style="dim")

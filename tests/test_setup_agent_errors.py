@@ -48,6 +48,17 @@ def test_restart_needed_after_success_is_not_a_setup_failure(machine, monkeypatc
     assert result["connected_agents"] == ["Claude Code"]
     assert result["restart"]
     assert result["next"][0] == "Restart Claude Code so it loads Varyz."
+    # Feedback is on by default, so setup says so once, with the way to stop it.
+    assert "varyz feedback off" in result["feedback"]
+
+
+def test_skipped_connection_has_no_feedback_note(machine, monkeypatch):  # noqa: F811
+    monkeypatch.setattr("varyz.install.connect_agent", lambda *a, **k:
+                        (None, [InstallResult("claude-code", machine.config, False,
+                                              "not installed at the expected path")]))
+    session = SetupSession(machine.config)
+    session.start(["claude-code"], [])
+    assert _finished(session)["result"]["feedback"] is None
 
 
 def test_partial_connection_identifies_failure_and_only_restarts_success(machine, monkeypatch):  # noqa: F811

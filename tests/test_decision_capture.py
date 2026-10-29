@@ -247,7 +247,7 @@ def test_autosync_records_picks_every_cycle(tmp_path: Path, monkeypatch) -> None
     cfg = load_config(config_path)
     open_db(cfg.db_path).close()
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     monkeypatch.setattr(
         autosync,
         "sync_connector",

@@ -103,14 +103,20 @@ class CachedEmbedder:
     def embed_query(self, text: str) -> list[float]:
         with self.lock:
             if self.model is None:
+                import warnings
+
                 from fastembed import TextEmbedding
 
-                self.model = TextEmbedding(
-                    MODEL,
-                    cache_dir=self.cache,
-                    threads=2,
-                    local_files_only=True,
-                )
+                with warnings.catch_warnings():
+                    # As in pipeline.embed: the pooling notice is about older
+                    # releases, and it filled the test Mac's log 247 times.
+                    warnings.filterwarnings("ignore", message=".*mean pooling.*")
+                    self.model = TextEmbedding(
+                        MODEL,
+                        cache_dir=self.cache,
+                        threads=2,
+                        local_files_only=True,
+                    )
             return next(iter(self.model.query_embed(text))).tolist()
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:

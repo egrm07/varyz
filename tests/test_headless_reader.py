@@ -632,3 +632,52 @@ def test_stale_low_usage_does_not_block_a_new_reading(cfg, config_file, monkeypa
         read_usage=lambda _: None, clock=clock, sleep=clock.sleep,
         launch=lambda *a: _Process(cfg, clock=clock, ends_at=T0 + 10))
     assert status["state"] == "idle" and not status["pending"]
+
+
+@pytest.mark.parametrize("message", [
+    "You've hit your weekly limit",  # what the Mac's reader got, filed as "failed"
+    "You've hit your 5-hour limit · resets 3pm",
+    "Claude AI usage limit reached",
+])
+def test_every_plan_limit_message_is_a_usage_pause_not_a_failure(message):
+    assert hr.provider_limited(message)
+
+
+def test_an_ordinary_error_is_not_a_usage_limit():
+    assert not hr.provider_limited("the limit argument must be positive")
+
+
+def test_status_write_survives_a_brief_windows_sharing_lock(cfg, monkeypatch):
+    import os
+
+    replace = os.replace
+    attempts = []
+
+    def briefly_locked(source, target):
+        attempts.append(source)
+        if len(attempts) == 1:
+            error = PermissionError("temporary sharing lock")
+            error.winerror = 32
+            raise error
+        return replace(source, target)
+
+    monkeypatch.setattr(os, "replace", briefly_locked)
+    hr.update_status(cfg, lambda status: status.update(state="rate_limited", pending=["full"]))
+    assert hr.load_status(cfg)["pending"] == ["full"]
+    assert len(attempts) == 2
+
+
+def test_doctor_line_for_the_reader_fails_when_its_detail_says_failed(cfg, monkeypatch):
+    from varyz import hooks
+
+    monkeypatch.setattr(hr, "find_runners", lambda cfg, config_file: {"claude": object()})
+    hr.update_status(cfg, lambda status: status.update(
+        state="failed", reason="claude read nothing in 2 runs: no error given"))
+    ok, detail = hooks._reader_status(cfg)
+    assert not ok and "failed" in detail
+
+    hr.update_status(cfg, lambda status: status.update(
+        state="rate_limited", reason="claude: You've hit your weekly limit",
+        pending=["full"], next_check=T0 + 3600, resume_after=T0 + 3600))
+    ok, detail = hooks._reader_status(cfg)
+    assert "usage limit is reached (not a Varyz error)" in detail

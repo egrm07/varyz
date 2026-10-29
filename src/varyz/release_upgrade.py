@@ -248,6 +248,17 @@ def install_arguments(
     return args
 
 
+def use_python(args: list[str], python: Path) -> list[str]:
+    """Install on `python` instead of any interpreter the receipt recorded."""
+    if not python.is_file():
+        raise ValueError("The release's own Python is missing; nothing was replaced.")
+    args = list(args)
+    if "--python" in args:
+        at = args.index("--python")
+        del args[at:at + 2]
+    return args + ["--python", str(python)]
+
+
 def running(environment: Path, launchers: list[Path]) -> bool:
     """Inspect process identity, retaining/printing no unrelated command lines."""
     if os.name == "nt":
@@ -291,6 +302,36 @@ def backup_db(source: Path, target: Path) -> None:
         src.backup(dst)
         if dst.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("Archive backup failed its integrity check.")
+
+
+def prune_backups(parent: Path, keep: Path) -> int:
+    """Remove what earlier upgrades left behind; return how many folders went.
+
+    Every upgrade kept a whole tool environment and up to three copies of the
+    archive, so a Mac upgraded 0.1.0 to 0.1.5 held 271 MB of them. Only the
+    newest backup is still a rollback; within it the pre-upgrade archive is
+    kept once (original.db) and the duplicate copy goes; its wheel stays,
+    because the uv receipt installs from that path. A backup whose
+    upgrade was interrupted is never touched: it is what recovery needs.
+    """
+    for name in ("archive.db", "archive.db-wal", "archive.db-shm"):
+        if (keep / "original.db").is_file():
+            with contextlib.suppress(OSError):
+                (keep / name).unlink(missing_ok=True)
+    removed = 0
+    for state_path in parent.glob("*/state.json"):
+        folder = state_path.parent
+        if folder.resolve() == keep.resolve() or folder.parent.resolve() != parent.resolve():
+            continue
+        try:
+            phase = json.loads(state_path.read_text(encoding="utf-8")).get("phase")
+        except (OSError, ValueError):
+            continue
+        if phase not in {"applied", "rolled_back", "backing_up"}:
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
+        removed += not folder.exists()
+    return removed
 
 
 def write_state(folder: Path, value: dict) -> None:
@@ -361,7 +402,12 @@ def upgrade(
     recovery: Path | None = None,
     wheelhouse: Path | None = None,
     package_only: bool = False,
+    python: Path | None = None,
 ) -> dict:
+    """`python` is the interpreter the new release ships. Without it the tool
+    keeps the one it was first installed with: uv records that `--python` in
+    the receipt, so a Mac on 0.1.5 still ran on the 0.1.0 runtime, and
+    deleting that old release folder broke every `varyz` command."""
     config = config.resolve(strict=True)
     tool_root = Path(execute([uv, "tool", "dir"])).resolve(strict=True)
     bin_root = Path(execute([uv, "tool", "dir", "--bin"])).resolve(strict=True)
@@ -533,6 +579,8 @@ def upgrade(
         cached = folder / wheel.name
         shutil.copy2(wheel, cached)
         args = install_arguments(receipt, cached, folder, wheelhouse=wheelhouse)
+        if python is not None:
+            args = use_python(args, python)
         if "--python" not in args:
             settings = dict(
                 line.split("=", 1)
@@ -608,10 +656,12 @@ def upgrade(
             raise ValueError(
                 f"Upgrade failed; previous installation and archive restored. Backup: {folder}"
             ) from error
+        removed = prune_backups(parent, folder)
     return {
         "status": "applied",
         "version": version,
         "backup": str(folder),
+        "removed_old_backups": removed,
         "archive_replaced": not package_only,
         "next_step": "Restart your agents and daemon. Existing connections and sources are kept.",
     }

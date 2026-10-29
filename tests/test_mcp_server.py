@@ -1177,3 +1177,14 @@ def test_an_ordinary_answer_says_nothing_about_credentials(server):
 
     assert payload["found"] > 0
     assert "credentials_removed" not in payload
+
+
+def test_resource_and_prompt_listings_are_empty_not_errors(server):
+    """Codex asked for resources on every new thread and logged "Method not found"."""
+    for method, key in (("resources/list", "resources"),
+                        ("resources/templates/list", "resourceTemplates"),
+                        ("prompts/list", "prompts")):
+        response = handle(server, {"jsonrpc": "2.0", "id": 7, "method": method})
+        assert response == {"jsonrpc": "2.0", "id": 7, "result": {key: []}}
+    unknown = handle(server, {"jsonrpc": "2.0", "id": 8, "method": "resources/read"})
+    assert unknown["error"]["code"] == -32601

@@ -248,9 +248,12 @@ def _tracked_files() -> list[Path]:
         ["git", "ls-files", "-z"],
         cwd=ROOT,
         capture_output=True,
-        check=True,
+        check=False,
         text=True,
     )
+    if listing.returncode != 0:
+        # A release copy is not a git checkout; there is no tracked tree to scan.
+        pytest.skip("not a git checkout: git ls-files has nothing to list")
     return [ROOT / name for name in listing.stdout.split(chr(0)) if name]
 
 

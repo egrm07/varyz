@@ -18,7 +18,10 @@ same shape):
   after edits that no successful finish result followed (a small change is let
   through, ``[agent] done_gate_small_changes``), and ``[agent] writing_check``
   sends back a reply that used a mark an owner rule forbids (an em dash, an
-  emoji).
+  emoji). One exception is always on: an agent that stops after Claude Code
+  said its usage limit was reached is sent back once with one short line
+  (``varyz.usage.grace``), because only a turn the client cuts off is resumed
+  by itself after the reset.
 * ``stop`` always starts a background capture of the turn (``varyz.handoff``):
   what was done and what is open, so the next session, on any computer, picks
   up without the owner re-briefing it. The first prompt of every session gets
@@ -54,6 +57,8 @@ from varyz.onboarding import GUIDANCE as ONBOARDING_GUIDANCE
 from varyz.resolution.memory_policy import MEMORY_POLICY, REALTIME_CORRECTION_REMINDER
 from varyz.resolution.questioning import QUESTION_POLICY
 from varyz.session_progress import PROGRESS_POLICY
+from varyz.usage import KEEP_WORKING, LIMIT_POLICY
+from varyz.usage import grace as usage_grace
 
 _CONFIG_PATH: Path | None = None  # the --config the hook was installed with
 # Set in the reader varyz starts itself (`headless_reader.ENV`): no hook runs in it.
@@ -75,7 +80,7 @@ SESSION_START_CONTEXT = (
     "report. varyz talks to you, not to the user: do not narrate your varyz calls or "
     "list its briefings and checklists - report only what is not done or still open."
 )
-SESSION_START_CONTEXT += "\n\n" + PROGRESS_POLICY
+SESSION_START_CONTEXT += "\n\n" + PROGRESS_POLICY + " " + LIMIT_POLICY
 
 
 SESSION_START_CONTEXT += "\n\n" + ONBOARDING_GUIDANCE
@@ -97,6 +102,23 @@ def _emit(payload: dict[str, Any]) -> None:
     # cannot encode the briefing's arrows and quotes.
     sys.stdout.buffer.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
     sys.stdout.buffer.flush()
+
+
+def _session_id(event: dict[str, Any]) -> str:
+    """The id that tells one chat's prompts apart.
+
+    Without one, every prompt counted as a chat's first and carried the whole
+    briefing and protocol again: 11.8 KB a prompt on the test Mac. A client
+    that sends no session_id still sends its transcript's path.
+    """
+    for key in ("session_id", "conversation_id", "thread_id"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    path = event.get("transcript_path")
+    if isinstance(path, str) and path.strip():
+        return "transcript-" + hashlib.sha256(path.strip().encode("utf-8")).hexdigest()[:24]
+    return ""
 
 
 def _context(event_name: str, text: str) -> dict[str, Any]:
@@ -144,7 +166,41 @@ def _project(event: dict[str, Any]) -> tuple[str | None, Path | None]:
     if not isinstance(cwd, str) or not cwd.strip():
         return None, None
     folder = Path(cwd)
+    if is_scratch(folder):
+        return None, folder
     return folder.name or None, folder
+
+
+_PROJECT_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod",
+                    "CLAUDE.md", "AGENTS.md", "README.md", ".varyz-project")
+
+
+def is_scratch(folder: Path) -> bool:
+    """A folder that is no project: the home folder, a drive's root, or a
+    folder in the temporary directory with nothing in it or above it that
+    marks a project. On the test Mac a hook test run in a temporary folder
+    named "hookcwd" filed two task records under a project "hookcwd"."""
+    import tempfile
+
+    try:
+        folder = folder.resolve()
+        if not folder.is_dir():
+            return False
+        if folder == Path.home().resolve() or folder.parent == folder:
+            return True
+        temp_roots = {Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve(),
+                      Path("/private/tmp"), Path("/var/folders"), Path("/private/var/folders")}
+        root = next((r for r in temp_roots if folder.is_relative_to(r)), None)
+        if root is None:
+            return False
+        for place in (folder, *folder.parents):
+            if any((place / marker).exists() for marker in _PROJECT_MARKERS):
+                return False
+            if place == root:
+                break
+        return True
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 def task_text(prompt: str) -> str:
@@ -160,7 +216,7 @@ def task_text(prompt: str) -> str:
 _CLIENT_GENERATED = re.compile(r"\s*(?:<[a-z][a-z0-9_-]*[ >]|\[SYSTEM NOTIFICATION)")
 
 
-# A plain question asks for an answer, not work: "do I need to …?", "why is …".
+# A plain question asks for an answer, not work: "do I need to â€¦?", "why is â€¦".
 # A request phrased as one ("can you add a pricing page?") is still a task.
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 _WH_START = re.compile(r"(?:what|why|how|where|when|which|who|whose)\b", re.IGNORECASE)
@@ -247,13 +303,16 @@ def session_start(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
 
         maybe_check_on_use(cfg, _config_file())
     with contextlib.suppress(Exception):
-        # Warm the copy of Cloud's open work that the first briefing reads.
-        from varyz.handoff import warm
+        # Warm the copy of Cloud's open work that the first briefing reads, and
+        # journal chats that ended without a stop hook (an agent out of usage).
+        from varyz.handoff import can_capture, sweep_in_background, warm
 
-        project = _project(event)[0]
+        project, folder = _project(event)
         if project:
             warm(cfg, _config_file(), project)
-    session_id = str(event.get("session_id") or "")
+            if can_capture(cfg):
+                sweep_in_background(cfg, _config_file(), project, folder)
+    session_id = _session_id(event)
     if session_id:
         # The first briefing then leaves out the policy this note already gives.
         with contextlib.suppress(OSError):
@@ -306,7 +365,7 @@ def user_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
     from varyz.onboarding import GUIDANCE, is_request, note_conversation
 
     prompt = event.get("prompt")
-    session_id = str(event.get("session_id") or "")
+    session_id = _session_id(event)
     if cfg.agent.briefing_hooks and isinstance(prompt, str) and not _CLIENT_GENERATED.match(prompt):
         note_conversation(cfg, session_id, onboarding=is_request(prompt, cfg))
         if is_request(prompt, cfg):
@@ -316,7 +375,7 @@ def user_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
     prompt = event.get("prompt")
     if isinstance(prompt, str) and not _CLIENT_GENERATED.match(prompt):
         nudge_live_reading(cfg)
-    session_id = str(event.get("session_id") or "")
+    session_id = _session_id(event)
     was_briefed = bool(session_id and _load_state(_state_path(cfg, session_id)).get("briefed"))
     result = _briefing_for_prompt(cfg, event)
     if not cfg.agent.briefing_hooks or not isinstance(prompt, str):
@@ -330,7 +389,14 @@ def user_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
         if updates:
             previous = (result or {}).get("hookSpecificOutput", {}).get("additionalContext", "")
             result = _context("UserPromptSubmit", _joined(previous, updates))
-    return _with_news(cfg, result, conversation_id=str(event.get("session_id") or "") or None)
+    # An agent nearly out of usage may stop mid-task: it journals as it goes.
+    with contextlib.suppress(Exception):
+        from varyz.usage import note
+
+        if low := note(cfg.data_dir, event):
+            previous = (result or {}).get("hookSpecificOutput", {}).get("additionalContext", "")
+            result = _context("UserPromptSubmit", _joined(previous, low))
+    return _with_news(cfg, result, conversation_id=_session_id(event) or None)
 
 
 def _preference_updates(cfg: Any, event: dict[str, Any], *, was_briefed: bool) -> str:
@@ -342,7 +408,7 @@ def _preference_updates(cfg: Any, event: dict[str, Any], *, was_briefed: bool) -
     from varyz.resolution.briefing import _rule_row
     from varyz.resolution.principles import GLOBAL_SCOPE, SQLitePrincipleStore, normalize_scope
 
-    session_id = str(event.get("session_id") or "")
+    session_id = _session_id(event)
     if not session_id or not cfg.db_path.exists():
         return ""
     state_file = _state_path(cfg, session_id)
@@ -484,7 +550,7 @@ def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | No
     if not isinstance(prompt, str) or _CLIENT_GENERATED.match(prompt):
         return None
     project, cwd = _project(event)
-    session_id = str(event.get("session_id") or "")
+    session_id = _session_id(event)
     mode_text = ""
     mode: dict[str, Any] = {"active": False}
     if cfg.db_path.exists():
@@ -599,7 +665,8 @@ def _briefing_for_prompt(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | No
         mode_text if mode.get("active") else "",
         render_background_job(job) if job is not None else "",
         render_markdown({"project": project, "history_check": briefing["history_check"]},
-                        include_protocol=False),
+                        include_protocol=False)
+        if briefing["history_check"].get("status") == "required" else "",
         _writing_reminder(cfg, project, cwd, prompt, session_task),
         FINISH_REMINDER,
     )
@@ -642,8 +709,9 @@ def _left_off(cfg: Any, project: str | None, session_id: str, task: str) -> str:
     if state.get("left_off_shown"):
         return ""
     try:
-        from varyz.handoff import open_work, render
+        from varyz.handoff import open_work, render, wait_for_sweep
 
+        wait_for_sweep(cfg, project)
         text = render(open_work(cfg, _config_file(), project=project, task=task[:240],
                                 conversation_id=session_id, cloud="cached"))
     except Exception:
@@ -658,13 +726,14 @@ def _capture_turn(cfg: Any, event: dict[str, Any]) -> None:
     """Journal this turn in the background, whether or not the agent did."""
     from varyz.handoff import can_capture, capture_in_background
 
-    session_id = str(event.get("session_id") or "")
+    session_id = _session_id(event)
     transcript = event.get("transcript_path")
     if not session_id or not isinstance(transcript, str) or not transcript:
         return
-    project = _project(event)[0] or _load_state(_state_path(cfg, session_id)).get("project")
+    named, folder = _project(event)
+    project = named or _load_state(_state_path(cfg, session_id)).get("project")
     if isinstance(project, str) and project and can_capture(cfg):
-        capture_in_background(_config_file(), project, session_id, transcript)
+        capture_in_background(_config_file(), project, session_id, transcript, folder)
 
 
 def edited_since_last_prompt(transcript_path: str | None) -> bool | None:
@@ -821,6 +890,11 @@ def stop(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
         _capture_turn(cfg, event)
     if event.get("stop_hook_active"):
         return None
+    # A turn ended at the usage limit is finished, so the client never resumes
+    # it; one it cuts off is resumed after the reset. Sent back once.
+    with contextlib.suppress(Exception):
+        if usage_grace(event.get("transcript_path")):
+            return {"decision": "block", "reason": KEEP_WORKING}
     breach = ""
     if cfg.agent.writing_check:
         with contextlib.suppress(Exception):
@@ -888,7 +962,7 @@ def _writing_breach(cfg: Any, event: dict[str, Any]) -> str:
     last = event.get("last_assistant_message")
     if isinstance(last, str) and last not in reply:
         reply = _joined(reply, last)
-    session_id = str(event.get("session_id") or "")
+    session_id = _session_id(event)
     if not reply.strip() or not session_id or not cfg.db_path.exists():
         return ""
     state_file = _state_path(cfg, session_id)
@@ -927,7 +1001,7 @@ def _done_gate(cfg: Any, event: dict[str, Any]) -> dict[str, Any] | None:
     from varyz.resolution.briefing import finish_check
     from varyz.resolution.task_size import sizer_from_config
 
-    session_id = str(event.get("session_id") or "")
+    session_id = _session_id(event)
     if not session_id:
         return None
     state_file = _state_path(cfg, session_id)
@@ -1111,12 +1185,65 @@ def doctor(
                        f"{installed} of {len(install.HOOK_EVENTS)} events"
                        + ("" if installed else f"; run `varyz connect {client}`")))
     checks.append(("hook errors", *_error_status(cfg)))
+    checks.append(("hand-offs", *_handoff_status(cfg)))
+    checks.append(("usage watch", *_usage_status(cfg, configs, hook_clients)))
     from varyz.resolution.task_size import classifier_status
 
     if not quick:
         checks.append(("task classifier", *classifier_status(cfg)))
         checks.append(("rule reader", *_reader_status(cfg)))
     return checks
+
+
+def _handoff_status(cfg: Any) -> tuple[bool, str]:
+    """Where unfinished work is handed off from. Informational: Cloud is optional."""
+    from varyz import handoff
+
+    here = "between agents on this computer" + (
+        "" if handoff.can_capture(cfg)
+        else " from journals only (approve AI chats so unjournaled turns are kept too)")
+    config_file = cfg.source_file or _config_file()
+    try:
+        from varyz.cloud.session_report_sync import journal_path, read_journal
+
+        journal = read_journal(journal_path(config_file)) if config_file else None
+    except Exception:
+        journal = None
+    if journal and journal["enabled"] and journal["projects"]:
+        count = len(journal["projects"])
+        return True, f"{here}; Cloud adds other computers for {count} project(s)"
+    return True, f"{here}; Cloud off, so other computers' work is not included"
+
+
+def _usage_status(cfg: Any, configs: dict[str, Path],
+                  hook_clients: list[str]) -> tuple[bool, str]:
+    """Whether each agent's usage is watched, and its last reading. Informational."""
+    from varyz import install, usage
+
+    parts = []
+    if "claude-code" in hook_clients:
+        settings: Any = {}
+        path = install.hook_settings_path("claude-code", configs["claude-code"])
+        with contextlib.suppress(OSError, ValueError, TypeError):
+            settings = json.loads(path.read_text(encoding="utf-8-sig")) if path else {}
+        line = settings.get("statusLine") if isinstance(settings, dict) else None
+        if not usage.is_ours(line):
+            parts.append("Claude Code not watched (run `varyz connect claude-code`)")
+        else:
+            parts.append("Claude Code " + _usage_reading(usage.latest(cfg.data_dir, "claude_code")))
+    if install.CODEX_CLIENT in hook_clients:
+        parts.append("Codex " + _usage_reading(usage.latest(cfg.data_dir, "codex")))
+    if not parts:
+        return True, "no Claude Code or Codex to watch"
+    first, second = usage.LOW_LEFT
+    return True, "; ".join(parts) + f"; a hand-off is saved at {first}% and {second}% left"
+
+
+def _usage_reading(value: dict[str, Any] | None) -> str:
+    if not value:
+        return "no reading yet"
+    when = datetime.fromtimestamp(float(value.get("at") or 0)).strftime("%d %b %H:%M")
+    return f"{float(value['left']):.0f}% left at {when}"
 
 
 def _reader_status(cfg: Any) -> tuple[bool, str]:
@@ -1137,7 +1264,13 @@ def _reader_status(cfg: Any) -> tuple[bool, str]:
         return True, f"cannot tell which sign-in runs it ({type(exc).__name__})"
     if not runners:
         return True, "no Claude Code or Codex sign-in to run it on; the agent is asked"
-    return True, f"on {' or '.join(sorted(runners))}: {headless_reader.summary(cfg)}"
+    # The status follows the reader's own health: the Mac report had
+    # "True | on claude: failed; ..." on one line.
+    try:
+        ok = headless_reader.health(cfg)[0]
+    except Exception:
+        ok = True
+    return ok, f"on {' or '.join(sorted(runners))}: {headless_reader.summary(cfg)}"
 
 
 def _error_status(cfg: Any) -> tuple[bool, str]:
@@ -1289,11 +1422,11 @@ def run(event_name: str, config: Path | None) -> int:
             with contextlib.suppress(Exception):
                 from varyz.doctor import session_notice
 
-                notice = session_notice(cfg, str(event.get("session_id") or ""),
+                notice = session_notice(cfg, _session_id(event),
                                         config_path=_config_file())
         try:
             result = HANDLERS[event_name](cfg, event)
-            session_id = str(event.get("session_id") or "")
+            session_id = _session_id(event)
             if session_id:
                 with contextlib.suppress(OSError):
                     state_file = _state_path(cfg, session_id)
@@ -1305,7 +1438,7 @@ def run(event_name: str, config: Path | None) -> int:
                 _log_failure(config, event_name, exc)
             result = None
             failure_seen = False
-            session_id = str(event.get("session_id") or "")
+            session_id = _session_id(event)
             if session_id:
                 with contextlib.suppress(OSError):
                     state_file = _state_path(cfg, session_id)

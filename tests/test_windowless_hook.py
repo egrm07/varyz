@@ -175,3 +175,18 @@ def test_watchdog_gui_launcher_uses_hidden_child_and_preserves_failure(
     result = subprocess.run([str(launcher)], capture_output=True, timeout=15)
     assert result.returncode == 1
     assert Path(str(launcher) + ".status").read_text() == "failed:missing_launch_file"
+
+
+def test_a_scratch_folder_is_no_project_but_a_marked_one_is(tmp_path, monkeypatch):
+    """On the test Mac a hook test in a temporary "hookcwd" filed task records."""
+    import tempfile
+
+    from varyz import hooks
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    scratch = tmp_path / "hookcwd"
+    scratch.mkdir()
+    assert hooks._project({"cwd": str(scratch)}) == (None, scratch)
+    (scratch / "pyproject.toml").write_text("", encoding="utf-8")
+    assert hooks._project({"cwd": str(scratch)})[0] == "hookcwd"
+    assert hooks._project({"cwd": str(Path.home())})[0] is None

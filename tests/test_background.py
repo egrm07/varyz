@@ -19,7 +19,7 @@ runner = CliRunner()
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "Embedder", lambda cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda cfg, **_: FakeEmbedder())
     result = runner.invoke(cli.app, ["init"])
     assert result.exit_code == 0, result.output
     return tmp_path

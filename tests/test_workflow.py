@@ -19,6 +19,7 @@ import sqlite3
 import subprocess
 import sys
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -513,8 +514,12 @@ def test_only_this_conversations_recent_questions_are_relayed(
     here = ask("Which headline should the hero use?", "c-here")
     ask("Which font for the logo?", "c-other")
     old = ask("Which colour for the footer?", "c-here")
+    yesterday = ask("Which image for the footer?", "c-here")
     db.execute("UPDATE resolution_escalations SET created_at = ? WHERE id = ?",
                ("2026-01-01T00:00:00+00:00", old))
+    # A day old: still answerable, no longer put in front of the owner again.
+    db.execute("UPDATE resolution_escalations SET created_at = ? WHERE id = ?",
+               ((datetime.now(UTC) - timedelta(hours=25)).isoformat(), yesterday))
     db.commit()
 
     check = finish_check(db, "Build a landing page", project="lumen", conversation_id="c-here")
@@ -656,9 +661,11 @@ def test_the_first_task_is_briefed_and_later_prompts_only_add_new_kinds_of_work(
     repeated = hooks.user_prompt(cfg, {**event, "prompt": "make the hero section bigger"})
     assert repeated is not None
     reminder = repeated["hookSpecificOutput"]["additionalContext"]
-    assert "History before clarification" in reminder
-    assert "Status: required" in reminder
+    # A follow-up that does not point back at earlier work carries no history section.
+    assert "History before clarification" not in reminder
     assert "Definition of done" not in reminder
+    back = hooks.user_prompt(cfg, {**event, "prompt": "do the hero the way we discussed"})
+    assert "Status: required" in back["hookSpecificOutput"]["additionalContext"]
     later = hooks.user_prompt(cfg, {**event, "prompt": "now add a python cli to deploy it"})
     added = later["hookSpecificOutput"]["additionalContext"]
     assert "Every CLI gets a --dry-run flag." in added
@@ -691,6 +698,24 @@ def test_first_briefing_after_session_start_leaves_out_the_policy_it_already_gav
     for kept in ("Add a favicon in every size.", "finish_check", "remember_owner_workflow"):
         assert kept in short
     assert len(short) < len(full)
+
+
+def test_a_client_without_session_id_is_briefed_in_full_only_once(
+    tmp_path: Path, config_path: Path, db: sqlite3.Connection, monkeypatch
+) -> None:
+    """The test Mac's hook sent 11.8 KB on every prompt, 7.5 KB of it the same."""
+    from varyz.resolution.questioning import QUESTION_POLICY
+
+    _website_owner(db)
+    cfg = _cfg(config_path)
+    event = {"transcript_path": str(tmp_path / "chat.jsonl"), "cwd": str(tmp_path / "persona"),
+             "prompt": "Build the landing page for persona"}
+    first = hooks.user_prompt(cfg, dict(event))["hookSpecificOutput"]["additionalContext"]
+    event["prompt"] = "Now build the pricing page for persona"
+    later = (hooks.user_prompt(cfg, dict(event)) or {}).get(
+        "hookSpecificOutput", {}).get("additionalContext", "")
+    assert QUESTION_POLICY in first and QUESTION_POLICY not in later
+    assert len(later) < len(first) / 3
 
 
 def test_live_rules_reach_existing_sessions_on_short_non_task_prompts(

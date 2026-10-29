@@ -103,7 +103,7 @@ def test_indexing_shows_how_far_through_each_source_it_is(tmp_path, monkeypatch)
     monkeypatch.setattr(cli, "sync_connector", fake_sync)
     monkeypatch.setattr(cli, "_print_stats", lambda stats: None)
     monkeypatch.setattr(cli, "embed_pending", lambda *a, **kw: 0)
-    monkeypatch.setattr(cli, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     cli._sync_sources(load_config(config_path), ("documents",),
                       on_progress=lambda line, fraction: heard.append((line, fraction)))
@@ -124,7 +124,7 @@ def test_indexing_reads_sources_before_fetching_search_models(tmp_path, monkeypa
         return False  # the Hub was not reached: the models load the old way
 
     monkeypatch.setattr(cli, "fetch_search_models", fetch)
-    monkeypatch.setattr(cli, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     cli._sync_sources(load_config(config_path), ("documents",),
                       on_progress=lambda line, fraction: heard.append((line, fraction)),

@@ -25,6 +25,7 @@ from varyz.connectors.ai_conversations import (
     Turn,
     _selected_adapters,
     _timestamp,
+    configured_roots,
     parse_turn,
 )
 from varyz.connectors.base import expand
@@ -38,6 +39,30 @@ MAX_LINE_BYTES = 2_000_000
 MAX_FILE_BYTES = 256_000_000
 MAX_STATEMENTS = 60
 MISSING = MINED_QUALIFIER
+STOPPED = "Stopped before finishing: the agent's usage ran out; continue from its last step"
+# The notice a client writes in place of a reply when the plan's usage runs out.
+# Claude Code: "You've hit your session limit · resets 7:50pm"; the API: "Credit
+# balance is too low". A short message only: a reply about limits is not one.
+_USAGE_LIMIT = re.compile(
+    r"hit your (?:\w+ )?limit|usage limit (?:reached|exceeded)|reached your usage limit"
+    r"|rate limit reached|credit balance is too low|out of (?:extra )?usage",
+    re.IGNORECASE,
+)
+# A prompt that only says to go on names no task; the session's earlier goal does.
+_VAGUE = re.compile(
+    r"(?:please |ok,? |okay,? )?(?:try again|continue|go on|go ahead|keep going|carry on|"
+    r"proceed|resume|retry|do it|yes|yep|ok|okay|sure|next|again|finish it)"
+    r"(?: please)?[\s.!]*",
+    re.IGNORECASE,
+)
+
+
+def _stopped(text: str) -> bool:
+    return len(text) <= 400 and bool(_USAGE_LIMIT.search(text))
+
+
+def _vague(text: str) -> bool:
+    return len(text.strip()) < 4 or bool(_VAGUE.fullmatch(text.strip()))
 
 
 def _hash(value: str) -> str:
@@ -71,10 +96,12 @@ def privacy_scope(cfg: Config) -> str:
 
 
 def _checkpoint_key(
-    user: SourceTurn, assistant: SourceTurn | None, cfg: Config, method: str
+    user: SourceTurn, assistant: SourceTurn | None, cfg: Config, method: str,
+    stopped: SourceTurn | None = None,
 ) -> str:
     content = (
-        user.reference
+        (stopped.reference if stopped else "")
+        + user.reference
         + redact(user.turn.text)[0]
         + (assistant.reference + redact(assistant.turn.text)[0] if assistant else "")
         + method
@@ -88,7 +115,8 @@ def _checkpoint_key(
 
 
 def _paths(
-    cfg: Config, adapter_id: str | None, only: Path | None = None
+    cfg: Config, adapter_id: str | None, only: Path | None = None,
+    modified_since: float | None = None,
 ) -> Iterator[tuple[Adapter, Path]]:
     options = cfg.connectors.get("ai_conversations", {})
     if approval_scope(cfg) is None:
@@ -102,7 +130,7 @@ def _paths(
     for adapter in selected:
         if adapter_id and adapter.adapter_id != adapter_id:
             continue
-        roots = configured or adapter.roots(home)
+        roots = configured_roots(adapter, configured) if configured else adapter.roots(home)
         for root in roots:
             if not root.is_dir():
                 continue
@@ -118,6 +146,8 @@ def _paths(
                 # One transcript, still only from an approved folder.
                 if only is not None and resolved != only:
                     continue
+                if modified_since is not None and path.stat().st_mtime < modified_since:
+                    break  # newest first: the rest are older still
                 if adapter.adapter_id == "claude_code" and (
                     path.name.startswith("rollout-") or "subagents" in path.parts
                 ):
@@ -163,6 +193,8 @@ def _turns(adapter: Adapter, path: Path, stats: dict[str, Any]) -> Iterator[Sour
             ):
                 continue  # hidden reasoning is never a source statement
             turn = parse_turn(adapter.adapter_id, data, line_number, path, context)
+            if turn is None and adapter.adapter_id == "codex":
+                turn = _codex_stop(data, line_number, context)
             if turn is None:
                 continue
             marker = (turn.session, turn.role, turn.text)
@@ -171,6 +203,37 @@ def _turns(adapter: Adapter, path: Path, stats: dict[str, Any]) -> Iterator[Sour
             seen.add(marker)
             reference = f"{adapter.adapter_id}:{turn.session}:{turn.turn_id}"
             yield SourceTurn(turn, reference, line_number)
+
+
+def _codex_stop(data: dict[str, Any], line_number: int, context: dict[str, str]) -> Turn | None:
+    """Codex's notice that a turn ended because the plan's usage ran out.
+
+    Codex ends the turn with a task_complete event carrying the error, not with
+    a message, so the shared transcript parser skips it; here it becomes the
+    same kind of notice Claude Code writes in place of a reply.
+    """
+    payload = data.get("payload")
+    if (data.get("type") != "event_msg" or not isinstance(payload, dict)
+            or payload.get("type") not in {"task_complete", "error"} or context.get("machine")):
+        return None
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        error = payload
+    message = str(error.get("message") or "")
+    if error.get("codex_error_info") != "usage_limit_exceeded" and not _stopped(message):
+        return None
+    session = context.get("session")
+    if not session:
+        return None
+    return Turn(
+        role="assistant",
+        text=message if _stopped(message) else "You've hit your usage limit.",
+        turn_id=str(payload.get("turn_id") or f"line{line_number}") + ":stop",
+        session=session,
+        occurred=_timestamp(data.get("timestamp") or payload.get("completed_at")),
+        project=context.get("project"),
+        working_directory=context.get("cwd"),
+    )
 
 
 def _statements(text: str, max_length: int = 180) -> list[str]:
@@ -214,7 +277,8 @@ _CHECK = re.compile(
 )
 _DONE = re.compile(
     r"\b(?:added|built|fixed|implemented|installed|deployed|published|created|updated|"
-    r"removed|changed|enabled|completed|finished|shipped|submitted|now|done|ready)\b",
+    r"removed|changed|enabled|completed|finished|shipped|submitted|drafted|wrote|written|"
+    r"merged|renamed|moved|now|done|ready)\b",
     re.I,
 )
 
@@ -312,9 +376,15 @@ def _report(
     incomplete: bool,
     conn: sqlite3.Connection,
     working: list[SourceTurn] | None = None,
+    project: str | None = None,
+    topic: SourceTurn | None = None,
+    stopped: SourceTurn | None = None,
 ) -> tuple[Checkpoint, str, dict[str, Any]]:
     safe_user, _ = redact(user.turn.text)
     goals = _statements(safe_user, 240)
+    if topic is not None and _vague(user.turn.text):
+        # "continue" after a stop goes on with the session's goal: name that.
+        goals = _statements(redact(topic.turn.text)[0], 240) or goals
     task = (
         goals[0] if goals else "Historical session task; source prompt exceeds the compact limit."
     )
@@ -345,6 +415,9 @@ def _report(
         evidence.append(
             {"field": field, "index": len(fields[field]) - 1, "line": candidate["line"]}
         )
+    if stopped is not None:
+        fields["pending"].insert(0, STOPPED)
+        fields["pending"] = fields["pending"][:5]
     fields["pending"].append(MISSING)
     sources = [*(working or []), *([assistant] if assistant else [])]
     label = SensitivityGate(cfg.sensitivity).label(
@@ -361,11 +434,15 @@ def _report(
     sensitivity: Literal["personal", "sensitive"] = (
         "personal" if str(label) in {"personal", "public"} and not held else "sensitive"
     )
-    occurred = (assistant.turn.occurred if assistant else None) or user.turn.occurred
+    occurred = (
+        (stopped.turn.occurred if stopped else None)
+        or (assistant.turn.occurred if assistant else None)
+        or user.turn.occurred
+    )
     checkpoint = Checkpoint.model_validate({
-        "project": user.turn.project or "unknown",
+        "project": project or user.turn.project or "unknown",
         "conversation_id": user.turn.session,
-        "checkpoint_id": _checkpoint_key(user, assistant, cfg, method),
+        "checkpoint_id": _checkpoint_key(user, assistant, cfg, method, stopped),
         "task": task,
         "status": "working",
         "sensitivity": sensitivity,
@@ -388,6 +465,11 @@ def _report(
         "source_time_unknown": occurred is None,
         "omitted_statements": len(candidates) - len(evidence),
     }
+    if stopped is not None:
+        metadata["stopped"] = "usage_limit"
+        metadata["stop_reference"] = stopped.reference
+    if topic is not None and topic is not user and _vague(user.turn.text):
+        metadata["topic_reference"] = topic.reference
     return checkpoint, iso(occurred) or "0001-01-01T00:00:00Z", metadata
 
 
@@ -404,11 +486,16 @@ def mine(
     select: Callable | None = None,
     permit: Callable[[], bool] | None = None,
     transcript: Path | None = None,
+    folder: Path | None = None,
+    modified_since: float | None = None,
 ) -> dict[str, Any]:
     """Dry-run by default; interrupted files resume via immutable report keys.
 
     ``transcript`` limits the run to that one file, when it lies in an approved
-    folder: the stop-time capture of a single chat.
+    folder: the stop-time capture of a single chat. ``modified_since`` (a Unix
+    time) skips files not written since: the session-start sweep. ``folder`` also
+    counts chats run in that folder as the project, as the hooks name it, when
+    session mining names them after an enclosing checkout.
     """
     if not 1 <= limit <= 1000:
         raise ValueError("limit must be between 1 and 1000 reports")
@@ -465,12 +552,25 @@ def mine(
                 method,
                 VERSION,
                 cfg.sensitivity.model_dump(mode="json"),
+                *([str(folder)] if folder is not None else []),
             ],
             sort_keys=True,
         )
     )
     only = transcript.resolve() if transcript is not None else None
-    for adapter, path in _paths(cfg, adapter_id, only):
+    within = folder.resolve() if folder is not None else None
+
+    def ours(turn: Turn) -> bool:
+        if turn.project and turn.project.casefold() == project.casefold():
+            return True
+        if within is None or not turn.working_directory:
+            return False
+        try:
+            return Path(turn.working_directory).resolve().is_relative_to(within)
+        except (OSError, ValueError):
+            return False
+
+    for adapter, path in _paths(cfg, adapter_id, only, modified_since):
         if paused():
             stats["paused"] = True
             break
@@ -497,14 +597,12 @@ def mine(
                 user: SourceTurn | None,
                 assistant: SourceTurn | None,
                 working: list[SourceTurn],
+                topic: SourceTurn | None = None,
+                stopped: SourceTurn | None = None,
                 adapter: Adapter = adapter,
                 error_start: tuple = error_start,
             ) -> bool:
-                if (
-                    user is None
-                    or not user.turn.project
-                    or user.turn.project.casefold() != project.casefold()
-                ):
+                if user is None or not ours(user.turn):
                     return True
                 if conversation_id and user.turn.session != conversation_id:
                     return True
@@ -525,6 +623,16 @@ def mine(
                     (project.casefold(), user.turn.session,
                      iso(user.turn.occurred), iso(user.turn.occurred)),
                 ).fetchone():
+                    if stopped is not None and apply:
+                        # The agent's own report stands, but it cannot know
+                        # the turn was cut short; the hand-off says so.
+                        from varyz import handoff
+
+                        when = stopped.turn.occurred
+                        handoff.signal(cfg.data_dir, project=project,
+                                       conversation_id=user.turn.session, kind="usage_limit",
+                                       agent=adapter.adapter_id,
+                                       at=when.timestamp() if when else None)
                     return True
                 if paused():
                     stats["paused"] = True
@@ -533,7 +641,7 @@ def mine(
                     stats["limited"] = True
                     return False
                 # Avoid paying inference on a retry that already has a checkpoint.
-                key = _checkpoint_key(user, assistant, cfg, method)
+                key = _checkpoint_key(user, assistant, cfg, method, stopped)
                 if conn.execute(
                     "SELECT 1 FROM session_progress WHERE agent_id=? AND project=? "
                     "AND conversation_id=? AND checkpoint_id=?",
@@ -552,6 +660,9 @@ def mine(
                     incomplete=incomplete,
                     conn=conn,
                     working=working,
+                    project=project,
+                    topic=topic,
+                    stopped=stopped,
                 )
                 if paused():
                     stats["paused"] = True
@@ -580,18 +691,25 @@ def mine(
 
             complete = True
             working: list[SourceTurn] = []
+            topic: SourceTurn | None = None
+            stopped: SourceTurn | None = None
             for source in _turns(adapter, path, stats):
                 if source.turn.role == "user":
-                    if not emit(user, assistant, working):
+                    if not emit(user, assistant, working, topic, stopped):
                         complete = False
                         break
-                    user, assistant, working = source, None, []
+                    if user and not _vague(user.turn.text):
+                        topic = user if user.turn.session == source.turn.session else None
+                    user, assistant, working, stopped = source, None, [], None
                 elif user and source.turn.session == user.turn.session:
+                    if _stopped(source.turn.text):
+                        stopped = source  # the client's notice is not the agent's reply
+                        continue
                     if assistant:
                         working.append(assistant)
-                    assistant = source
+                    assistant, stopped = source, None
             if complete:
-                complete = emit(user, assistant, working)
+                complete = emit(user, assistant, working, topic, stopped)
             after = path.stat()
             stable = (after.st_size, after.st_mtime_ns) == (
                 before.st_size,

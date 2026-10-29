@@ -24,7 +24,7 @@ runner = CliRunner()
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "Embedder", lambda cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda cfg, **_: FakeEmbedder())
     result = runner.invoke(cli.app, ["init"])
     assert result.exit_code == 0, result.output
     return tmp_path
@@ -3058,3 +3058,15 @@ def test_dismissing_a_project_with_nothing_pending_is_done_not_an_error(monkeypa
     done = runner.invoke(cli.app, ["dismiss", "--project", "lumen"])
     assert done.exit_code == 0 and closed == ["e1"]
     assert runner.invoke(cli.app, ["dismiss"]).exit_code == 2
+
+
+def test_search_says_when_nothing_fits_instead_of_listing_guesses(project):
+    """On the test Mac every search listed ten rows, whether any fit or not."""
+    assert runner.invoke(cli.app, ["add", "the alpha launch checklist"]).exit_code == 0
+    result = runner.invoke(cli.app, ["search", "alpha checklist for Zanzibar"])
+    assert result.exit_code == 0, result.output
+    assert "checklist" not in result.output
+    assert "Nothing in the archive fits" in result.output
+    forced = runner.invoke(cli.app, ["search", "alpha checklist for Zanzibar", "--all"])
+    assert forced.exit_code == 0, forced.output
+    assert "checklist" in forced.output

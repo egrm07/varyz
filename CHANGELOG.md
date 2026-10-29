@@ -9,6 +9,118 @@ All notable changes to Varyz are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-29
+
+### Consent (2026-10-29)
+
+- A **Consent** popup now opens before browser setup, with policy sections covering
+  collection, use, recipients, cleaning and withdrawal. **Accept** or the top-right **X** both
+  continue setup; the explicit choice is saved when setup starts. The delayed rules
+  review popup is removed. Opening setup alone preserves an existing sharing choice.
+
+### Added
+
+- **Hand-offs between agents work without Cloud.** Where you left off now comes from
+  this computer's journal for every agent, so Codex can pick up what Claude Code left
+  unfinished (and the other way round) with Cloud off or unreachable. `claim_work`
+  claims a thread on this computer, so two agents never take the same work, and
+  `record_progress` with its `thread_id` closes the thread for everyone. Cloud still
+  adds work from other computers, and the briefing says when that part is old or
+  missing.
+- **Work an agent left when its usage ran out is marked.** When Claude Code stops
+  with "You've hit your session limit", the report keeps the agent's last real
+  reply and says it stopped mid-task. Each new session quietly catches up on the
+  last two days of chats first, since a stopped agent may not have run its stop
+  hook. A follow-up like "continue" keeps the earlier goal as the task. Codex stops
+  are marked too, and so are chats whose last turn the agent had already journaled.
+- **Varyz saves a hand-off before an agent's usage runs out.** It reads how much of
+  each plan is left (Claude Code through its status line, Codex from its chat files).
+  When a chat reaches 5% left, and again at 3%, Varyz saves where it is so another
+  agent can pick it up, and at 10% it asks the agent to journal after every step.
+  The status line says "Varyz: 4% usage left, hand-off saved" only when usage is
+  low, and a status line you already had is kept.
+- **`varyz doctor` shows hand-offs and the usage watch.** It says whether hand-offs
+  work locally, whether Cloud adds other computers, whether the status line is
+  installed and the last usage reading for each agent.
+
+- **Updating needs no restart.** Say "update Varyz" to Claude Code or Codex and keep
+  working. Varyz's tools pause for a minute or two while the new version goes in, then
+  every open agent reconnects to it by itself. On Windows the install runs in the
+  background from outside the agents, so the command returns at once and the agent
+  says when it is done. Agent sessions opened before this change need one restart for
+  the first update; Varyz says so and changes nothing until then. A Mac installer copy
+  still needs its agents closed, since its installer asks for a password.
+
+### Changed
+
+- **Update notices are on by default.** `[update] mode` is now `notify`: Varyz checks
+  once a day on first use and your agent tells you once per new version. Nothing
+  changes until you say "update Varyz" or run `varyz update apply`; `mode = "off"`
+  stops the check.
+
+### Fixed
+
+- **An agent keeps working when its usage runs out.** Claude Code tells an agent near
+  the limit to wrap up and report, and an agent that did so ended its turn, so the
+  desktop app never resumed it after the reset (5 of 5 such sessions waited for the
+  owner to type "continue"). Agents are now told to save the hand-off and keep going
+  until the turn is cut off, which is the case the app resumes by itself. An agent
+  that stops anyway right after that notice is sent back once, with one short line.
+- **Each tool's chat folder is read once.** With chat folders set in `config.toml`,
+  every agent's reader read every folder, so the OpenClaw reader re-read Claude Code
+  and Codex chats (720 duplicate reports) and took Claude Code's usage notice for a
+  task. A folder that belongs to one tool is now read only by that tool, and Claude
+  Code's own usage notes are never taken as the owner's words.
+- **Each chat file is read by its own tool.** All tools shared one reading position
+  per file, so a line one tool read first was never read by the file's own tool: 2
+  of 873 Claude Code messages on this computer existed only as OpenClaw copies. A
+  file in a folder no tool owns now goes to the one tool whose format it has, and
+  its position records which tool that is. The next sync reads every chat file once
+  more to pick up anything missed (about 11 seconds here, with none of 1,023 stored
+  messages changed).
+- **`varyz doctor` answers in about a second.** It used to scan the whole archive for
+  damage first, which took minutes on a large archive with no output, so agents
+  that ran it timed out. The scan now runs in the background at most once a day and
+  doctor shows the last result. `varyz doctor --full` waits for a fresh scan. Damage
+  is left to the owner, never to a repair agent.
+- **Installer copies of Varyz now hear about new releases.** A copy from the Windows or
+  macOS installer was never checked. It now compares itself with GitHub's latest
+  release, and `varyz update apply` downloads this computer's installer and checks it
+  against the release's `SHA256SUMS.txt`. On Windows it is installed silently in the
+  background; on a Mac it is opened. An automatic check never downloads anything.
+- **Fixes from the macOS test of 0.1.5** (an 8 GB M1 with a nearly full disk):
+  - Agents are told to search your history only when the task refers to earlier
+    work, and the policy names the tools that exist. The answer-checking model in
+    `recall` runs on two CPU threads on a Mac instead of every core.
+  - The autosync daemon survives a failed write (a full disk) and a watchdog
+    restarts it. Its log has one line per offline error, no repeated model warning,
+    and rotates at 2 MB.
+  - `varyz doctor` checks Varyz Cloud (storage full, blocked uploads), and a failed
+    background reader is no longer shown as passing. A weekly usage limit reads as a
+    pause, not a fault.
+  - Upgrades move the tool to the release's own Python and prune old release
+    folders and database copies. The data folder, database and config are made
+    readable only by you, and doctor warns when `~/.claude.json` is readable by others.
+  - Prompts after the first in a session carry a short briefing, not the full text.
+  - Repair jobs have a 30 minute limit, are offered at most three times and give one
+    command you can run yourself.
+  - Messages no longer name commands this build lacks. The MCP server answers
+    resource and prompt listings with empty lists. `varyz away status` works without
+    `--task`. Briefings show each writing rule once and keep screen rules out of the
+    text rules. Questions older than a day are not relayed again. Temp and home
+    folders are not treated as projects.
+  - `varyz search` says when nothing fits (`--all` shows the nearest anyway) and
+    stacks its rows in a narrow terminal.
+  - A computer with less than 16 GB of memory is never told to install the local
+    model, and the install refuses there. A lock or claim whose pid now belongs to
+    another program no longer counts as held. The launch agent's PATH holds only the
+    tool folders it needs.
+  - Setup says that agents send the developer short scrubbed reports about Varyz
+    problems, and that `varyz feedback off` stops it. The search model is not
+    downloaded onto a disk without room for it.
+  - Tests skip cleanly outside a git checkout and for retired files run by name,
+    keep only failed tests' temp folders and stop at start when under 2 GB is free.
+
 ## [0.1.5] - 2026-10-26
 
 ### Added

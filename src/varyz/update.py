@@ -1,10 +1,10 @@
-"""Keep this checkout of Varyz on the latest commit of the branch it tracks.
+"""Keep Varyz up to date: say when a new version is out, and install it when asked.
 
 The owner chose this on 2026-09-26: on their own machines Varyz updates itself,
-checking once a day on the first use of the day. Everyone else starts with
-``[update] mode = "off"``: an update check is a network call that can change
-the code, so it waits for the owner to turn it on (the hourly news check in
-``varyz.news`` is the one request Varyz makes on its own by default).
+checking once a day on the first use of the day. On 2026-10-26 they made
+``[update] mode = "notify"`` the default for everyone: the same daily check, and
+the agent tells the user once per new version. Nothing changes until they say
+"update Varyz" (``varyz update apply``). ``mode = "off"`` stops the check.
 
 Only a fast-forward is ever applied. A checkout with local changes, local
 commits, a detached HEAD or no upstream is left exactly as it is. An update
@@ -12,13 +12,24 @@ that brings a database migration backs the database up first and is not
 applied when the backup cannot be written; migrations have no way back. The new
 code must import before it stays: otherwise the checkout returns to the commit
 it came from. A running daemon notices its source changed and restarts on it
-(see ``code_fingerprint``); agents get it with their next session.
+(see ``code_fingerprint``). Open agents need no restart either: each one's
+Varyz connection restarts onto the new code between two requests (see
+``update_worker``).
 
 An installed Varyz (``uv tool install``) is updated by uv from where it was
 installed: GitHub, or the folder it was built from, which is fast-forwarded
 first when it is a clean git checkout. Its connected agents' Varyz files (the
 routing skill, the reader agent, the hook launchers) are refreshed straight
-after, so nobody runs ``varyz connect`` again.
+after, so nobody runs ``varyz connect`` again. On Windows, where open agents
+hold Varyz's files, the install runs in the background from outside them
+(``update_worker``) and the command returns at once.
+
+A Varyz from the release installers is compared with the latest release on
+GitHub. Applying it downloads that release's installer for this computer and
+checks it against the release's ``SHA256SUMS.txt``. On Windows the background
+worker runs it silently; on a Mac it is opened, since it asks for an
+administrator's password. Either way the archive is kept. An automatic check
+never downloads or opens anything.
 
 Every attempt is appended to ``data/autosync/updates.jsonl``. ``varyz update
 pause`` (or the autosync kill switch) stops automatic updates.
@@ -28,9 +39,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import importlib.metadata
 import json
 import os
+import platform
 import shutil
 import sqlite3
 import subprocess
@@ -42,6 +55,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
+
+from varyz import update_worker
 from varyz.config import Config, load_config
 from varyz.db.connection import FileLock
 from varyz.diskspace import free_bytes
@@ -49,6 +65,16 @@ from varyz.domain import iso, local_day, utc_now
 
 # Where Varyz is published while it is not on a package index.
 REPOSITORY = "https://github.com/egrm07/varyz"
+# The latest release, for installs made by the release installers.
+LATEST_RELEASE = "https://api.github.com/repos/egrm07/varyz/releases/latest"
+RELEASES_PAGE = f"{REPOSITORY}/releases/latest"
+RELEASE_DOWNLOADS = f"{REPOSITORY}/releases/download/"
+CHECKSUMS = "SHA256SUMS.txt"
+CHECK_TIMEOUT = 10
+# An installer is about 100 MB; anything far past that is not one.
+MAX_INSTALLER_BYTES = 512 * 1024 * 1024
+# Room left for the download and for the installer's own backups after it.
+MIN_FREE_BYTES = 2 * 1024 * 1024 * 1024
 # The distribution uv installs the `varyz` command from.
 DISTRIBUTION = "varyzai"
 MIGRATIONS = "src/varyz/db/migrations/"
@@ -66,8 +92,11 @@ Step = Callable[[Path], str | None]
 @dataclass(frozen=True)
 class UpdateResult:
     status: str
-    """up_to_date, available, applied, waiting, skipped, failed, paused, busy,
-    off or dry_run."""
+    """up_to_date, available, applied, started, opened, waiting, skipped, failed,
+    paused, busy, off or dry_run. ``started``: the install runs in the background
+    and records its own result (trigger ``background``) when done. ``opened``: a
+    release installer was downloaded and opened; Varyz is replaced when the owner
+    runs it."""
 
     detail: str
     trigger: str = "manual"
@@ -105,6 +134,10 @@ def lock_path(cfg: Config) -> Path:
 
 def backup_path(cfg: Config) -> Path:
     return _dir(cfg) / "pre-update.db"
+
+
+def installers_path(cfg: Config) -> Path:
+    return _dir(cfg) / "installers"
 
 
 def pause(cfg: Config) -> None:
@@ -157,8 +190,16 @@ def maybe_check_on_use(cfg: Config, config_path: Path | None) -> str:
         "--trigger",
         "on-use",
     ]
+    try:
+        _launch(command, config_path.resolve().parent)
+    except OSError:
+        return "launch_failed"
+    return "started"
+
+
+def _launch(command: list[str], cwd: Path) -> None:
     kwargs: dict[str, Any] = {
-        "cwd": str(config_path.resolve().parent),
+        "cwd": str(cwd),
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
@@ -166,14 +207,18 @@ def maybe_check_on_use(cfg: Config, config_path: Path | None) -> str:
     if sys.platform == "win32":
         # A hidden console, not DETACHED_PROCESS: a process with no console at
         # all makes every console tool it runs open a terminal window of its own.
-        kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        flags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            # Out of the caller's job where it allows that: an agent's shell may
+            # end its job, and all it started, when the command returns.
+            subprocess.Popen(command, **kwargs, creationflags=flags | int(
+                getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)))
+            return
+        except OSError:
+            kwargs["creationflags"] = flags
     else:
         kwargs["start_new_session"] = True
-    try:
-        subprocess.Popen(command, **kwargs)
-    except OSError:
-        return "launch_failed"
-    return "started"
+    subprocess.Popen(command, **kwargs)
 
 
 def checkout_root() -> Path | None:
@@ -209,6 +254,8 @@ def run(
         return UpdateResult("off", "Updates are off: [update] mode = \"off\"", **base)
     if is_paused(cfg):
         return UpdateResult("paused", "Kill switch is engaged: varyz update resume", **base)
+    if update_worker.updating(cfg.data_dir):
+        return UpdateResult("busy", "Varyz is installing an update right now", **base)
     if apply is None:
         apply = cfg.update.mode == "auto"
     lock = FileLock(lock_path(cfg))
@@ -234,6 +281,8 @@ def run(
             )
             if result.status == "applied":
                 _refresh_agents(config_path, sys.executable)
+                # Open agent connections restart onto the new code between requests.
+                update_worker.record_installed(cfg.data_dir, base["checked_at"])
         if not dry_run:
             _record(cfg, result, now)
         return result
@@ -359,7 +408,7 @@ def describe_source(source: dict[str, Any] | None) -> str:
     if source.get("directory"):
         return f"installed from the folder {source['directory']}"
     if (source.get("url") or source.get("path") or "").split("?", 1)[0].endswith(".whl"):
-        return "installed from a downloaded release wheel"
+        return "installed by the release installer"
     return "installed from a package index"
 
 
@@ -525,10 +574,9 @@ def _run_installed(
             **base,
         )
     if (source.get("url") or source.get("path") or "").split("?", 1)[0].endswith(".whl"):
-        return UpdateResult(
-            "skipped", "Installed from a downloaded release. Use the next verified release "
-            "installer to upgrade; this installation does not use a package-index update.", **base,
-        )
+        # Never a package-index update: the release installers own this install.
+        return _run_release(cfg, base, apply=apply, dry_run=dry_run, automatic=automatic,
+                            config_path=config_path)
     found: dict[str, Any] = dict(base)
     folder: Path | None = None
     backed_up: str | None = None
@@ -578,7 +626,9 @@ def _run_installed(
         return UpdateResult("dry_run", f"{verb}: {brings}", **found)
     if not apply:
         return UpdateResult("available", f"{brings}: varyz update apply", **found)
-    if automatic and _libraries_locked_while_loaded():
+    locked = _libraries_locked_while_loaded()
+    if locked and automatic and (_uv() is None or update_worker.base_python(
+            Path(sys.prefix)) is None):
         return UpdateResult(
             "waiting",
             f"{brings} waiting: open agent sessions hold the installed Varyz. Close "
@@ -592,19 +642,371 @@ def _run_installed(
             return UpdateResult(
                 "skipped", f"{brings} waiting: the database backup failed: {error}", **found
             )
-    if (error := _reinstall()) is not None:
-        return UpdateResult("failed", f"Could not install {brings}: {error}", backup=backup,
-                            **found)
-    if (error := _starts()) is not None:
-        return UpdateResult(
-            "failed", f"The new Varyz does not start ({error}); install it again",
-            backup=backup, **found,
+    if locked:
+        uv = _uv()
+        handed = None if uv is None else _hand_over(
+            cfg, config_path, [uv, "tool", "upgrade", DISTRIBUTION, "--reinstall"],
+            what="uv", brings=brings, found=found, backup=backup,
         )
+        if handed is not None:
+            return handed
+        if automatic:
+            return UpdateResult(
+                "waiting",
+                f"{brings} waiting: open agent sessions hold the installed Varyz. Close "
+                "them, then run: varyz update apply",
+                backup=backup, **found,
+            )
+    # Agent connections pause while the files change, then restart onto them.
+    with update_worker.holding(cfg.data_dir):
+        error = _reinstall()
+        if error is not None:
+            return UpdateResult("failed", f"Could not install {brings}: {error}",
+                                backup=backup, **found)
+        if (error := _starts()) is not None:
+            return UpdateResult(
+                "failed", f"The new Varyz does not start ({error}); install it again",
+                backup=backup, **found,
+            )
+        update_worker.record_installed(cfg.data_dir, base["checked_at"])
     _refresh_agents(config_path, sys.executable)
     return UpdateResult(
         "applied",
-        f"Installed {brings} and refreshed the connected agents; restart them to load it",
+        f"Installed {brings}. Open agents reconnect to it by themselves; nothing needs "
+        "restarting",
         backup=backup,
+        **found,
+    )
+
+
+def _hand_over(
+    cfg: Config,
+    config_path: Path | None,
+    command: list[str],
+    *,
+    what: str,
+    brings: str,
+    found: dict[str, Any],
+    backup: str | None,
+) -> UpdateResult | None:
+    """Have the update worker install from outside the environment, so open
+    agents need not close. None when this computer cannot."""
+    from uuid import uuid4
+
+    from varyz import background
+    from varyz.install import resolve_config_path
+
+    python = update_worker.base_python(Path(sys.prefix))
+    if python is None:
+        return None
+    try:
+        config = resolve_config_path(config_path)
+    except ValueError:
+        return None
+    environment, launchers = background.install_paths()
+    job: dict[str, Any] = {
+        "id": uuid4().hex,
+        "data_dir": str(cfg.data_dir),
+        "config": str(config),
+        "archive": str(cfg.db_path),
+        "python": sys.executable,
+        "environment": str(environment),
+        "launchers": [str(path) for path in launchers],
+        "command": command,
+        "what": what,
+        "brings": brings,
+        "backup": backup,
+        "found": {key: value for key, value in found.items()
+                  if key not in ("status", "detail", "trigger", "checked_at")},
+    }
+    folder = _dir(cfg) / update_worker.FOLDER
+    try:
+        launch = update_worker.prepare(job, folder, python)
+        # Marked before the worker starts, so a second `update apply` waits for it.
+        update_worker.mark(cfg.data_dir, job["id"])
+        _launch(launch, folder)
+    except OSError as exc:
+        update_worker.clear(cfg.data_dir)
+        return UpdateResult(
+            "failed", f"Could not start the background update: {type(exc).__name__}",
+            backup=backup, **found,
+        )
+    return UpdateResult(
+        "started",
+        f"Installing {brings} in the background. It takes a minute or two; Varyz's "
+        "tools pause meanwhile, then every open agent reconnects to the new Varyz by "
+        "itself. Nothing needs restarting.",
+        backup=backup,
+        **found,
+    )
+
+
+def finish(job_path: Path) -> int:
+    """After the worker's install: record it and bring Varyz back up.
+
+    Runs in the newly installed Varyz. The installed stamp moves before the
+    mark goes, so the agent connections that start then are already the new
+    code and do not restart a second time.
+    """
+    job = json.loads(job_path.read_text(encoding="utf-8"))
+    config_path = Path(job["config"])
+    cfg = load_config(config_path)
+    now = utc_now()
+    found = {**job.get("found", {}), "trigger": update_worker.TRIGGER,
+             "checked_at": iso(now) or ""}
+    outcome = job.get("outcome")
+    if outcome is None and (error := _starts()) is not None:
+        outcome = {"status": "failed",
+                   "detail": f"The new Varyz does not start ({error}); install it again"}
+    if outcome is None:
+        update_worker.record_installed(cfg.data_dir, found["checked_at"])
+        result = UpdateResult(
+            "applied", f"Installed {job['brings']}; open agents reconnected to it by themselves",
+            backup=job.get("backup"), **found,
+        )
+    else:
+        result = UpdateResult(str(outcome["status"]), str(outcome["detail"]),
+                              backup=job.get("backup"), **found)
+    _record(cfg, result, now)
+    update_worker.clear(cfg.data_dir)
+    _bring_back(config_path, refresh=result.status == "applied")
+    return 0
+
+
+def _bring_back(config_path: Path, *, refresh: bool) -> None:
+    """Start what the worker stopped, and point the agents at the new Varyz."""
+    from varyz import autosync
+    from varyz.resolution import availability
+
+    if refresh:
+        with contextlib.suppress(Exception):
+            from varyz.install import refresh_connections_if_changed
+
+            refresh_connections_if_changed(config_path)
+    with contextlib.suppress(Exception):
+        if autosync.is_enabled(load_config(config_path)):
+            autosync.spawn_daemon(config_path)
+    with contextlib.suppress(Exception):
+        availability.check_once(config_path)
+
+
+def installed_version() -> str:
+    try:
+        return importlib.metadata.version(DISTRIBUTION)
+    except importlib.metadata.PackageNotFoundError:
+        from varyz import __version__
+
+        return __version__
+
+
+def _version(text: str) -> tuple[int, ...] | None:
+    """A release number such as 0.1.5; None for anything else (a pre-release)."""
+    parts = text.split(".")
+    if not 1 < len(parts) < 5 or not all(part.isdigit() for part in parts):
+        return None
+    numbers = tuple(int(part) for part in parts)
+    return numbers + (0,) * (4 - len(numbers))
+
+
+def installer_name(version: str) -> str | None:
+    """This computer's release installer, as releases name it; None when none is made."""
+    machine = platform.machine().lower()
+    if sys.platform == "win32" and machine in ("amd64", "x86_64", "arm64"):
+        # Windows on Arm runs the x64 installer.
+        return f"VaryzSetup-{version}-windows-x64.exe"
+    if sys.platform == "darwin" and machine in ("arm64", "x86_64"):
+        return f"VaryzSetup-{version}-macos-{machine}.pkg"
+    return None
+
+
+def _user_agent() -> dict[str, str]:
+    from varyz import __version__
+
+    return {"User-Agent": f"Varyz/{__version__}"}
+
+
+def _http_get(url: str) -> bytes:
+    response = httpx.get(
+        url, timeout=CHECK_TIMEOUT, follow_redirects=True, headers=_user_agent()
+    )
+    response.raise_for_status()
+    if len(response.content) > 1024 * 1024:
+        raise ValueError("the response is over 1 MB")
+    return response.content
+
+
+def _download(url: str, target: Path, expected: str) -> None:
+    """Download to a part file, kept only when its SHA-256 is the expected one."""
+    part = target.with_name(target.name + ".part")
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with (
+            httpx.stream(
+                "GET",
+                url,
+                timeout=httpx.Timeout(CHECK_TIMEOUT, read=60),
+                follow_redirects=True,
+                headers=_user_agent(),
+            ) as response,
+            part.open("wb") as handle,
+        ):
+            response.raise_for_status()
+            for chunk in response.iter_bytes():
+                size += len(chunk)
+                if size > MAX_INSTALLER_BYTES:
+                    raise ValueError("the download is far larger than an installer")
+                digest.update(chunk)
+                handle.write(chunk)
+        if digest.hexdigest() != expected:
+            raise ValueError("its checksum does not match the release's")
+        os.replace(part, target)
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def _open(path: Path) -> None:
+    """Hand the installer to the system, as a double click would."""
+    if sys.platform == "win32":
+        os.startfile(path)  # type: ignore[attr-defined]  # exists on Windows only
+    else:
+        subprocess.run(
+            ["open", str(path)], check=True, capture_output=True, timeout=GIT_TIMEOUT,
+            stdin=subprocess.DEVNULL,
+        )
+
+
+def _sha256(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _checksums(text: str) -> dict[str, str]:
+    """`sha256sum` lines: the digest, two spaces, the file name."""
+    sums: dict[str, str] = {}
+    for line in text.splitlines():
+        digest, _, name = line.strip().partition("  ")
+        if len(digest) == 64 and name:
+            sums[name.lstrip("*")] = digest.lower()
+    return sums
+
+
+def _run_release(
+    cfg: Config, base: dict[str, Any], *, apply: bool, dry_run: bool, automatic: bool,
+    config_path: Path | None = None,
+) -> UpdateResult:
+    """Compare a release install with the latest release; applying installs it on
+    Windows and opens its installer elsewhere."""
+    current = installed_version()
+    try:
+        release = json.loads(_http_get(LATEST_RELEASE))
+    except (httpx.HTTPError, OSError, ValueError) as exc:
+        return UpdateResult(
+            "failed", f"Could not reach GitHub for the latest release: {type(exc).__name__}",
+            **base,
+        )
+    if not isinstance(release, dict):
+        release = {}
+    tag = str(release.get("tag_name") or "")
+    latest = tag.removeprefix("v")
+    newest = _version(latest)
+    if newest is None or release.get("draft") or release.get("prerelease"):
+        return UpdateResult(
+            "failed", f"The latest release has no usable version: {tag!r}", **base
+        )
+    found = {**base, "current": current, "target": latest}
+    have = _version(current)
+    if have is not None and newest <= have:
+        return UpdateResult("up_to_date", f"On the latest release, Varyz {current}", **found)
+    name = installer_name(latest)
+    if name is None:
+        return UpdateResult(
+            "available",
+            f"Varyz {latest} is out (this is {current}). No installer is made for this "
+            f"computer; get it from {RELEASES_PAGE}",
+            **found,
+        )
+    silent = _libraries_locked_while_loaded()
+    if dry_run:
+        verb = ("Would download and run" if silent else "Would download and open"
+                ) if apply else "Available:"
+        return UpdateResult("dry_run", f"{verb} the Varyz {latest} installer", **found)
+    if not apply or automatic:
+        return UpdateResult(
+            "available",
+            f"Varyz {latest} is out (this is {current}). `varyz update apply` downloads "
+            f"its installer and {'installs it' if silent else 'opens it'}",
+            **found,
+        )
+    assets = {
+        str(asset.get("name")): str(asset.get("browser_download_url") or "")
+        for asset in release.get("assets") or []
+        if isinstance(asset, dict)
+    }
+    links = {key: assets.get(key, "") for key in (name, CHECKSUMS)}
+    if not all(link.startswith(RELEASE_DOWNLOADS) for link in links.values()):
+        return UpdateResult(
+            "failed",
+            f"The Varyz {latest} release has no {name} with a checksum; get it from "
+            f"{RELEASES_PAGE}",
+            **found,
+        )
+    try:
+        expected = _checksums(_http_get(links[CHECKSUMS]).decode("utf-8")).get(name)
+    except (httpx.HTTPError, OSError, ValueError) as exc:
+        return UpdateResult(
+            "failed", f"Could not read the release's checksums: {type(exc).__name__}", **found
+        )
+    if expected is None:
+        return UpdateResult("failed", f"{CHECKSUMS} does not list {name}", **found)
+    folder = installers_path(cfg)
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / name
+    if not (target.is_file() and _sha256(target) == expected):
+        free = free_bytes(folder)
+        if free is not None and free < MIN_FREE_BYTES:
+            return UpdateResult(
+                "skipped",
+                f"Varyz {latest} waiting: {free // 1_048_576} MiB free is too little to "
+                "download and run its installer",
+                **found,
+            )
+        try:
+            _download(links[name], target, expected)
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
+            return UpdateResult(
+                "failed", f"Could not download the Varyz {latest} installer: {reason}", **found
+            )
+    # An older installer is no use once a newer one is here.
+    for old in folder.glob("VaryzSetup-*"):
+        if old.name != name:
+            old.unlink(missing_ok=True)
+    if silent:
+        log = _dir(cfg) / update_worker.FOLDER / "installer.log"
+        handed = _hand_over(
+            cfg, config_path,
+            [str(target), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
+             f"/LOG={log}"],
+            what=f"the Varyz {latest} installer", brings=f"Varyz {latest}", found=found,
+            backup=None,
+        )
+        if handed is not None:
+            return handed
+    try:
+        _open(target)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return UpdateResult(
+            "failed",
+            f"Downloaded {target} but could not open it ({type(exc).__name__}); open it "
+            "yourself",
+            **found,
+        )
+    return UpdateResult(
+        "opened",
+        f"Opened the Varyz {latest} installer ({target}). Close your AI agents before you "
+        "click Install; it keeps your archive, settings and connected agents. Restart the "
+        "agents afterwards.",
         **found,
     )
 
@@ -779,30 +1181,50 @@ def announced_path(cfg: Config) -> Path:
 
 
 def agent_notice(cfg: Config) -> str | None:
-    """An update an automatic check found and nobody has told the owner about yet.
+    """An update nobody has told the owner about yet: one a check found, or the
+    end of one installed in the background.
 
     `notify` mode used to record what it found in update.json only, where no one
     looked. The ``user-prompt`` hook hands this line to the owner's agent, once per
     new version; a check the owner ran by hand (``varyz update check``) already
-    told them, so it is never repeated.
+    told them, so it is never repeated. A background install ends after the
+    command that started it returned, so its result is told once as well.
     """
     state = load_state(cfg)
     target = state.get("target")
-    if state.get("status") not in ("available", "waiting") or state.get("trigger") == "manual":
+    status, trigger = state.get("status"), state.get("trigger")
+    finished = trigger == update_worker.TRIGGER
+    if finished:
+        key, value = "finished", state.get("checked_at")
+    elif status in ("available", "waiting") and trigger != "manual":
+        key, value = "target", target
+    else:
         return None
-    if not isinstance(target, str) or not target or is_paused(cfg):
+    if not isinstance(value, str) or not value or is_paused(cfg):
         return None
     try:
-        told = json.loads(announced_path(cfg).read_text(encoding="utf-8")).get("target")
-    except (OSError, json.JSONDecodeError, AttributeError):
-        told = None
-    if told == target:
+        told = json.loads(announced_path(cfg).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        told = {}
+    told = told if isinstance(told, dict) else {}
+    if told.get(key) == value:
         return None
     path = announced_path(cfg)
     temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
-    temporary.write_text(json.dumps({"target": target}) + "\n", encoding="utf-8")
+    temporary.write_text(json.dumps({**told, key: value}) + "\n", encoding="utf-8")
     os.replace(temporary, path)
     detail = " ".join(str(state.get("detail", "")).split())[:300]
+    if finished and status == "applied":
+        return (
+            f"Varyz finished updating{f' to {target}' if target else ''} in the background "
+            "and its tools are back. Tell the user in one short line, once; nothing needs "
+            "restarting."
+        )
+    if finished:
+        return (
+            "Varyz's background update did not finish. Tell the user in one short line, "
+            f"once, in plain words: {detail}"
+        )
     return (
         "A Varyz update is ready for the user. End your reply with it in one short line, "
         "once: they can say \"update Varyz\" or run `varyz update apply`. What the check "
@@ -825,7 +1247,9 @@ def doctor_detail(cfg: Config) -> tuple[bool, str]:
         return True, f"{mode}, paused{last}"
     root = checkout_root()
     where = f"checkout {root}" if root else describe_source(install_source())
-    return state.get("status") != "failed", f"{mode}, daily on first use, {where}{last}"
+    return state.get("status") != "failed", (
+        f"{mode} ([update] mode), daily on first use, {where}{last}"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -833,7 +1257,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--trigger", default="on-use")
     parser.add_argument("--refresh-connections", action="store_true")
+    parser.add_argument("--finish", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.finish is not None:
+        return finish(args.finish)
     if args.refresh_connections:
         from varyz.install import refresh_connections
 

@@ -485,8 +485,9 @@ def instructions_block(client: str) -> str:
         "must not prevent repair. Keep working on the owner's task and answer normally "
         "without waiting for repair. Leave the repair subagent running after your "
         "response or task completion; never cancel or interrupt it just because the "
-        "main turn ends. Repairs continue until verified recovery or a concrete "
-        "owner-action blocker, with no ten-minute or single-pass cutoff. Renew the "
+        "main turn ends. Repairs continue until verified recovery, a concrete "
+        "owner-action blocker or the job's time limit; when the client denies a "
+        "command, stop and give the owner the job's one-line command. Renew the "
         "repair job lease as its prompt directs so another session cannot duplicate "
         "the active repair. Tell the owner one "
         "short note when repair starts and one with the verified result or required "
@@ -566,11 +567,13 @@ def refresh_managed_instructions(
             continue
         try:
             destination = instructions_destination(client, path)
+            if destination is None:
+                continue
             existing = destination.read_text(encoding="utf-8") if destination.exists() else ""
             if client == CODEX_CLIENT:
                 entry = _codex_server(path)
             else:
-                entry = (_load(path).get("mcpServers") or {}).get(SERVER_KEY)
+                entry = ((_load(path) or {}).get("mcpServers") or {}).get(SERVER_KEY)
             registered = registered_archive(entry)
             if registered is not None and not same_archive(registered, resolved):
                 continue
@@ -1148,20 +1151,39 @@ def install_agent_hooks(
         changed = merge_hooks(data, commands)
     except ValueError as exc:
         return False, f"hooks not installed: {exc}"
-    if not changed:
+    # Claude Code tells only a status line how much of its usage is left.
+    line = client == "claude-code" and _merge_statusline(data, config_path, dry_run=dry_run)
+    if not changed and not line:
         return False, "briefing hooks already installed"
     if dry_run:
-        return False, "would install briefing hooks"
+        return False, "would install briefing hooks" + (" and the usage status line"
+                                                        if line else "")
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     if settings_path.exists():
         shutil.copyfile(
             settings_path, settings_path.with_suffix(settings_path.suffix + ".varyz-backup")
         )
     write_client_config(settings_path, data)
-    detail = "install briefing hooks"
+    detail = "install briefing hooks" if changed else "install the usage status line"
     if client == CODEX_CLIENT:
         detail += " (Codex asks you to trust new hooks the first time they run)"
     return True, detail
+
+
+STATUSLINE_SAVED = "statusline-previous.json"
+
+
+def _merge_statusline(data: dict[str, Any], config_path: Path, *, dry_run: bool) -> bool:
+    """Add the usage status line to Claude Code's settings, keeping the owner's own."""
+    from varyz.config import load_config
+    from varyz.usage import merge_statusline
+
+    try:
+        data_dir = load_config(config_path).data_dir
+        return merge_statusline(data, config_path, data_dir,
+                                data_dir / "hooks" / STATUSLINE_SAVED, dry_run=dry_run)
+    except Exception:
+        return False  # the briefing hooks matter more than the usage watch
 
 
 def uninstall_agent_hooks(
@@ -1184,7 +1206,15 @@ def uninstall_agent_hooks(
         if settings_path is None or not settings_path.exists():
             continue
         data = _load(settings_path)
-        if data is None or not remove_hooks(data, folder):
+        if data is None:
+            continue
+        removed = remove_hooks(data, folder)
+        if client == "claude-code":
+            from varyz.usage import remove_statusline
+
+            saved = Path(folder) / STATUSLINE_SAVED
+            removed = remove_statusline(data, saved, dry_run=dry_run) or removed
+        if not removed:
             continue
         if dry_run:
             results.append(InstallResult(client, settings_path, False, "would remove hooks"))
@@ -1396,7 +1426,8 @@ def connected_clients(
             if candidate.parent == folder and candidate.name.startswith("varyz-mcp-"):
                 try:
                     sidecar = Path(command + ".launch").read_text(encoding="utf-8").splitlines()
-                    same_launcher = sidecar == [
+                    # A fourth line, where present, is the update marker's path.
+                    same_launcher = sidecar[:3] == [
                         os.path.abspath(sys.executable), "mcp", str(archive)
                     ]
                 except OSError:

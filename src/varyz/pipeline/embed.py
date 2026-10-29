@@ -140,8 +140,12 @@ class Embedder:
     """Lazy wrapper around fastembed; first use downloads the model (~220MB)
     into data/models."""
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, *, threads: int | None = None):
         self.model_name = cfg.embedding.model
+        # None lets onnxruntime take every core, right for an index build. An
+        # agent's server embeds one question at a time and shares the machine
+        # with every other agent's server.
+        self.threads = threads
         # Internal override for isolated/offline evaluation archives. It points
         # at model weights only, never at another archive or its database.
         self.cache_dir = os.environ.get(
@@ -162,7 +166,9 @@ class Embedder:
                 # fastembed warns about a pooling change vs older releases; we
                 # never embedded with the old behaviour, so it's our baseline.
                 warnings.filterwarnings("ignore", message=".*mean pooling.*")
-                self._model = TextEmbedding(self.model_name, cache_dir=self.cache_dir)
+                self._model = TextEmbedding(
+                    self.model_name, cache_dir=self.cache_dir, threads=self.threads
+                )
         return self._model
 
     def _announce_first_download(self, text_embedding: type) -> None:
@@ -183,11 +189,22 @@ class Embedder:
                 for item in text_embedding.list_supported_models()
                 if item["model"] == self.model_name
             )
-            size = f" (about {round(float(entry["size_in_GB"]) * 1000):,} MB)"
+            needed = int(float(entry["size_in_GB"]) * 1000**3)
+            size = f" (about {round(needed / 1000**2):,} MB)"
         except Exception:
             # A registry that has moved on is a reason to drop the number, not
             # to go back to saying nothing.
-            size = ""
+            needed, size = 0, ""
+        from varyz.diskspace import bytes_label, free_bytes
+
+        # A download cut short by a full disk left a model folder that looked
+        # present on the next run; the test Mac had 2 GB free and less later.
+        free = free_bytes(Path(self.cache_dir))
+        if needed and free is not None and free < 2 * needed:
+            raise OSError(
+                f"the local search model needs about {bytes_label(needed)} and only "
+                f"{bytes_label(free)} is free; free some space and try again"
+            )
         print(
             f"First use: fetching the local search model{size}. This happens once.",
             file=sys.stderr,

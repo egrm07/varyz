@@ -415,6 +415,8 @@ class SetupRun:
                 "The archive is ready. No agent is connected yet: install Claude Code, "
                 "Codex or Cursor, then run setup again."
             )
+        from varyz import feedback
+
         flag = self._config_flag()
         steps = []
         if agents_changed and agent_names:
@@ -448,6 +450,7 @@ class SetupRun:
             "restart": agents_changed and bool(agent_names),
             "connected_agents": list(agent_names or []),
             "privacy": privacy,
+            "feedback": feedback.setup_note(cfg) if agents_connected else None,
             "next": steps,
             # The last step: the agent's first use of varyz reads the owner's past turns.
             "reading": reading and {**reading, "agents": agent_names,
@@ -510,6 +513,8 @@ def print_result(result: dict[str, Any]) -> None:
     console.print("\nNext:")
     for line in result["next"]:
         console.print(f"  {escape(line)}", highlight=False)
+    if result.get("feedback"):
+        console.print("\n" + escape(result["feedback"]), highlight=False)
     reading = result.get("reading")
     if reading:
         agents = " or ".join(reading["agents"])

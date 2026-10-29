@@ -21,7 +21,11 @@ Two things close that gap, both local:
 
 The model is downloaded once, like the embedding model, and runs on an NVIDIA
 card when onnxruntime can reach one (the Windows installer adds DirectML for
-it), else on the CPU.
+it). On the processor it is off unless the owner turns it on: measured on an
+8 GB Apple M1 (2026-10-27), one `recall` took 8-10 s and 25-38 s of CPU, and
+three agents asking at once took up to 60 s each and pushed the load average
+from 4 to 208. When it is on there, it uses two threads, one process at a time
+on the machine, and gives up inside `recall`'s time budget.
 """
 
 from __future__ import annotations
@@ -30,7 +34,10 @@ import os
 import re
 import sys
 import threading
-from contextlib import nullcontext
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -82,6 +89,61 @@ _GPU_PROVIDERS = ("CUDAExecutionProvider", "DmlExecutionProvider")
 # second varyz process leaves it on the processor.
 _GPU_MIB = 2048
 _VRAM_HEADROOM = 0.3
+# On the processor: onnxruntime otherwise takes every core, in every agent's
+# process at once.
+CPU_THREADS = 2
+
+# The moment, on the monotonic clock, after which `score` stops and raises
+# `RerankBudgetSpent`; set per call by `recall` (a context variable, so the
+# daemon's threads each keep their own).
+_DEADLINE: ContextVar[float | None] = ContextVar("varyz_rerank_deadline", default=None)
+
+
+class RerankBudgetSpent(RuntimeError):
+    """The second look ran past the caller's time budget."""
+
+
+@contextmanager
+def deadline(seconds: float | None) -> Iterator[None]:
+    token = _DEADLINE.set(None if seconds is None else time.monotonic() + seconds)
+    try:
+        yield
+    finally:
+        _DEADLINE.reset(token)
+
+
+def _past_deadline() -> bool:
+    limit = _DEADLINE.get()
+    return limit is not None and time.monotonic() > limit
+
+
+@contextmanager
+def machine_slot(cfg: Config) -> Iterator[bool]:
+    """True when this process may run the cross-encoder now.
+
+    Every agent thread has its own MCP process with its own copy of the model;
+    on the processor, one at a time on the machine. A busy slot is not waited
+    for: the caller answers without the second look.
+    """
+    from varyz.db.connection import FileLock
+
+    lock = FileLock(cfg.data_dir / "locks" / "rerank.lock")
+    try:
+        held = lock.acquire()
+    except OSError:
+        held = False
+    try:
+        yield held
+    finally:
+        if held:
+            lock.release()
+
+
+def gpu_reachable() -> bool:
+    try:
+        return _providers() is not None
+    except Exception:  # no onnxruntime, or a driver query that failed
+        return False
 
 
 def _providers() -> list[str] | None:
@@ -122,6 +184,10 @@ class Reranker:
         self._lock = threading.Lock()
 
     @property
+    def on_gpu(self) -> bool:
+        return self._gpu
+
+    @property
     def calibration(self) -> RerankCalibration | None:
         return CALIBRATIONS.get(self.model_name)
 
@@ -150,13 +216,16 @@ class Reranker:
             providers = _providers()
             try:
                 self._model = TextCrossEncoder(
-                    self.model_name, cache_dir=self.cache_dir, providers=providers
+                    self.model_name, cache_dir=self.cache_dir, providers=providers,
+                    threads=None if providers else CPU_THREADS,
                 )
             except Exception:
                 if providers is None:
                     raise
                 # A card the runtime lists but cannot open leaves the processor.
-                self._model = TextCrossEncoder(self.model_name, cache_dir=self.cache_dir)
+                self._model = TextCrossEncoder(
+                    self.model_name, cache_dir=self.cache_dir, threads=CPU_THREADS
+                )
             else:
                 self._gpu = providers is not None
         return self._model
@@ -171,8 +240,15 @@ class Reranker:
         model = self._ensure()
         # On the card, batches of 16 took 121 ms a call against 142 ms for 8.
         batch_size = 16 if self._gpu else 8
+        if _past_deadline():
+            raise RerankBudgetSpent
+        scored: list[float] = []
         with self._lock if self._gpu else nullcontext():
-            scored = list(model.rerank(question, [texts[i] for i in order], batch_size=batch_size))
+            for start in range(0, len(order), batch_size):
+                if _past_deadline():
+                    raise RerankBudgetSpent
+                batch = [texts[i] for i in order[start:start + batch_size]]
+                scored.extend(model.rerank(question, batch, batch_size=batch_size))
         scores = [0.0] * len(texts)
         for i, score in zip(order, scored, strict=True):
             scores[i] = float(score)
@@ -184,7 +260,9 @@ def load_reranker(cfg: Config) -> Reranker | None:
 
     `auto` uses the model only once it is on disk, so an agent's first
     question never stalls behind a gigabyte download; the first index
-    build fetches it (`fetch_reranker`). `on` fetches it on first use.
+    build fetches it (`fetch_reranker`). It also needs a graphics card: on
+    the processor the second look cost a Mac 25-38 s of CPU a question (see
+    the module note). `on` fetches it on first use and runs it anywhere.
     """
     mode = cfg.retrieval.rerank
     if mode == "off":
@@ -192,7 +270,7 @@ def load_reranker(cfg: Config) -> Reranker | None:
     reranker = Reranker(cfg)
     if reranker.calibration is None:
         return None
-    if mode == "auto" and not reranker.is_downloaded():
+    if mode == "auto" and (not reranker.is_downloaded() or not gpu_reachable()):
         return None
     return reranker
 
@@ -206,6 +284,8 @@ def worth_fetching(cfg: Config) -> bool:
     """
     if cfg.retrieval.rerank != "auto":
         return cfg.retrieval.rerank == "on"
+    if not gpu_reachable():  # `auto` would never load it
+        return False
     from varyz.retrieval.judge import load_judge
 
     try:

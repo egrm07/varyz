@@ -197,13 +197,12 @@ task. `[workflows] live_reading = false` turns this off; `live_reading_min_minut
 You do not have to rely on the agent to start that subagent. By default
 (`reader_runner = "auto"`) varyz starts the reader itself, headless, through Claude Code
 (`claude -p`, Haiku) or Codex (`codex exec`, its newest luna model): whichever has more
-of your plan left, with only the two reading tools and no saved transcript. It watches
-your five-hour and weekly limits while it reads. The full backlog runs only while more
-than 30% of the five hours and 25% of the week are left; a live reading while more than
-10% and 5% are. A reader that crosses its limit is stopped, keeps what it submitted, and
-resumes on its own once the window resets. `varyz rules read --status` shows where it is,
-and `varyz rules read --stop` stops it. `varyz rules mine` through a Claude or ChatGPT
-sign-in obeys the same large-reading limits.
+of your plan left, with only the two reading tools and no saved transcript. Your
+five-hour and weekly usage only decides which sign-in reads: low usage never stops or
+delays a reading. If Claude or ChatGPT refuses because a limit is reached, the reader
+stops, keeps what it submitted, and resumes on its own once the window resets.
+`varyz rules read --status` shows where it is, and `varyz rules read --stop` stops it.
+`varyz rules mine` through a Claude or ChatGPT sign-in has no usage limits either.
 
 When varyz cannot run the reader itself, your agent starts it. Connecting adds a short
 marked section to Claude Code's `~/.claude/CLAUDE.md` and Codex's `AGENTS.md` that allows
@@ -235,7 +234,7 @@ would rather type them:
 varyz task "build a landing page"   # what an agent is told
 varyz sources                       # which data sources are connected
 varyz connect github                # add GitHub (asks for a token)
-varyz update apply                  # install the latest Varyz
+varyz update apply                  # install the latest Varyz; agents stay open
 ```
 
 Every command reads `--config`, then `$VARYZ_CONFIG`, then a `config.toml` in the current
@@ -256,17 +255,31 @@ uv tool install git+https://github.com/egrm07/varyz --with onnxruntime-directml 
 
 ### Updating
 
-Ask your agent to update Varyz, or run `varyz update apply`. A copy installed from
+Varyz checks for a new version once a day, on the first use of the day, and your agent
+tells you once per new version. Nothing changes until you ask your agent to update
+Varyz, or run `varyz update apply`. `[update] mode = "off"` stops the check.
+
+Nothing needs closing or restarting. Say "update Varyz" to Claude Code or Codex and
+keep working: Varyz's tools pause for a minute or two while the new version goes in,
+then every open agent reconnects to it by itself. On Windows the install runs in the
+background, so the command returns at once and the agent tells you when it is done.
+
+A copy from the Windows installer gets the latest release, installed silently in the
+background after its checksum is checked against the release's. A Mac installer copy
+downloads and checks the release's installer and opens it, since it asks for your
+password: close your agents, click Install, and open them again. A copy installed from
 GitHub gets the latest commit. A copy installed from a folder gets that folder, pulled
 first when it is a git clone. Before a database migration, the update backs up the
 database. It checks that the new version starts, then refreshes the Varyz files of
 every agent you connected: the routing skill, the hooks and the reader. There is no
-`varyz connect` to run again. Restart the agents to load the new version. The first
-agent session on a new version also refreshes the connected agents, so an update made
-some other way (for example `uv tool upgrade varyzai`) needs nothing more. With
-`[update] mode = "auto"`, Varyz checks once a day on first use and updates itself. On
-Windows it waits for `varyz update apply`, because a running Varyz holds its own files.
-With `notify`, or when `auto` is waiting, your agent tells you once per new version.
+`varyz connect` to run again. The first agent session on a new version also refreshes
+the connected agents, so an update made some other way (for example
+`uv tool upgrade varyzai`) needs nothing more. With `[update] mode = "auto"`, a copy
+from GitHub or a folder also updates itself. An installer copy is only ever announced.
+
+The first update after this change needs one restart of agent sessions opened before
+it: their connection to Varyz was started the old way. Varyz says so when that is the
+case and changes nothing until they are closed.
 
 ### News
 
@@ -318,7 +331,10 @@ skill and the briefing hooks (`SessionStart` starts the daemon if it is down,
 in place, and the previous file is saved as `.varyz-backup`. Codex asks you to trust new
 hooks the first time they run. Turn hooks off with `[agent] briefing_hooks = false`; the
 stop check (`done_gate = true`) is opt-in. `varyz uninstall` removes them.
-`varyz doctor` checks operational state; `varyz doctor --fix` tries a stopped local
+`varyz doctor` checks operational state in about a second. The archive damage scan
+takes minutes on a large archive, so it runs in the background at most once a day and
+doctor shows its last result; `varyz doctor --full` waits for a fresh one.
+`varyz doctor --fix` tries a stopped local
 daemon and reconnects broken agent credentials/hooks, then checks again. It does
 not override pauses, replace another archive's daemon or repair damaged archives.
 Reconnected clients need a restart to load fresh credentials.
@@ -332,8 +348,11 @@ failures. A failure also offers one background repair subagent per archive every
 runs the local fixer, investigates remaining reversible defects and reports a
 verified result or required owner action. The main agent answers and continues
 its work without waiting for repair, and leaves the repair subagent running
-after its own turn ends. Repairs have no ten-minute or single-pass cutoff;
-they continue until verified recovery or a concrete owner-action blocker.
+after its own turn ends. Each repair job works for at most 30 minutes, the same
+failure is offered at most three times, and failures only the owner can fix
+(a full Cloud, a settings file others can read) never start one. When the
+client denies a command the repair needs, the agent stops and hands the owner
+the one command to run instead (`varyz doctor --fix --config PATH`).
 The repair agent renews its lease every five minutes through
 `varyz doctor --repair-job ID --repair-state running --config PATH`, preventing
 duplicate repair offers during long jobs. `fixed` requires a passing doctor
@@ -634,7 +653,7 @@ receipt, or an escalation id.
 | Command | What it does |
 |---|---|
 | `varyz away on/off/status/complete` | Set scoped away mode and review deferred questions; `--task` identifies the task, or explicitly choose `--scope project/all`. |
-| `varyz doctor [--json] [--fix]` | Operational checks for archive, daemon, agent credentials/hooks, sync and reader; `--fix` tries bounded local repairs and verifies. Exits 1 while checks fail. |
+| `varyz doctor [--json] [--fix] [--full]` | Operational checks for archive, daemon, agent credentials/hooks, sync and reader; `--fix` tries bounded local repairs and verifies; `--full` waits for a fresh archive damage scan instead of showing the last background one. Exits 1 while checks fail. |
 | `varyz setup [--terminal] [--dry-run] [--yes] [--source ...]` | First run, and safe to repeat: archive, daemon, agents, data sources, autosync and the local classifier, then GO or NO-GO. Opens as a page in your browser; `--terminal` or any other flag asks in the terminal |
 | `varyz setup --web` | Serve the setup page even where setup finds no browser to open; open the printed link yourself |
 | `varyz sources` | Which data sources are connected, how many items each holds, when it last synced, and how to connect the rest |
@@ -645,7 +664,7 @@ receipt, or an escalation id.
 | `varyz know "question" "answer" [-p project]` | Append owner knowledge, general or one project's |
 | `varyz knowledge list/retract/capture [--apply]` | What varyz knows, withdrawing an answer, and the picks it would record from agents' questions |
 | `varyz autosync install/status/pause/resume/uninstall` | Keep varyz current in the background: a hidden process at login (a Startup entry on Windows, a launchd agent on macOS, a systemd user service on Linux) syncs sources and records decisions every 15 minutes, starting right away; the latest run is in `data/reports/AUTOSYNC_LATEST.md`, failures push to `notify_topic` (ntfy) when set; `pause` is the kill switch |
-| `varyz update status/check/apply/pause/resume` | Bring Varyz up to date: a git checkout to the latest commit of its branch (fast-forward only), an installed copy reinstalled from where it came from (GitHub or its folder). `apply` works any time; automatic checks are off unless `[update] mode` is `notify` or `auto`, and then run once a day on first use. The database is backed up before a migration, new code that fails to import is rolled back or reported, and the connected agents' Varyz files are refreshed. Every attempt is logged in `data/autosync/updates.jsonl` |
+| `varyz update status/check/apply/pause/resume` | Bring Varyz up to date: a git checkout to the latest commit of its branch (fast-forward only), an installed copy reinstalled from where it came from (GitHub or its folder), an installer copy given the latest release's installer, checked and opened. `apply` works any time; the check runs once a day on first use and your agent says when a version is out (`[update] mode`: `notify` by default, `auto`, or `off`). The database is backed up before a migration, new code that fails to import is rolled back or reported, and the connected agents' Varyz files are refreshed. Every attempt is logged in `data/autosync/updates.jsonl` |
 | `varyz news [off/on/check]` | News from varyzai.com/news, checked once an hour while Varyz is in use and passed on by your agent, each post once. On by default; `off` stops the check and the notices |
 | `varyz cloud promotions [status/off/on]` | Inspect, disable or reset local Cloud-offer dismissal. Offers remain inactive until service launch and integration review; resetting does not enable those gates |
 | `varyz wrapped [--name You] [--dry-run] [--out folder]` | Monthly Varyz Wrapped: your AI type card (your type, how rare it is, and three short lines your agents follow), as two PNGs (yellow and black), previewed before anything is written. The rules page shows it after you save, and once a month your agent shows the card in the chat with one line under it, nothing to run or answer (with news, so `varyz news off` stops it) |
@@ -706,9 +725,9 @@ generations. `data/models` and `data/runtime` may be directory junctions to exis
 read-only assets. If those links are unavailable, `varyz local-model install` (source tree
 only; the alpha leaves it out) can download assets into this tree.
 
-The alpha needs no API key and no network at runtime. On its own it makes one request:
-the hourly news check (`varyz news off` stops it), plus the update check if you turn that
-on. The daemon binds to `127.0.0.1` by default. Notifications carry only an escalation id and urgency; question text stays inside
+The alpha needs no API key and no network at runtime. On its own it makes two requests:
+the hourly news check (`varyz news off` stops it), plus the daily update check
+(`[update] mode = "off"` stops it). The daemon binds to `127.0.0.1` by default. Notifications carry only an escalation id and urgency; question text stays inside
 an authenticated local surface. Sensitive and unclassified content fails closed.
 The personal archive is sensitive by source, and so is anything an older archive still holds
 from the chat apps varyz no longer reads; your turns to coding agents are not, and any entry naming a therapist, a diagnosis, a
@@ -789,14 +808,13 @@ The installer tests compare these copies with their source scripts byte for byte
 
 ## The Varyz network (opt-in, 2026-10-18)
 
-One popup, **Join the Varyz network**, governs everything Varyz sends. Its one button,
-**Share anonymized data**, shares daily usage counts and anonymized examples of how you
-correct your agents (questions, answers, corrections and kept or rejected rules) created
-after you opt in. The small x, or Escape, means no. Setup starts with sharing off and does
-not show it: the popup appears when you first save a rules review after your first 3
-conversations and 24 hours with Varyz, and after a no it is offered again at most once,
-30 days later. Terminal setup asks the same question with a default-no prompt, and
-`setup --yes` never enables it.
+**Consent opens as a popup before browser setup (2026-10-29).** It explains the data,
+purpose, recipients, automatic cleaning and deletion controls, with links to the Privacy
+Policy and Terms. **Accept** allows daily usage counts and anonymized examples created
+after opt-in; the top-right **X** or Escape keeps sharing off. Both continue setup, and the choice is saved
+when setup starts. Opening or abandoning setup does not change an existing grant.
+Rules review no longer asks about sharing. Terminal setup uses the same disclosure with
+a default-no prompt; `setup --yes` never enables sharing.
 
 Examples are scrubbed on your computer first: people, projects, emails, links, paths,
 numbers and handles become placeholders, and anything holding a credential or withheld

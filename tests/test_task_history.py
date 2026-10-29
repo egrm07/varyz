@@ -2,13 +2,15 @@
 """Task briefings retrieve evidence before scope selection, for every account."""
 
 
+import pytest
+
 from varyz.config import Config
 from varyz.db import dao
 from varyz.db.connection import open_db
 from varyz.domain import Kind, NormalizedEntry, Sensitivity
 from varyz.mcp_server import VaryzServer
 from varyz.resolution.briefing import render_markdown, start_task
-from varyz.resolution.task_history import local_history, task_query
+from varyz.resolution.task_history import local_history, preflight, task_query
 from varyz.trust import register_agent
 
 
@@ -45,12 +47,49 @@ def test_local_history_respects_scope_sensitivity_exclusions_and_grant(tmp_path)
 
 def test_rules_only_hook_preflight_survives_partial_rendering(tmp_path):
     with open_db(tmp_path / "db.sqlite") as conn:
-        result = start_task(conn, "Add teams", project="varyz", cwd=tmp_path)
+        result = start_task(conn, "Continue the teams section we discussed", project="varyz",
+                            cwd=tmp_path)
     assert result["history_check"]["status"] == "required"
     text = render_markdown(result, include_protocol=False)
-    assert "even for a small change" in text
-    assert "history has not been retrieved" in text
+    assert "History before clarification" in text
+    assert "has not been retrieved" in text
+    # The tools it names are ones the local server has.
+    assert "`session_history`" in text and "`recall` (limit 3)" in text
     assert task_query('Add Teams OR "billing" to varyz', "varyz") == "teams billing"
+
+
+@pytest.mark.parametrize("task", [
+    "Evaluate this job posting link https://example.com/jobs/123",
+    "Add teams",
+    "Write a function that parses ISO dates",
+    "Оцени эту вакансию по ссылке",
+    "Сделай кнопку синей",
+])
+def test_a_task_that_does_not_point_back_needs_no_history_search(tmp_path, task):
+    with open_db(tmp_path / "db.sqlite") as conn:
+        result = start_task(conn, task, project="varyz", cwd=tmp_path)
+    assert result["history_check"]["status"] == "optional"
+    text = render_markdown(result, include_protocol=False)
+    assert "History before clarification" not in text
+    assert "Status: required" not in text
+
+
+@pytest.mark.parametrize("task", [
+    "Continue where we left off on the installer",
+    "What did we decide about pricing last week?",
+    "Do it as we discussed yesterday",
+    "Продолжи то, что мы обсуждали вчера",
+    "Как мы договорились, поменяй цены",
+    "Помнишь, что мы решили про установщик?",
+])
+def test_a_task_that_points_back_requires_history(task):
+    assert preflight(task, "varyz")["status"] == "required"
+
+
+def test_russian_scaffolding_stays_out_of_the_history_query():
+    assert task_query("Пожалуйста, сделай кнопку оплаты для проекта", "varyz") == (
+        "кнопку оплаты для проекта")
+    assert "мне" not in task_query("Помоги мне с установщиком", None).split()
 
 
 def test_authenticated_local_start_task_includes_history_before_any_ask(tmp_path, monkeypatch):

@@ -192,14 +192,27 @@ def test_the_source_tree_still_offers_the_personal_model_and_the_graph():
     assert {"lookup", "interpret"} <= {t["name"] for t in mcp_server.TOOLS}
 
 
-def test_the_source_tree_still_offers_the_model_installer():
-    from varyz import cli
+def test_the_source_tree_still_offers_the_model_installer(monkeypatch):
+    from varyz import cli, setup_machine
     from varyz.config import GraphConfig
     from varyz.llm.local_runtime import install_hint
 
+    monkeypatch.setattr(setup_machine, "memory", lambda system: (32 * 1024**3, None))
     assert {"install", "status"} == {i.name for i in cli.local_model_app.registered_commands}
     assert install_hint() == "run: varyz local-model install"
     assert GraphConfig().extractor == "contextual_facets"
+
+
+def test_a_computer_too_small_for_the_model_is_never_told_to_install_it(monkeypatch):
+    """The 8 GB test Mac was told to install the 12B model."""
+    from varyz import setup_machine
+    from varyz.llm.local_runtime import install_hint
+
+    monkeypatch.setattr(setup_machine, "memory", lambda system: (8 * 1024**3, None))
+    hint = install_hint()
+    assert "8 GB of memory" in hint and "local-model install" not in hint
+    monkeypatch.setattr(setup_machine, "memory", lambda system: (None, None))
+    assert "local-model install" in install_hint()
 
 
 # The calls that download the managed model or its runtime.

@@ -24,6 +24,8 @@ from varyz.resolution.ollama_setup import binary_version
 
 CREATE_NO_WINDOW = 0x08000000
 DETACHED_PROCESS = 0x00000008
+# Taken before conftest stubs it out, so the real launch can be checked here.
+REAL_UPDATE_LAUNCH = update._launch
 
 
 @pytest.fixture
@@ -63,6 +65,7 @@ def test_on_use_refresh_runs_on_a_hidden_console(cfg, windows_flags, monkeypatch
 
 def test_update_check_runs_on_a_hidden_console(cfg, windows_flags, monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(update, "_launch", REAL_UPDATE_LAUNCH)
     cfg.update.mode = "auto"
     assert update.maybe_check_on_use(cfg, _config_file(cfg)) == "started"
     assert _hidden_console(windows_flags[0])

@@ -223,6 +223,7 @@ def test_the_listing_is_read_with_a_timeout_and_must_name_the_weights(monkeypatc
 
 def test_the_models_wanted_follow_the_config(cfg, monkeypatch):
     monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: object())
+    monkeypatch.setattr("varyz.retrieval.rerank.gpu_reachable", lambda: True)
     repos = [want.repo for want in wanted_models(cfg)]
     assert repos == [
         "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q", "BAAI/bge-reranker-base",
@@ -232,6 +233,11 @@ def test_the_models_wanted_follow_the_config(cfg, monkeypatch):
     monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: None)
     assert [want.repo for want in wanted_models(cfg)] == repos[:1]
     monkeypatch.setattr("varyz.retrieval.judge.load_judge", lambda cfg: object())
+
+    # No card (every Mac): `auto` would never run it, so it is not fetched.
+    monkeypatch.setattr("varyz.retrieval.rerank.gpu_reachable", lambda: False)
+    assert [want.repo for want in wanted_models(cfg)] == repos[:1]
+    monkeypatch.setattr("varyz.retrieval.rerank.gpu_reachable", lambda: True)
 
     cfg.retrieval.rerank = "off"
     assert [want.repo for want in wanted_models(cfg)] == repos[:1]

@@ -275,7 +275,7 @@ def test_source_import_callback_precedes_model_download(config_file, monkeypatch
     monkeypatch.setattr(
         cli, "_fetch_search_models", lambda *a: events.append("download") or "ready"
     )
-    monkeypatch.setattr(cli, "Embedder", lambda cfg: None)
+    monkeypatch.setattr(cli, "Embedder", lambda cfg, **_: None)
     monkeypatch.setattr(cli, "embed_pending", lambda *a, **kw: events.append("embed") or 0)
     assert (
         cli._sync_sources(cfg, ("ai_conversations",), on_read=lambda: events.append("offer")) == []

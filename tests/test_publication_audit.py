@@ -32,6 +32,23 @@ def _load():
 audit = _load()
 
 
+def _git_checkout() -> bool:
+    import subprocess
+
+    try:
+        return subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["git", "-C", str(ROOT), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, timeout=30, check=False,
+        ).stdout.strip() == "true"
+    except OSError:
+        return False
+
+
+# A release copy (the test Mac's) is not a git checkout: there is nothing to audit.
+needs_git = pytest.mark.skipif(not _git_checkout(),
+                               reason="not a git checkout: git ls-files has nothing to list")
+
+
 def test_empty_candidate_index_cannot_pass_publication_gate(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["audit_publication", "--without-archive", "--gate"])
     monkeypatch.setattr(audit, "tracked_files", lambda paths: [])
@@ -282,6 +299,7 @@ def _run_without_archive(tmp_path, extra=()):
     return done, out
 
 
+@needs_git
 def test_the_marks_half_runs_without_the_archive(tmp_path):
     """The half a clean machine can run.
 
@@ -304,6 +322,7 @@ def test_the_marks_half_runs_without_the_archive(tmp_path):
     assert any(file["marks"] for file in payload["findings"].values())
 
 
+@needs_git
 def test_the_run_says_it_did_not_look_at_the_archive(tmp_path):
     """A clean exit here must not read as 'the repository quotes nothing'."""
 

@@ -48,7 +48,7 @@ class StorageConfig(Settings):
 
 # Abstention thresholds measured per embedding model: the distance below which
 # a passage still answers the question. Derived on a golden set's dev split and
-# confirmed on its held_out split — see reports/RETRIEVAL_BASELINE_2026-07-31.md.
+# confirmed on its held_out split â€” see reports/RETRIEVAL_BASELINE_2026-07-31.md.
 # A model absent from this table has no measured value, and none is invented.
 CALIBRATED_ABSTAIN_DISTANCE = {
     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": 4.4,
@@ -57,7 +57,7 @@ CALIBRATED_ABSTAIN_DISTANCE = {
 # How large the corpus was when that number was measured, and the reason the
 # number is not as absolute as it looks. The distance being compared is a
 # *minimum* over the whole index, and the minimum of a smaller sample is
-# systematically larger — so a threshold read off one corpus quietly encodes
+# systematically larger â€” so a threshold read off one corpus quietly encodes
 # that corpus's size, and applying it to a smaller one abstains on questions
 # the corpus can answer perfectly well.
 #
@@ -72,8 +72,8 @@ CALIBRATED_ABSTAIN_DISTANCE = {
 #
 # A user who installs varyz and indexes one project folder lands at the bottom
 # of that table, where the tool refuses most of what it could answer. That is
-# the worse failure — a weak result is visible and correctable, a withheld one
-# is neither — so below the floor, abstention turns itself off.
+# the worse failure â€” a weak result is visible and correctable, a withheld one
+# is neither â€” so below the floor, abstention turns itself off.
 # The other end of the same drift, measured 2026-08-30 on a 53,910-vector
 # archive: the threshold does not merely loosen, the signal it reads goes away.
 # `evaluate_retrieval.py --calibrate` on that corpus reports NO SEPARATING
@@ -88,16 +88,16 @@ CALIBRATION_CORPUS_VECTORS = 11_389
 # where one ingested file decides whether abstention runs at all.
 MIN_CORPUS_VECTORS_FOR_ABSTENTION = 3_800
 
-# Below that floor the fallback is lexical coverage — the share of a question's
-# content words that appear anywhere in the index — which was measured on a
+# Below that floor the fallback is lexical coverage â€” the share of a question's
+# content words that appear anywhere in the index â€” which was measured on a
 # 247-vector corpus and separates answerable from unanswerable cleanly there:
 # 9/9 answered, 8/8 refused.
 #
 # It is less size-dependent than distance but not free of it: a corpus of three
 # notes contains the vocabulary of no question, on-topic or not, so every
 # question scores near zero and every question would be refused. So the lexical
-# gate needs a floor of its own. Two points are measured — it works at 247
-# vectors and refuses everything at ~10 — and nothing in between, so this is
+# gate needs a floor of its own. Two points are measured â€” it works at 247
+# vectors and refuses everything at ~10 â€” and nothing in between, so this is
 # set just below the working one rather than pretending to a precision the two
 # samples do not support. Below it no gate runs at all: an archive that small
 # was installed minutes ago, and refusing everything is the one answer
@@ -252,7 +252,7 @@ class LocalModelConfig(Settings):
     # on a fixed 1,024-token window, so the caches barely grow with the context
     # window but are paid for once per slot: 736 MiB a slot at 16k, against
     # 7,024 MiB of weights. `q8_0` halves that, which is worth 4% less on its own
-    # — dequantising costs more than the spill it avoids — and 14% more once the
+    # â€” dequantising costs more than the spill it avoids â€” and 14% more once the
     # freed memory is spent on two further slots. It is still a change to what
     # the model computes with, so it is opt-in rather than a default.
     # Quantising the value cache requires flash attention, which the CUDA build
@@ -317,7 +317,7 @@ class LocalModelConfig(Settings):
 
 class RetrievalConfig(Settings):
     # `ask` retrieves candidate_k entries locally, then sends AT MOST send_k
-    # short excerpts to the cloud model — never the whole archive.
+    # short excerpts to the cloud model â€” never the whole archive.
     candidate_k: int = 24
     send_k: int = 8
     deep_initial_send_k: int = 12
@@ -337,7 +337,7 @@ class RetrievalConfig(Settings):
     # nothing rather than its least-bad guess.
     #
     # Distance is on the embedding model's own scale, so a number calibrated
-    # for one model is not merely imprecise for another — it is unrelated.
+    # for one model is not merely imprecise for another â€” it is unrelated.
     # Leave this unset and the floor is looked up by model name; a model with
     # no calibration on record disables abstention rather than applying a
     # threshold that has never been measured, because silently discarding real
@@ -346,7 +346,7 @@ class RetrievalConfig(Settings):
     #   uv run python scripts/evaluate_retrieval.py <golden> --calibrate
     abstain_distance: float | None = None
     # A term matching this few entries is an identifier, not a topic. An exact
-    # hit on one is worth answering on even when the vectors are unconvinced —
+    # hit on one is worth answering on even when the vectors are unconvinced â€”
     # nobody types a filename or an error code by accident.
     rare_term_max_entries: int = 20
     # Second look before `recall` answers: a local cross-encoder rereads each
@@ -441,7 +441,7 @@ class GraphConfig(Settings):
     # 6: extraction reads Russian and Spanish as well as English. The version is
     # part of the generation key, so without the bump a rebuild on an unchanged
     # archive is a no-op and the wider reading never lands.
-    # 7: only entries with a speaker reach the model — a document is no longer
+    # 7: only entries with a speaker reach the model â€” a document is no longer
     # read as if its prose were the user's own testimony.
     # 8: a claim's object stops at the clause that follows it. Under 7, "I moved
     # to Lisbon in March 2025 and I have been renting in Alfama since" filed a
@@ -477,7 +477,7 @@ class GraphConfig(Settings):
     # How many activated generations to keep behind the live one, so a bad
     # activation can be rolled back to a graph that was once trusted. Failed
     # runs, abandoned staging runs and anything older are deleted after a
-    # successful rebuild — nothing used to delete them, and thirteen
+    # successful rebuild â€” nothing used to delete them, and thirteen
     # generations had accumulated 485,251 alias rows to serve one live graph.
     keep_generations: int = Field(default=2, ge=1, le=20)
     # Completed job rows are an audit trail with no reader after this long.
@@ -485,7 +485,7 @@ class GraphConfig(Settings):
     prune_on_sync: bool = True
     # Autosync ingests every 15 minutes because ingestion is incremental and
     # cheap. A rebuild is not: three new messages restage the whole archive
-    # into a fresh generation. So the graph follows its own cadence — rebuild
+    # into a fresh generation. So the graph follows its own cadence â€” rebuild
     # once this many entries have accumulated since the live generation was
     # built, or once it is this old, whichever comes first. `varyz graph
     # rebuild` ignores both.
@@ -554,9 +554,9 @@ class OwnerConfig(Settings):
 class AgentConfig(Settings):
     """How an agent reaching varyz through MCP should present what it returns.
 
-    Presentation only. The rules that keep an answer honest — evidence behind
+    Presentation only. The rules that keep an answer honest â€” evidence behind
     every claim, no excerpt passed off as the agent's own conclusion, refusal
-    where the archive says nothing — hold at every setting. See
+    where the archive says nothing â€” hold at every setting. See
     `varyz.agent_style`, which renders this into the MCP handshake and into any
     routing skill installed beside it, and which reads this key without loading
     this model.
@@ -579,6 +579,7 @@ class AgentConfig(Settings):
     # emoji) is sent back once to be corrected. Off by default for the same
     # reason; the briefing and every later prompt carry the writing rules.
     writing_check: bool = False
+
 
 
 class WorkflowsConfig(Settings):
@@ -742,7 +743,7 @@ class AutoSyncConfig(Settings):
     schedule_minutes: int = Field(default=15, ge=5, le=1440)
     # How long one cycle may run before it stops at the next checkpoint. A
     # daemon only re-reads its own source code, and only notices the kill
-    # switch is gone, *between* cycles — one wedged sync here held the write
+    # switch is gone, *between* cycles â€” one wedged sync here held the write
     # lock for 3 h 38 min and had to be killed by hand. Staging is checkpointed
     # per entry, so an interrupted cycle loses nothing and the next one
     # resumes. 0 disables the deadline.
@@ -767,11 +768,13 @@ class AutoSyncConfig(Settings):
 
 
 class UpdateConfig(Settings):
-    # Keep a git checkout on the latest commit of the branch it tracks: checked
-    # once a day on the first use of the day, fast-forward only, the database
-    # backed up before a migration. "notify" only says an update is there.
-    # Off by default: a check is a network call, and the alpha makes none.
-    mode: Literal["off", "notify", "auto"] = "off"
+    # Checked once a day on the first use of the day. "notify" (the default since
+    # 2026-10-26) has the agent say a new version is out; nothing changes until
+    # the owner asks. "auto" also applies it: a checkout fast-forwards, an
+    # installed copy is reinstalled, the database backed up before a migration.
+    # For a copy from the release installers, "auto" only announces it too.
+    # "off" makes no check.
+    mode: Literal["off", "notify", "auto"] = "notify"
 
 
 class NewsConfig(Settings):

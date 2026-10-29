@@ -130,7 +130,7 @@ _REPLAYED_SUMMARY = "This session is being continued from a previous conversatio
 
 # Bumped whenever a rule for what is not the person's speech changes, so a sync
 # re-judges the turns stored under the older rules once (`withdrawn`).
-AUTHORSHIP_RULES = 4
+AUTHORSHIP_RULES = 5
 
 # Bumped whenever the rule for which folder names a project changes, so a sync
 # reads every transcript once more and the natural-key upsert relabels the
@@ -138,6 +138,14 @@ AUTHORSHIP_RULES = 4
 # and a Codex chat folder name no project, and a turn carries the end of the
 # agent's reply it answers.
 PROJECT_RULES = 2
+
+# Bumped whenever the rule for which adapter reads a file changes, so a sync
+# reads every transcript once more, each with its own reader. Version 1: a file
+# has one reader and its position says whose it is. Before, all adapters shared
+# one position per file, so a line another adapter read first was never read by
+# the file's own: on 2026-10-29, 2 of 873 Claude Code turns on this machine
+# existed only as OpenClaw copies.
+READER_RULES = 1
 
 # How much of the agent's reply a person's turn carries: its end, where the
 # agent says what it did or asks. "Spin it in all directions" means nothing
@@ -149,9 +157,12 @@ _AFTER_CHARS = 300
 # before the rule existed: 68 interrupt markers and 30 bare Codex `AGENTS.md`
 # headers (whose `<INSTRUCTIONS>` body is stripped above) were stored as his
 # own words. Each must be the whole of what is left, so a sentence that quotes
-# one is kept.
+# one is kept. Claude Code's notes on the usage limit (one when it is reached,
+# one after it resets) are flagged `isMeta`, but a reader that ignores the flag
+# stored them as his words: on 2026-10-29 one became a session's task.
 _HARNESS_LINE = re.compile(
     r"^(?:\[Request interrupted by user(?: for tool use)?\]"
+    r"|\[(?:Usage limit reached; |Earlier usage-limit notes no longer apply\.)[^\]\n]*\]"
     r"|# AGENTS\.md instructions for [^\n]*)$"
 )
 
@@ -241,6 +252,75 @@ ADAPTERS: tuple[Adapter, ...] = (
 )
 
 ADAPTERS_BY_ID = {adapter.adapter_id: adapter for adapter in ADAPTERS}
+
+
+def configured_roots(adapter: Adapter, configured: list[Path]) -> list[Path]:
+    """The configured folders this adapter reads.
+
+    A folder that is one tool's own default (`~/.claude/projects`,
+    `~/.codex/sessions`) is read only by that tool's adapter. Read by every
+    selected adapter, each Claude Code transcript was also parsed as an OpenClaw
+    one, harness notes included: on 2026-10-29 the session archive held 720
+    such duplicates, one titled with Claude Code's usage-limit note. A folder
+    that is no tool's default may hold any of them, so every adapter looks in
+    it, and `file_reader` gives each file there to one.
+    """
+    roots = []
+    for path in configured:
+        owners = _folder_owners(path)
+        if not owners or adapter.adapter_id in owners:
+            roots.append(path)
+    return roots
+
+
+def _folder_owners(path: Path) -> set[str]:
+    """The tools whose own default folder this is (none for any other folder)."""
+    return {adapter.adapter_id for adapter in ADAPTERS
+            if any(path.match(pattern) for pattern in adapter.root_globs)}
+
+
+# Formats that say whose they are. Anything else is the tolerant shape OpenClaw
+# and Hermes share.
+_NAMED_FORMATS = frozenset({"claude_code", "codex"})
+
+
+def file_reader(path: Path, selected: list[str]) -> str | None:
+    """The one adapter that reads a transcript in a folder no tool owns.
+
+    Only the file's own tool understands it. When every adapter read the file,
+    whichever came first set the position for all of them: Claude Code's reader
+    passed over an OpenClaw file it could not parse, and OpenClaw then found
+    nothing left to read. A Codex rollout is named for itself, a Claude Code
+    line carries both `sessionId` and `uuid`, and the rest goes to the first
+    selected tool of the tolerant shape. A tool that is not selected reads
+    nothing, rather than its file being read as another tool's.
+    """
+    if path.name.startswith("rollout-"):
+        tool: str | None = "codex"
+    elif _is_claude_code_file(path):
+        tool = "claude_code"
+    else:
+        tool = next((name for name in selected if name not in _NAMED_FORMATS), None)
+    return tool if tool in selected else None
+
+
+def _is_claude_code_file(path: Path) -> bool:
+    """Whether a file's head is Claude Code's, by the ids its lines carry."""
+    try:
+        handle = path.open("r", encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    with handle:
+        for index, line in enumerate(handle):
+            if index >= 50:
+                break
+            try:
+                data = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(data, dict) and "sessionId" in data and "uuid" in data:
+                return True
+    return False
 
 
 def detect_adapters(home: Path | None = None) -> list[tuple[Adapter, list[Path]]]:
@@ -645,6 +725,8 @@ def _generic_turn(
     no prose left after cleaning. If either tool turns out to store something
     materially different, this returns nothing rather than guessing wrong.
     """
+    if data.get("isMeta"):
+        return None  # a Claude Code harness line, in a folder every adapter reads
     for candidate in (data.get("message"), data.get("payload"), data):
         if not isinstance(candidate, dict):
             continue
@@ -780,9 +862,12 @@ def parse_turn(
     return _PARSERS.get(adapter_id, _generic_turn)(data, index, path, context)
 
 
-def _unread_bytes(path: Path, files: dict[str, Any]) -> int:
+def _unread_bytes(path: Path, files: dict[str, Any], reader: str) -> int:
     """What reading a session file costs this run: `_file_turns`'s own shortcut."""
-    seen = files.get(str(path)) if isinstance(files.get(str(path)), dict) else {}
+    seen: dict[str, Any] = (
+        files[str(path)] if isinstance(files.get(str(path)), dict) else {})
+    if seen.get("reader", reader) != reader:
+        seen = {}
     try:
         size = path.stat().st_size
     except OSError:
@@ -838,16 +923,17 @@ class AIConversationsConnector:
 
         state: dict[str, Any] = dict(cursor.data) if cursor else {}
         files: dict[str, Any] = dict(state.get("files", {}))
-        if state.get("project_rules") != PROJECT_RULES:
+        if (state.get("project_rules") != PROJECT_RULES
+                or state.get("reader_rules") != READER_RULES):
             # Read from the top again, keeping only what a file said of itself
-            # that the project rule does not decide.
+            # that neither rule decides.
             files = {
                 key: {field: value for field, value in seen.items()
                       if field not in {"lines", "size", "project"}}
                 if isinstance(seen, dict) else {}
                 for key, seen in files.items()
             }
-            state = {**state, "project_rules": PROJECT_RULES}
+            state = {**state, "project_rules": PROJECT_RULES, "reader_rules": READER_RULES}
 
         if configured:
             missing = [p for p in configured if not p.is_dir()]
@@ -860,21 +946,30 @@ class AIConversationsConnector:
         # Every file is listed before any is read, so the sync can say how far
         # through them it is: by the bytes each still holds past its checkpoint.
         plan: list[tuple[Adapter, Path, bool]] = []
+        selected = [adapter.adapter_id for adapter in adapters]
+        readers: dict[Path, str | None] = {}
         for adapter in adapters:
-            roots = [p for p in configured if p.is_dir()] if configured else adapter.roots(home)
+            roots = ([p for p in configured_roots(adapter, configured) if p.is_dir()]
+                     if configured else adapter.roots(home))
             for root in roots:
+                shared = bool(configured) and not _folder_owners(root)
                 for path in sorted(root.glob(adapter.file_glob)):
                     if not path.is_file() or path.name.startswith("."):
                         continue
                     if adapter.adapter_id == "claude_code" and path.name.startswith("rollout-"):
                         continue  # a Codex file under a root pointed at both
+                    if shared:
+                        if path not in readers:
+                            readers[path] = file_reader(path, selected)
+                        if readers[path] != adapter.adapter_id:
+                            continue
                     plan.append((adapter, path, False))
                 history = root.parent / "history.jsonl"
                 if adapter.adapter_id == "claude_code" and root.name == "projects" and (
                     history.is_file()
                 ):
                     plan.append((adapter, history, True))
-        weights = [_unread_bytes(path, files) for _, path, _ in plan]
+        weights = [_unread_bytes(path, files, adapter.adapter_id) for adapter, path, _ in plan]
         total, done = sum(weights), 0
 
         scanned = 0
@@ -993,13 +1088,19 @@ class AIConversationsConnector:
         line numbers no longer mean what they meant; it is re-read from the top
         and the natural-key upsert absorbs the repeats.
 
-        Whatever a file said about itself in its header — the Codex session id
-        and working directory — is checkpointed alongside the line count, so a
+        Whatever a file said about itself in its header (the Codex session id
+        and working directory) is checkpointed alongside the line count, so a
         resumed file that begins past its own header still labels its turns the
         way the first scan did.
+
+        A position records whose it is. One another adapter set says nothing
+        about what this one has read, so the file is read from the top.
         """
         key = str(path)
-        seen = files.get(key) if isinstance(files.get(key), dict) else {}
+        seen: dict[str, Any] = files[key] if isinstance(files.get(key), dict) else {}
+        reader = adapter.adapter_id
+        if seen.get("reader", reader) != reader:
+            seen = {}
         context = {
             field: str(seen[field])
             for field in ("session", "project", "canonical", "machine", "opened", "after")
@@ -1051,7 +1152,7 @@ class AIConversationsConnector:
                     continue  # the same turn recorded twice by two log streams
                 emitted_in_file.add(marker)
 
-                files[key] = {"lines": line_number, "size": size, **context}
+                files[key] = {"lines": line_number, "size": size, "reader": reader, **context}
                 state["files"] = files
                 yield (
                     _item(adapter, turn, path, line_number, max_chars,
@@ -1061,7 +1162,8 @@ class AIConversationsConnector:
 
         # A file with no new turns still gets checkpointed, or every future run
         # re-reads every transcript that happens to be all tool traffic.
-        files[key] = {"lines": max(line_number, start_line), "size": size, **context}
+        files[key] = {"lines": max(line_number, start_line), "size": size, "reader": reader,
+                      **context}
         state["files"] = files
 
     def normalize(self, item: RawItem) -> NormalizedEntry:

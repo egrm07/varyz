@@ -3,7 +3,7 @@
 # command and every path on disk are varyz. Until 2026-09-24 all of them said
 # varys -- src/varyz/legacy.py carries an existing install across.
 name = "varyzai"
-version = "0.1.5"
+version = "0.1.6"
 description = "Local-first personal context engine — one memory every AI agent can read"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -210,3 +210,4 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 testpaths = ["tests"]
 markers = ["live: tests that call real cloud APIs (deselect with '-m \"not live\"')"]
 addopts = "-m 'not live'"
+tmp_path_retention_policy = "failed"

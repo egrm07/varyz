@@ -223,7 +223,6 @@ class ReviewSession:
         self.caller = caller
         self.device_id = device_id
         self.cfg = cfg
-        self.offered = False
         self.token = secrets.token_urlsafe(24)
         self.kept = 0
         self.dropped = 0
@@ -497,27 +496,12 @@ class ReviewSession:
             return added
 
     def network_offer(self) -> dict[str, str] | None:
-        """The Varyz network popup, once a save has shown what reviewing is worth.
-
-        At most once per review, and only when analytics.claim_offer says it is due.
-        """
-        from varyz import analytics
-
-        with self._lock:
-            if self.cfg is None or self.offered or not analytics.claim_offer(self.cfg):
-                return None
-            self.offered = True
-        return {"title": analytics.CONSENT_TITLE, "message": analytics.CONSENT_MESSAGE,
-                "counts": analytics.CONSENT_COUNTS, "privacy": analytics.CONSENT_PRIVACY}
+        """Compatibility for already open review pages; consent now belongs to setup."""
+        return None
 
     def network_answer(self, share: bool) -> bool:
-        """The owner's answer to this review's popup. The x and Escape send no."""
-        from varyz import analytics
-
-        if self.cfg is None or not self.offered:
-            raise PermissionError("no network offer was shown in this review")
-        analytics.consent(self.cfg, share)
-        return bool(analytics.status(self.cfg)["consent"])
+        """Old review pages cannot grant consent after the move to setup."""
+        raise PermissionError("data sharing is managed in setup")
 
 
 def _edits(decision: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:

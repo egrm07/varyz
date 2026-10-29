@@ -241,3 +241,41 @@ def test_remote_dependency_receipt_is_never_accepted(tmp_path):
         upgrade.validate_native_options(
             {"options": {"find-links": ["https://untrusted.example/wheels"]}}, tmp_path
         )
+
+
+def _versions(app: Path, *names: str) -> list[Path]:
+    folders = []
+    for name in names:
+        folder = app / "versions" / name
+        (folder / "runtime/bin").mkdir(parents=True)
+        (folder / "runtime/bin/python3").write_bytes(b"")
+        folders.append(folder)
+    return folders
+
+
+def _environment_on(tmp_path: Path, home: Path) -> Path:
+    environment = tmp_path / "tools/varyzai"
+    environment.mkdir(parents=True)
+    (environment / "pyvenv.cfg").write_text(f"home = {home}\nuv = 0.9\n", encoding="utf-8")
+    return environment
+
+
+def test_old_release_folders_are_removed_once_the_tool_runs_on_the_new_one(tmp_path):
+    """The test Mac kept 0.1.0 to 0.1.5 side by side: 271 MB of runtimes."""
+    app = tmp_path / "Varyz"
+    old, older, current = _versions(app, "0.1.0-a", "0.1.4-b", "0.1.5-c")
+    environment = _environment_on(tmp_path, current / "runtime/bin")
+    removed = native.prune_versions(app, current, environment)
+    assert sorted(removed) == ["0.1.0-a", "0.1.4-b"]
+    assert current.is_dir() and not old.exists() and not older.exists()
+
+
+def test_the_runtime_the_tool_still_runs_on_is_never_removed(tmp_path):
+    """Deleting 0.1.0 while the tool's pyvenv.cfg pointed at it broke every command."""
+    app = tmp_path / "Varyz"
+    first, current = _versions(app, "0.1.0-a", "0.1.5-c")
+    environment = _environment_on(tmp_path, first / "runtime/bin")
+    assert native.prune_versions(app, current, environment) == []
+    assert first.is_dir()
+    (environment / "pyvenv.cfg").unlink()
+    assert native.prune_versions(app, current, environment) == []  # unknown: keep all

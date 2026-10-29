@@ -283,6 +283,8 @@ def _isolate_from_real_config(monkeypatch, tmp_path):
     # News is on by default and checked on use: a hook, an MCP call or a CLI
     # read would start a real fetch of varyzai.com. Tests never launch one.
     monkeypatch.setattr("varyz.news._launch", lambda _command, _cwd: None)
+    # So is the daily update check, which would fetch from git or GitHub.
+    monkeypatch.setattr("varyz.update._launch", lambda _command, _cwd: None)
     # This checkout is created by the desktop sandbox, whose synthetic owner
     # differs from the Windows user. Trust this exact repository only inside
     # child git commands spawned by tests; do not mutate the user's git config.
@@ -363,6 +365,19 @@ def _no_real_headless_reader(monkeypatch):
 
     monkeypatch.setattr(headless_reader, "find_runners", lambda cfg, config_file: {})
     monkeypatch.setattr(headless_reader, "spawn", lambda config_file, kind=None: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_daemon_revival(monkeypatch):
+    """Nothing in the suite may start a real autosync daemon on an agent's call.
+
+    Every test that enables autosync has no daemon, so the watchdog in
+    `maybe_trigger_on_use` would launch one. Its own tests call the function
+    imported before this fixture runs.
+    """
+    from varyz import autosync
+
+    monkeypatch.setattr(autosync, "maybe_revive_daemon", lambda cfg, config_path, **_: False)
 
 
 @pytest.fixture(autouse=True)
@@ -508,6 +523,14 @@ def journal_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
+def _no_background_archive_scan(monkeypatch):
+    """Doctor in a test must not start a real scan process; its own tests record calls."""
+    from varyz import doctor
+
+    monkeypatch.setattr(doctor, "_start_scan", lambda cfg: None)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_process_listing(monkeypatch):
     """Nothing in the suite may list or stop the machine's real processes.
 
@@ -519,3 +542,40 @@ def _no_real_process_listing(monkeypatch):
 
     monkeypatch.setattr(background, "_listing", lambda: [])
     monkeypatch.setattr(background, "stop", lambda found: [])
+
+
+class _RetiredModule(pytest.Module):
+    def collect(self):
+        pytest.skip("surface intentionally removed by MANIFEST.md")
+
+
+def pytest_pycollect_makemodule(module_path, parent):
+    """Named on the command line, a retired file bypasses collect_ignore, and its
+    import of a deleted module aborted the whole run on the test Mac. It is
+    skipped instead, without being imported."""
+    if module_path.name in collect_ignore:
+        return _RetiredModule.from_parent(parent, path=module_path)
+    return None
+
+
+# Below this the suite fills the disk mid-run, and a full disk fails tests at
+# random rather than at the cause: the test Mac reached it at 30% of one run.
+MIN_FREE_TEMP_BYTES = 2 * 1024**3
+
+
+def pytest_sessionstart(session):
+    import shutil
+    import tempfile
+
+    base = session.config.option.basetemp or tempfile.gettempdir()
+    folder = Path(base)
+    while not folder.exists() and folder != folder.parent:
+        folder = folder.parent
+    try:
+        free = shutil.disk_usage(folder).free
+    except OSError:
+        return
+    if free < MIN_FREE_TEMP_BYTES:
+        pytest.exit(f"only {free / 1024**3:.1f} GB free for test temp files in {folder}; "
+                    "the suite needs about 2 GB (free space or pass --basetemp elsewhere)",
+                    returncode=4)

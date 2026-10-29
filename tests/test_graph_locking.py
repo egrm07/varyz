@@ -116,7 +116,7 @@ def test_ingestion_succeeds_while_graph_rebuild_waits_on_inference(
 ):
     config_path, cfg = _autosync_project(tmp_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     provider = BlockingProvider()
     thread, errors = _start_blocked_rebuild(cfg, provider)
 

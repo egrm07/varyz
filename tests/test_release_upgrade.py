@@ -100,9 +100,10 @@ def test_real_uv_upgrade_commits_verified_archive_and_keeps_settings(installed):
     assert config.read_bytes() == before
     folder = Path(result["backup"])
     assert (folder / "environment/uv-receipt.toml").is_file()
-    assert (folder / "archive.db").is_file()
+    # One pre-upgrade copy is kept for rollback, not two.
+    assert not (folder / "archive.db").exists()
     assert (folder / "original.db").is_file()
-    with closing(sqlite3.connect(folder / "archive.db")) as db, db:
+    with closing(sqlite3.connect(folder / "original.db")) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1
 
 
@@ -350,3 +351,41 @@ def test_process_inventory_failure_abstains(monkeypatch, tmp_path):
     monkeypatch.setattr(release, "execute", fail)
     with pytest.raises(ValueError, match="denied"):
         release.running(tmp_path / "tool", [])
+
+
+def test_upgrade_moves_the_tool_to_the_python_the_release_ships(tmp_path):
+    """Not the interpreter recorded in the receipt at first install (0.1.0's)."""
+    receipt = {"tool": {"requirements": [{"name": "varyzai"}], "python": "/old/0.1.0/python3"}}
+    args = release.install_arguments(receipt, tmp_path / "w.whl", tmp_path)
+    assert args[args.index("--python") + 1] == "/old/0.1.0/python3"
+    shipped = tmp_path / "0.1.5/runtime/bin/python3"
+    shipped.parent.mkdir(parents=True)
+    shipped.write_bytes(b"")
+    moved = release.use_python(args, shipped)
+    assert moved.count("--python") == 1 and moved[-1] == str(shipped)
+    with pytest.raises(ValueError, match="nothing was replaced"):
+        release.use_python(args, tmp_path / "missing")
+
+
+def test_a_finished_upgrade_removes_older_backups_but_never_an_interrupted_one(tmp_path):
+    """The test Mac held 271 MB of backups from five upgrades."""
+    import json
+
+    parent = tmp_path / "autosync/releases"
+
+    def backup(name, phase, *files):
+        folder = parent / name
+        folder.mkdir(parents=True)
+        (folder / "state.json").write_text(json.dumps({"phase": phase}), encoding="utf-8")
+        for file in files:
+            (folder / file).write_bytes(b"x")
+        return folder
+
+    old = backup("a", "applied", "original.db", "archive.db")
+    undone = backup("b", "rolled_back", "archive.db")
+    interrupted = backup("c", "committing", "original.db")
+    newest = backup("d", "applied", "original.db", "archive.db", "varyzai-0.1.5.whl")
+    assert release.prune_backups(parent, newest) == 2
+    assert not old.exists() and not undone.exists() and interrupted.is_dir()
+    assert sorted(p.name for p in newest.iterdir()) == [
+        "original.db", "state.json", "varyzai-0.1.5.whl"]

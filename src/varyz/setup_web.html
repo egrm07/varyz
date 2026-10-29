@@ -129,6 +129,37 @@ summary { cursor: pointer; padding: 8px 0; }
 #ai-setup, #setup-details, #result, .extract { max-width: 680px; }
 #completed-step { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
 #setup-nav { margin-top: 28px; }
+#consent { width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px);
+  padding: 0; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--night); color: var(--ink); overflow: hidden; }
+#consent[open] { display: flex; flex-direction: column; }
+#consent::backdrop { background: rgba(0, 0, 0, .76); backdrop-filter: blur(4px); }
+.consent-header { display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 24px 28px 18px; flex-shrink: 0; }
+#consent-title { margin: 0; font: 400 38px/1.15 var(--display); }
+#consent-title:focus { outline: none; }
+#consent-close { flex: 0 0 44px; width: 44px; height: 44px; padding: 0;
+  color: var(--muted); background: transparent; border: 0; border-radius: 6px;
+  font: 400 28px/1 var(--sans); }
+#consent-close:hover { color: var(--ink); background: var(--line); }
+.consent-body { padding: 0 28px; overflow-y: auto; min-height: 0; }
+.consent-lead { margin: 0 0 20px; color: var(--muted); font-size: 17px; line-height: 1.6; }
+.consent-policy { border-top: 1px solid var(--line); }
+.consent-policy section { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.consent-policy h2 { margin: 0 0 7px; font: 600 15px/1.4 var(--sans); }
+.consent-policy p { margin: 0; color: var(--muted); font: 15px/1.55 var(--sans); }
+.consent-policy a, .consent-links a { color: var(--ink); text-underline-offset: 3px; }
+.consent-links { font: 14px/1.5 var(--sans); color: var(--muted); margin: 20px 0; }
+#consent .consent-footer { margin: 0; padding: 18px 28px; display: flex;
+  align-items: center; gap: 20px; border-top: 1px solid var(--line); flex-shrink: 0; }
+#consent-accept { min-width: 100px; flex-shrink: 0; }
+#consent-current { font: 13px/1.5 var(--sans); color: var(--muted); margin: 0; }
+@media (max-width: 560px) {
+  .consent-header { padding: 16px 20px 12px; }
+  .consent-body { padding: 0 20px; }
+  #consent .consent-footer { padding: 16px 20px; gap: 16px; }
+  #consent-title { font-size: 32px; }
+}
 #setup-details > .actions:first-child { margin: 0 0 20px; }
 /* GitHub, before it is linked: a token box instead of a tick. */
 .link { display: grid; grid-template-columns: 1.25em 1fr; column-gap: 0.6em; }
@@ -235,6 +266,39 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
 </style>
 </head>
 <body>
+<dialog id="consent" aria-labelledby="consent-title" aria-describedby="consent-summary">
+    <header class="consent-header">
+      <h2 id="consent-title" tabindex="-1" autofocus>Consent</h2>
+      <button id="consent-close" type="button" aria-label="Continue without sharing data">&times;</button>
+    </header>
+    <div class="consent-body">
+    <p class="consent-lead" id="consent-summary">Choose whether to share data to help improve Varyz and AI models. This is optional. You can use Varyz either way.</p>
+    <div class="consent-policy">
+      <section aria-labelledby="consent-collection">
+        <h2 id="consent-collection">What is collected</h2>
+        <p>Daily usage counts and anonymized examples of questions your agents ask Varyz, the answers they receive, your corrections, and rules you keep or reject. Only activity after you accept is included.</p>
+      </section>
+      <section aria-labelledby="consent-use">
+        <h2 id="consent-use">How it is used and shared</h2>
+        <p>Data is sent to Varyz and stored on its servers to improve the service. Anonymized examples may be licensed to AI companies to improve their models.</p>
+      </section>
+      <section aria-labelledby="consent-protection">
+        <h2 id="consent-protection">How your information is protected</h2>
+        <p>Before sending, Varyz replaces detected names, emails, links, file paths, numbers and project names with placeholders. Examples containing detected passwords, keys or withheld content are dropped. This automatic process can miss sensitive information. Your full chats, files and archive are not uploaded through this choice.</p>
+      </section>
+      <section aria-labelledby="consent-control">
+        <h2 id="consent-control">Your choice and control</h2>
+        <p>You can ask your agent to turn sharing off at any time. Varyz then requests deletion of this installation&rsquo;s shared data and retries until the server confirms.</p>
+      </section>
+    </div>
+    <p class="consent-links">Read the <a href="https://varyzai.com/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and <a href="https://varyzai.com/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>. This choice covers optional data sharing only.</p>
+    </div>
+    <footer class="consent-footer">
+      <p id="consent-current">Closing this keeps sharing off. Your choice is saved when setup starts.</p>
+      <button id="consent-accept" type="button">Accept</button>
+    </footer>
+</dialog>
+
 <main>
   <header class="brand">
     <svg viewBox="0 0 62 34" aria-hidden="true"><path d="{{MARK_PATH}}"/></svg>
@@ -242,7 +306,7 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
   </header>
 
   <section class="hero">
-    <h1>Set up Varyz</h1>
+    <h1 id="page-title" tabindex="-1">Set up Varyz</h1>
     <p class="line" id="intro" hidden></p>
   </section>
 
@@ -252,7 +316,7 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
     <h2 class="label" id="ai-title">Step 1 of 3</h2>
     <p class="privacy-text" id="machine-summary">Choose where Varyz learns.</p>
     <ul class="choices" id="ai-modes"></ul>
-    <div class="actions"><button id="ai-continue" disabled>Continue</button>
+    <div class="actions"><button id="consent-back" class="quiet">Privacy choices</button><button id="ai-continue" disabled>Continue</button>
       <button id="ai-recheck" class="quiet" hidden>Check again</button></div>
   </section>
 
@@ -368,6 +432,7 @@ footer .site { color: var(--signal); font-weight: 600; white-space: nowrap; }
     </div>
     <h2 class="label" id="next-title">Next</h2>
     <ul class="next" id="next"></ul>
+    <p class="privacy-text" id="feedback-note" hidden></p>
     <details id="recovery" hidden open><summary>Get help fixing this</summary>
       <ul class="next" id="recovery-steps"></ul>
       <div id="repair-help" class="repair-help" hidden></div>
@@ -400,11 +465,12 @@ let inferenceMode = "conversations";
 // The last state polled, for what the result shows about the reading.
 let lastState = null;
 let choiceStep = 1;
+let sharingConsent = null;
 
 function showChoiceStep(step) {
   choiceStep = step;
   $("ai-setup").hidden = step !== 1;
-  $("setup-details").hidden = step === 1;
+  $("setup-details").hidden = step < 2;
   $("quote").hidden = true;
   $("actions").hidden = step !== 3;
   $("setup-nav").hidden = step !== 2;
@@ -454,6 +520,7 @@ function choice(name, value, label, what, checked, enabled) {
 function renderPlan(plan) {
   if (!plan.ai) throw new Error("Update Varyz to load both AI choices, then reopen setup.");
   renderAIPlan(plan.ai);
+  if (plan.analytics?.sharing) $("consent-current").textContent = "Sharing is currently on. Accept keeps it on; closing turns it off when setup starts.";
   $("config-path").textContent = plan.config;
   $("footer-stat").textContent = "Your archive stays on this device";
   const agents = $("agents");
@@ -477,7 +544,7 @@ function renderPlan(plan) {
   $("sources").replaceChildren(...items);
   $("go").disabled = false;
   $("ai-continue").disabled = !inferenceMode;
-  showChoiceStep(1);
+  showChoiceStep(choiceStep);
 }
 
 function renderAIPlan(ai, preserve = false) {
@@ -591,6 +658,8 @@ function renderState(state) {
   lastState = state;
   // Before a run the numbers stay marigold, as on the card.
   if (!state.started) return;
+  $("consent").close();
+  $("page-title").textContent = "Set up Varyz";
   $("ai-setup").hidden = true;
   $("setup-details").hidden = false;
   $("ai-back").hidden = true;
@@ -756,6 +825,8 @@ function renderResult(result) {
     restart:result.restart, turns_waiting:lastState.extract.turns || 0} : null));
   $("next-title").hidden = $("next").hidden = !next.length || !$("reading").hidden;
   renderPrivacy(result.privacy);
+  $("feedback-note").textContent = result.feedback || "";
+  $("feedback-note").hidden = !result.feedback;
   $("result").hidden = false;
 }
 
@@ -1092,8 +1163,34 @@ async function poll() {
   }
 }
 
-// Sharing is not asked here: it starts off, and the Varyz network popup waits
-// for the owner's first rules review after the trial window (review_web.html).
+// Consent opens immediately; the native modal keeps setup inert and traps focus.
+function showConsent() {
+  if (!$("consent").open) $("consent").showModal();
+  $("consent-title").focus();
+  $("consent").querySelector(".consent-body").scrollTop = 0;
+}
+function answerConsent(share) {
+  sharingConsent = share;
+  $("consent").close();
+  $("page-title").focus();
+}
+$("consent-accept").addEventListener("click", () => answerConsent(true));
+$("consent-close").addEventListener("click", () => answerConsent(false));
+$("consent").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  answerConsent(false);
+});
+$("consent").addEventListener("keydown", (event) => {
+  if (event.key !== "Tab") return;
+  const first = $("consent-close"), last = $("consent-accept");
+  if (event.shiftKey && [first, $("consent-title")].includes(document.activeElement)) {
+    event.preventDefault(); last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault(); first.focus();
+  }
+});
+$("consent-back").addEventListener("click", showConsent);
+showConsent();
 $("go").addEventListener("click", () => startSetup());
 
 $("ai-continue").addEventListener("click", () => {
@@ -1113,6 +1210,10 @@ $("sources-continue").addEventListener("click", () => {
 
 async function startSetup() {
   if (setupStarting) return;
+  if (sharingConsent === null) {
+    showConsent();
+    return;
+  }
   setupStarting = true;
   showError("");
   const picked = (name) => [...document.querySelectorAll(`input[name="${name}"]:checked`)].map((i) => i.value);
@@ -1121,6 +1222,7 @@ async function startSetup() {
   lockChoices();
   try {
     await api("/api/run", { agents: picked("agent"), sources: picked("source"),
+      analytics: sharingConsent,
       inference_mode: inferenceMode,
       cloud_conversations: inferenceMode === "conversations" });
   } catch (error) {

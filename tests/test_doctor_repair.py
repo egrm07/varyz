@@ -175,3 +175,45 @@ def test_launch_refreshes_existing_instructions_without_database_or_tokens(tmp_p
     assert not cfg.db_path.exists()
     assert not install.refresh_managed_instructions(
         config_path, paths={"codex": client})[0].changed
+
+
+def test_repairs_are_bounded_and_name_the_owner_command(tmp_path):
+    """The test Mac's repair agent had no limit and could not run its main step."""
+    cfg, path = config(tmp_path)
+    job = doctor_repair.offer(cfg, ["daemon"], path, now=0)
+    assert f"{doctor_repair.REPAIR_MINUTES} minutes" in job["subagent_prompt"]
+    assert "single-pass" not in job["subagent_prompt"]
+    assert job["owner_command"].startswith("varyz doctor --fix --config ")
+    assert job["owner_command"] in doctor_repair.render(job)
+    offered = 1
+    for now in range(1, 10 ** 6, 600):
+        offered += bool(doctor_repair.offer(cfg, ["daemon"], path, now=now))
+    assert offered == doctor_repair.MAX_ATTEMPTS
+
+
+def test_failures_only_the_owner_can_fix_start_no_repair_agent(tmp_path):
+    cfg, path = config(tmp_path)
+    assert doctor_repair.offer(cfg, ["cloud sync"], path, now=0) is None
+    assert doctor_repair.offer(cfg, ["agent settings file"], path, now=0) is None
+    job = doctor_repair.offer(cfg, ["cloud sync", "daemon"], path, now=0)
+    assert "cloud sync" not in job["subagent_prompt"]
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX file modes")
+def test_archive_and_config_are_closed_to_other_accounts(tmp_path, monkeypatch):
+    from varyz.filesystem import exposed, make_private
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    folder = tmp_path / ".varyz"
+    folder.mkdir()
+    path = folder / "config.toml"
+    path.write_text('[storage]\ndata_dir="data"\n', encoding="utf-8")
+    cfg = load_config(path)
+    cfg.data_dir.mkdir()
+    for item, mode in ((folder, 0o755), (cfg.data_dir, 0o755), (path, 0o644)):
+        item.chmod(mode)
+    assert set(exposed(cfg)) == {folder, cfg.data_dir, path}
+    make_private(cfg)
+    assert exposed(cfg) == []
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    assert oct(cfg.data_dir.stat().st_mode & 0o777) == "0o700"

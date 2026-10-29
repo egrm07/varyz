@@ -8,14 +8,19 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import json
 import os
 import sqlite3
+import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 Check = tuple[str, bool, str]
+# A clean scan is good for a day; doctor starts the next one after that.
+INTEGRITY_MAX_AGE = 24 * 60 * 60
 
 
 def token_check(conn: sqlite3.Connection, token: str | None) -> tuple[bool, str]:
@@ -62,10 +67,6 @@ def diagnose(cfg: Any, *, client_configs: dict[str, Path] | None = None,
             checks.append(("archive schema", required <= tables,
                            "required tables present" if required <= tables
                            else "archive needs migration; run varyz daemon start"))
-            if not quick:
-                healthy = conn.execute("PRAGMA quick_check(1)").fetchone()[0] == "ok"
-                checks.append(("archive integrity", healthy,
-                               "ok" if healthy else "archive integrity check failed"))
             configs = client_configs if client_configs is not None else install.client_paths()
             for client, path in configs.items():
                 if not path.exists():
@@ -116,10 +117,36 @@ def diagnose(cfg: Any, *, client_configs: dict[str, Path] | None = None,
                                else "no successful latest sync; run varyz sync"))
     except Exception:
         checks.append(("archive checks", False, "could not read operational state"))
+    integrity = integrity_check(cfg, start=not quick)
+    if integrity is not None:
+        checks.append(("archive integrity", *integrity))
     if cfg.workflows.rule_reader_agent:
         from varyz.resolution.headless_reader import health
 
         checks.append(("background reader", *health(cfg)))
+    if cfg.source_file is not None:
+        # Every source synced while Cloud said "storage full" for days, and
+        # doctor had no line for it.
+        try:
+            from varyz.cloud.background import health as cloud_health
+
+            cloud = cloud_health(cfg.source_file)
+        except Exception:
+            cloud = (False, "could not read the Cloud sync state; run varyz cloud status")
+        if cloud is not None:
+            checks.append(("cloud sync", *cloud))
+    from varyz.filesystem import claude_config_exposed, exposed
+
+    open_to_others = exposed(cfg)
+    checks.append(("private files", not open_to_others,
+                   "other accounts on this computer can read " + ", ".join(map(str, open_to_others))
+                   + "; varyz doctor --fix closes them" if open_to_others
+                   else "the archive and config are readable only by you"))
+    claude_json = claude_config_exposed()
+    if claude_json is not None:
+        checks.append(("agent settings file", False,
+                       f"other accounts can read {claude_json}, which holds Varyz's "
+                       f"sign-in token; run: chmod 600 {claude_json}"))
     from varyz.autosync import is_enabled, is_paused
 
     if is_enabled(cfg) and not is_paused(cfg):
@@ -158,6 +185,119 @@ def diagnose(cfg: Any, *, client_configs: dict[str, Path] | None = None,
     return [tuple(check) for check in safe["checks"]]
 
 
+def _integrity_path(cfg: Any) -> Path:
+    return cfg.data_dir / "runtime" / "doctor" / "integrity.json"
+
+
+def _integrity_lock(cfg: Any) -> Any:
+    from varyz.db.connection import FileLock
+
+    return FileLock(_integrity_path(cfg).with_suffix(".lock"))
+
+
+def scan_running(cfg: Any) -> bool:
+    lock = _integrity_lock(cfg)
+    if not lock.acquire():
+        return True
+    lock.release()
+    return False
+
+
+def last_scan(cfg: Any) -> dict[str, Any]:
+    from varyz.hooks import _load_state
+
+    return _load_state(_integrity_path(cfg))
+
+
+def scan_integrity(cfg: Any, *, now: float | None = None) -> dict[str, Any] | None:
+    """Read every archive page and record the result; None when no scan ran."""
+    from varyz.hooks import _open_readonly
+    from varyz.install import _write_text_atomic
+
+    if not cfg.db_path.exists():
+        return None
+    lock = _integrity_lock(cfg)
+    if not lock.acquire():
+        return None
+    try:
+        started = time.monotonic()
+        try:
+            with contextlib.closing(_open_readonly(cfg.db_path)) as conn:
+                healthy = conn.execute("PRAGMA quick_check(1)").fetchone()[0] == "ok"
+        except sqlite3.OperationalError:
+            return None  # busy or locked right now, which is not damage
+        except sqlite3.DatabaseError:
+            healthy = False
+        record = {"checked_at": time.time() if now is None else now, "ok": healthy,
+                  "seconds": round(time.monotonic() - started, 1)}
+        _write_text_atomic(_integrity_path(cfg), json.dumps(record))
+        return record
+    finally:
+        lock.release()
+
+
+def _start_scan(cfg: Any) -> None:
+    command = [sys.executable, "-m", "varyz.doctor", "scan"]
+    if cfg.source_file is not None:
+        command += ["--config", str(cfg.source_file)]
+    flags = 0
+    for name in ("CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW",
+                 "BELOW_NORMAL_PRIORITY_CLASS"):
+        flags |= getattr(subprocess, name, 0)
+    with contextlib.suppress(OSError):
+        subprocess.Popen(  # noqa: S603 - fixed local module invocation
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=True,
+            start_new_session=sys.platform != "win32",
+        )
+
+
+def _ago(seconds: float) -> str:
+    if seconds < 90:
+        return "just now"
+    if seconds < 90 * 60:
+        return f"{round(seconds / 60)} min ago"
+    if seconds < 36 * 60 * 60:
+        return f"{round(seconds / 3600)} h ago"
+    return f"{round(seconds / 86400)} days ago"
+
+
+def integrity_check(cfg: Any, *, start: bool,
+                    now: float | None = None) -> tuple[bool, str] | None:
+    """The last archive scan's result, starting a fresh scan in the background.
+
+    The scan reads the whole archive: about five minutes for 2.7 GB, with no
+    output, and agents running `varyz doctor` timed out on it. So no caller
+    waits for it; `varyz doctor --full` is the one that does.
+    """
+    if not cfg.db_path.exists():
+        return None
+    record = last_scan(cfg)
+    now = time.time() if now is None else now
+    checked_at = record.get("checked_at")
+    age = now - checked_at if isinstance(checked_at, int | float) else None
+    stale = age is None or not 0 <= age <= INTEGRITY_MAX_AGE
+    scanning = False
+    if start and stale:
+        scanning = True
+        if not scan_running(cfg):
+            _start_scan(cfg)
+    if age is None:
+        if not scanning:
+            return None
+        return True, "not scanned yet; scanning in the background, see the next varyz doctor"
+    again = "; scanning again in the background" if scanning else ""
+    when = _ago(max(age, 0))
+    if not record.get("ok"):
+        return False, (f"damage found {when}{again}; back up the archive before any repair, "
+                       "then run varyz doctor --full")
+    return True, f"ok, scanned {when}{again}"
+
+
 def session_notice(cfg: Any, session_id: str, *, active_token: str | None = None,
                    check_active: bool = False, now: float | None = None,
                    config_path: Path | None = None) -> str:
@@ -193,3 +333,21 @@ def session_notice(cfg: Any, session_id: str, *, active_token: str | None = None
         f"'Varyz needs attention: {shown}{more}. Run varyz doctor for details.' "
         "Continue the task; this notice does not block work or authorise repairs."
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """`python -m varyz.doctor scan`: the background archive scan doctor starts."""
+    import argparse
+
+    from varyz.config import load_config
+
+    parser = argparse.ArgumentParser(prog="python -m varyz.doctor")
+    parser.add_argument("command", choices=["scan"])
+    parser.add_argument("--config", type=Path)
+    args = parser.parse_args(argv)
+    scan_integrity(load_config(args.config))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

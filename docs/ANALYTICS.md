@@ -1,7 +1,7 @@
 # Optional improvement analytics
 
 > Design 2026-10-04, Varyz network added 2026-10-18. Sharing is off until explicitly
-> selected in the one Varyz network popup.
+> selected in the Consent popup shown when setup opens.
 
 **Varyz sends bounded aggregate counts to its creator, Egor Menshikov, only with consent.**
 The receiver is `https://cloud.varyzai.com/api/analytics`; no Cloud account or subscription
@@ -49,30 +49,19 @@ fabricated and must not be treated as authenticated experiments.
 
 Archive commands accept `--config`.
 
-### The Varyz network popup
+### Setup consent (2026-10-29)
 
-One popup governs everything Varyz sends: these counts and the anonymized examples
-described under **Network contributions** below. Setup does not show it: browser setup
-starts with sharing off and asks nothing. The popup appears in rules review
-(`varyz rules review`, or **Review preferences** after setup), right after the owner's first
-saved review once the trial window is over: more than 3 conversations and at least
-24 hours since Varyz first saw one, the same window that holds back news. It is titled
-**Join the Varyz network**,
-explains that pooled, anonymized examples help everyone's agents repeat fewer mistakes
-and waste fewer tokens, and always shows a short notice that anonymized examples may be
-licensed to AI companies and that turning sharing off deletes what was shared.
-**What gets shared** expands the fields and the scrubbing rules.
+**Consent** is a modal popup shown immediately when browser setup opens. Four sections explain collection,
+use and recipients, cleaning limits, and control. The Privacy Policy and Terms are
+linked. **Accept** allows sharing; the top-right **X** or Escape chooses no sharing. Both continue setup, and the explicit boolean is
+sent with the setup run. Nothing is uploaded just by opening or reading the screen.
+The choice is saved before setup records analytics or starts its service. A rerun shows
+whether sharing is currently on; abandoning setup preserves the existing choice.
 
-There is one button, **Share anonymized data**, which turns sharing on. The small x in
-the top right corner, and Escape, record no: closing means no. The popup is shown once.
-After a no it waits at least 30 days and is offered again at most once, so it is shown at
-most twice per installation; a no given earlier (terminal setup or `varyz data off`)
-counts as the first offer. Anyone who has ever turned sharing on is never shown it again;
-they use `varyz data on` and `varyz data off`. Each showing is recorded in the
-append-only analytics audit as `offer_shown`, which turning sharing on or off never
-clears. Terminal setup shows the same text and asks **Share anonymized data?** with a
-default-no confirmation. `setup --yes` never grants consent. Missing optional terminal
-input preserves existing settings.
+Rules review no longer contains a consent popup. The old offer endpoint returns no
+offer, so an already open review page cannot offer sharing either. Terminal setup uses
+the same disclosure with a default-no prompt. `setup --yes` never grants consent.
+Missing optional terminal input preserves existing settings.
 
 Consent is versioned. `network-v1` covers counts and contributions. Installations that
 agreed to the older counts-only text (`aggregate-v1`) keep sending counts and never send
@@ -124,7 +113,7 @@ numbers, handles and long hex or ULID identifiers become placeholders, then know
 names become `[project]` and known people, aliases and the OS username become `[person]`.
 An example is dropped if a credential is found before or after scrubbing, if Varyz
 withheld anything from that answer, or if it fails the strict schema. Cleaning can miss
-something, which the popup says.
+something, which the Consent screen says.
 
 Each installation creates a random contributor key; the receiver stores only its SHA-256.
 Uploads run every six hours (one hour after a failure), at most 200 records per batch with
@@ -176,7 +165,7 @@ which pages records without contributor IDs.
 Offline tests cover consent, history/content exclusion, preview rollback, revocation,
 retry deduplication, outcome distinctions, schema/rate limits, owner authentication and
 end-to-end delivery. Setup/server regression suites and visual review are required:
-`scripts/analytics_preview.py` drives the real review page and popup at 1440x900 and
-390x844 and saves screenshots to `.tmp/analytics-preview`.
+`scripts/analytics_preview.py` renders the real setup page at 1440x900 and
+390x844, checks both choices and navigation, and saves screenshots to `.tmp/analytics-preview`.
 Live receipt and authenticated reporting must be separately verified before claiming
 that the creator can receive data.

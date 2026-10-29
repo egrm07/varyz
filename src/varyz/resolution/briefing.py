@@ -146,18 +146,24 @@ def _rule_row(item: dict[str, Any]) -> str:
     return f"- {item['statement']} (id {item['id']})"
 
 
+RELAY_HOURS = 24
+
+
 def _pending_questions(
     conn: sqlite3.Connection, project: str | None, conversation_id: str | None,
 ) -> list[dict[str, Any]]:
     """Questions this conversation asked that the owner has not answered.
 
     A question from another conversation belongs to that task, and one older than
-    ``QUESTION_TTL_DAYS`` has gone stale, so neither is relayed again: the agent
-    would put an unrelated or long-settled choice back in front of the owner.
+    ``RELAY_HOURS`` belongs to a task that has moved on, so neither is relayed
+    again: the agent would put an unrelated or settled choice back in front of
+    the owner. On the test Mac a five-day-old question kept coming back, so the
+    relay window is a day, shorter than the week (``QUESTION_TTL_DAYS``) the
+    question stays answerable in ``varyz questions``.
     """
     if not conversation_id:
         return []
-    since = datetime.now(UTC) - timedelta(days=QUESTION_TTL_DAYS)
+    since = datetime.now(UTC) - timedelta(hours=min(RELAY_HOURS, QUESTION_TTL_DAYS * 24))
     try:
         rows = conn.execute(
             """SELECT id, question, project FROM resolution_escalations
@@ -616,14 +622,17 @@ def render_markdown(briefing: dict[str, Any], *, include_protocol: bool = True,
     if continuation:
         section("Earlier sessions on this topic" if continuation.get("status") == "related"
                 else "Recorded work to continue", _continuation_rows(continuation))
-    if history:
+    if history and history.get("status") != "optional":
         # The policy itself came with session start or the protocol; this says
-        # only where this task's history stands.
+        # only where this task's history stands. Most tasks do not refer to
+        # earlier work and get no section at all.
         section("History before clarification", [
             f"Status: {history['status']}. {history['coverage']}",
-            "Before asking the owner to clarify or choosing an ambiguous scope, even for "
-            f"a small change, search this project's history (project: {history.get('project')}; "
-            f"query: {history.get('query')}).",
+            *([f"Search once, with a small limit: `session_history` (project "
+               f"{history.get('project')}, latest true) for earlier agent work, or "
+               f"`recall` (limit 3) with: {history.get('query')}. If it is slow or finds "
+               "nothing useful, go on with the task."]
+              if history["status"] == "required" else []),
         ])
 
     job = briefing.get("background_job")

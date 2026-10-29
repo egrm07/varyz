@@ -1025,3 +1025,14 @@ def test_a_server_we_did_not_start_is_still_stopped(monkeypatch, tmp_path):
     assert local_runtime._ask_to_stop(server) is False
     local_runtime._terminate(server)
     assert child.killed is True
+
+
+def test_a_reused_server_pid_is_never_stopped(monkeypatch):
+    """After a reboot the recorded pid can belong to another program."""
+    from varyz import autosync
+    from varyz.llm import local_runtime
+
+    monkeypatch.setattr(local_runtime, "_process_alive", lambda pid: True)
+    monkeypatch.setattr(autosync, "process_started_at", lambda pid: 2000.0)
+    assert local_runtime._same_server({"last_used": 3000.0}, 4242)
+    assert not local_runtime._same_server({"last_used": 1000.0}, 4242)

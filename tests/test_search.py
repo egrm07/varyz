@@ -684,3 +684,12 @@ def test_a_name_the_archive_has_never_seen_is_refused_however_close_it_sits(
     # A missing ordinary word is the author's synonym for one they did write,
     # so only names are conclusive.
     assert names_the_archive_has_never_seen(conn, "the arctic tern migration") == []
+
+
+def test_a_disk_too_full_for_the_model_is_said_before_the_download(tmp_path, cfg, monkeypatch):
+    """A download cut short by a full disk left a folder that looked like a model."""
+    from varyz import diskspace
+
+    monkeypatch.setattr(diskspace, "free_bytes", lambda path: 100 * 1000**2)
+    with pytest.raises(OSError, match="only 100.0 MB is free"):
+        _embedder(cfg, tmp_path / "models")._announce_first_download(_Registry)

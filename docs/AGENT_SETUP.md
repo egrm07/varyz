@@ -45,8 +45,10 @@ pages and run until the owner finishes there, so they run in the background.
 `varyz update apply` reinstalls Varyz from where it came from (GitHub, or the folder it
 was installed from, pulled first when that is a git clone). It then refreshes every
 connected agent's Varyz files: the skill, the hooks, and in Claude Code the reader agent.
-Nobody runs `varyz connect` after an update. The first agent session on a new version
-does the same refresh for an update made any other way.
+Nobody runs `varyz connect` after an update, and nobody restarts an agent: Varyz's
+tools pause for a minute or two and then reconnect to the new version by themselves.
+The first agent session on a new version does the same refresh for an update made any
+other way.
 
 ## One command
 

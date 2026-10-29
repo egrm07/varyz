@@ -25,6 +25,7 @@ import re
 import sqlite3
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import nullcontext
 from typing import Any
 
 from varyz.config import Config
@@ -41,7 +42,13 @@ from varyz.retrieval.capsule import (
     to_capsules,
 )
 from varyz.retrieval.judge import Judge, Reading
-from varyz.retrieval.rerank import Reranker, asks_for_current_state
+from varyz.retrieval.rerank import (
+    RerankBudgetSpent,
+    Reranker,
+    asks_for_current_state,
+    deadline,
+    machine_slot,
+)
 from varyz.retrieval.search import (
     _STOPWORDS,
     RRF_K,
@@ -159,6 +166,18 @@ def _fuse(ranked_lists: list[list[SearchHit]], limit: int) -> list[SearchHit]:
     return [best[entry_id][1].model_copy(update={"score": score}) for entry_id, score in ordered]
 
 
+# What an agent reads when `recall` answered from search alone. It must not
+# wait, retry, or blame the machine: the answer is complete, only less checked.
+SLOW_NOTE = ("The local answer check ran past its time budget, so this answer comes "
+             "from search alone. Use it as it is and go on; do not call recall again "
+             "for the same question.")
+BUSY_NOTE = ("Another agent on this computer was using the local answer check, so this "
+             "answer comes from search alone. Use it as it is and go on; do not wait "
+             "or call recall again for the same question.")
+# Seconds `recall` gives the second look before answering without it.
+RECALL_BUDGET_SECONDS = 6.0
+
+
 def recall(
     conn: sqlite3.Connection,
     cfg: Config,
@@ -171,6 +190,7 @@ def recall(
     max_chars: int = DEFAULT_MAX_CHARS,
     include_sensitive: bool = False,
     excluded_sources: tuple[str, ...] = (),
+    budget_seconds: float | None = RECALL_BUDGET_SECONDS,
 ) -> Evidence:
     """Passages from the user's own archive that bear on `question`.
 
@@ -184,10 +204,53 @@ def recall(
     With a judge as well, the owner's local model decides which of the
     candidates answer, and the records its choices lead to are read and
     judged once more.
+
+    The second look gets `budget_seconds`; past it, and while another process
+    on the machine runs the cross-encoder on the processor, the answer comes
+    from search alone with a `note` that says so.
     """
     question = question.strip()
     if not question:
         return Evidence(query=question)
+    if reranker is None:
+        return _recall(conn, cfg, question, embedder, None, None, limit=limit,
+                       max_chars=max_chars, include_sensitive=include_sensitive,
+                       excluded_sources=excluded_sources)
+    # On the processor, one process on the machine reads at a time: every agent
+    # thread has its own server and its own copy of the cross-encoder.
+    on_processor = not getattr(reranker, "on_gpu", True)
+    with machine_slot(cfg) if on_processor else nullcontext(True) as free:
+        if free:
+            try:
+                with deadline(budget_seconds):
+                    return _recall(conn, cfg, question, embedder, reranker, judge,
+                                   limit=limit, max_chars=max_chars,
+                                   include_sensitive=include_sensitive,
+                                   excluded_sources=excluded_sources)
+            except RerankBudgetSpent:
+                note = SLOW_NOTE
+        else:
+            note = BUSY_NOTE
+    evidence = _recall(conn, cfg, question, embedder, None, None, limit=limit,
+                       max_chars=max_chars, include_sensitive=include_sensitive,
+                       excluded_sources=excluded_sources)
+    evidence.note = note
+    return evidence
+
+
+def _recall(
+    conn: sqlite3.Connection,
+    cfg: Config,
+    question: str,
+    embedder: Embedder | None,
+    reranker: Reranker | None,
+    judge: Judge | None,
+    *,
+    limit: int,
+    max_chars: int,
+    include_sensitive: bool,
+    excluded_sources: tuple[str, ...],
+) -> Evidence:
     allowed = allowed_sensitivity(include_sensitive)
     judged = False
     if reranker is not None and reranker.calibration is not None:

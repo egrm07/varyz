@@ -158,7 +158,7 @@ def test_a_cycle_that_finds_new_entries_still_rebuilds(tmp_path, monkeypatch):
     config_path, docs = _project(tmp_path, graph_extra="rebuild_min_new_entries = 1\n")
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     assert autosync.run_once(config_path, trigger="test").graph_status == "updated"
     assert autosync.run_once(config_path, trigger="test").graph_status == "throttled"
@@ -173,7 +173,7 @@ def test_a_throttled_cycle_is_not_a_failed_cycle(tmp_path, monkeypatch):
     config_path, _ = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     autosync.run_once(config_path, trigger="test")
     second = autosync.run_once(config_path, trigger="test")
@@ -209,7 +209,7 @@ def test_a_rebuild_that_overruns_the_cycle_stops_at_a_checkpoint(tmp_path, monke
     )
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     clock = Clock()
     monkeypatch.setattr(autosync, "utc_now", clock)
 
@@ -249,7 +249,7 @@ def test_a_zero_deadline_lets_a_long_cycle_finish(tmp_path, monkeypatch):
     )
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     clock = Clock()
     monkeypatch.setattr(autosync, "utc_now", clock)
 

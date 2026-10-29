@@ -8414,6 +8414,342 @@
       "digest": "0b8ebed643996a68",
       "entry_source": "ai_conversations",
       "reason": "Reviewed filename of the public Varyz wheel, used in a synthetic download-verification fixture. It is the package distribution name and wheel tag, not private conversation prose."
+    },
+    {
+      "path": "src/varyz/card/fonts/README.md",
+      "kind": "archive_quotation",
+      "digest": "b85e6a2905723ff7",
+      "entry_source": "documents",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "433b4294152ede5b",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "ddabfeceee074d77",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "71e3878abb4cc662",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "10ed3c3f0444b8ba",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "e0edd8f206eba0c0",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "37f639113900afdb",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "4d77413c55caac25",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "26ff0ad93e89d906",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "b2f64d32838fa9bf",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "e520f01ea27f1e31",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "ce710fde2b844d6f",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "d7159f0bb9546d80",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "b29b63dd66b510e3",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "c8c237e2df9f556d",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "5de5287e41fe68ec",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "922c90f5e1e0bfcc",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "977a344f7788e508",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "a0f02c89fc75c0de",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "4ad67b32f31ecef7",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "38d716066ffbede7",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "d9f3451b3b8205de",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "923a28aaffa530a3",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/cli.py",
+      "kind": "archive_quotation",
+      "digest": "65391cbe1a66c543",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/contribution_schema.py",
+      "kind": "archive_quotation",
+      "digest": "33f1ea28d0114cdb",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/install.py",
+      "kind": "archive_quotation",
+      "digest": "d8f502794154ba6f",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/install.py",
+      "kind": "archive_quotation",
+      "digest": "3859c82839ce70ac",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/install.py",
+      "kind": "archive_quotation",
+      "digest": "0078af17f2231deb",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/install.py",
+      "kind": "archive_quotation",
+      "digest": "ba7b8b7bb99e96da",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/install.py",
+      "kind": "archive_quotation",
+      "digest": "1a40501476b5e2f3",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/llm/oauth.py",
+      "kind": "archive_quotation",
+      "digest": "c7422e9c80dd17e3",
+      "entry_source": "documents",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/privacy/policy.py",
+      "kind": "archive_quotation",
+      "digest": "e104b604d18c5076",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "6a748de13e13de8b",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "aaca516866d32aeb",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "3c2492f089f972be",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "b323e1dd188b3acf",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "4923fafa0899d73d",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "077d545d313a60a1",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "134d6a397d0cd9b8",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "853445643cb8d64a",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "35645b8c5afd88a3",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "30e19c9ebd2e6098",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/profile_reader.py",
+      "kind": "archive_quotation",
+      "digest": "c37677ded5261056",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/recipes.py",
+      "kind": "archive_quotation",
+      "digest": "064e2c8b632517c6",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/workflows.py",
+      "kind": "archive_quotation",
+      "digest": "5e90f1c40f43d869",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/workflows.py",
+      "kind": "archive_quotation",
+      "digest": "54ef46ae33b831ca",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/resolution/workflows.py",
+      "kind": "archive_quotation",
+      "digest": "9bd9536fdbbb3947",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
+    },
+    {
+      "path": "src/varyz/setup_web.py",
+      "kind": "archive_quotation",
+      "digest": "d92bc4ab1f96ca2d",
+      "entry_source": "github",
+      "reason": "Reviewed generic source, product help or licence wording. Exact eight-word match already publicly shipped in this same file at v0.1.5 (b3f1e7c); verified against that public commit. No new text is approved by this entry."
     }
   ]
 }

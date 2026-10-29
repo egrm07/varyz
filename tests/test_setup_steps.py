@@ -54,7 +54,7 @@ def _flat(text: str) -> str:
 def _archive(tmp_path, monkeypatch, extractor: str) -> Path:
     # The alpha: the managed model is held back, so the graph is deterministic.
     monkeypatch.setattr("varyz.llm.local_runtime.installer_is_shipped", lambda: False)
-    monkeypatch.setattr(cli, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda _cfg, **_: FakeEmbedder())
     config = _config(tmp_path / "config.toml")
     with config.open("a", encoding="utf-8") as handle:
         handle.write(f'\n[graph]\nextractor = "{extractor}"  # which reader\n')
@@ -67,7 +67,7 @@ def _archive(tmp_path, monkeypatch, extractor: str) -> Path:
 
 def test_empty_archive_setup_skips_model_until_data_exists(tmp_path, monkeypatch):
     monkeypatch.setattr("varyz.llm.local_runtime.installer_is_shipped", lambda: False)
-    monkeypatch.setattr(cli, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda _cfg, **_: FakeEmbedder())
     config = _config(tmp_path / "config.toml")
     assert runner.invoke(cli.app, ["init", "--config", str(config)]).exit_code == 0
 
@@ -257,7 +257,7 @@ def test_autosync_compiles_the_personal_model_after_each_new_graph(tmp_path, mon
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     monkeypatch.setattr("varyz.llm.local_runtime.installer_is_shipped", lambda: False)
     from varyz.personal_model import compiler
 
@@ -283,7 +283,7 @@ def test_a_build_with_the_model_leaves_compiling_to_the_owner(tmp_path, monkeypa
     config_path = _project(tmp_path)
     cfg = load_config(config_path)
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
     monkeypatch.setattr("varyz.llm.local_runtime.installer_is_shipped", lambda: True)
     monkeypatch.setattr(
         "varyz.personal_model.compiler.build_personal_model_compiler",
@@ -473,7 +473,7 @@ def test_autosync_says_ahead_what_macos_will_ask(tmp_path, monkeypatch):
 def test_indexing_reports_each_source_then_how_far_embedding_has_got(tmp_path, monkeypatch):
     config_path = _project(tmp_path)
     (tmp_path / "notes" / "trip.md").write_text("# Porto\n\nPack light.", encoding="utf-8")
-    monkeypatch.setattr(cli, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda _cfg, **_: FakeEmbedder())
     heard: list[tuple[str, float | None]] = []
 
     failed = cli._sync_sources(
@@ -523,7 +523,7 @@ def test_indexing_numbers_the_sources_when_there_are_several(tmp_path, monkeypat
     monkeypatch.setattr(cli, "sync_connector", fake_sync)
     monkeypatch.setattr(cli, "_print_stats", lambda stats: None)
     monkeypatch.setattr(cli, "embed_pending", lambda *a, **kw: 0)
-    monkeypatch.setattr(cli, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     cli._sync_sources(load_config(config_path), ("git", "documents"),
                       on_progress=lambda line, fraction: heard.append(line))
@@ -816,7 +816,8 @@ def test_a_build_without_the_graph_builder_has_no_graph_step(
     assert "1/6 Archive" in flat
     assert "5/6 Autosync syncs every 30 minutes and at login" in flat
     assert "6/6 Classifier failed: Ollama did not start" in flat
-    assert "Graph" not in flat and "/7" not in flat
+    # A step label, not a bare "/7": a temp folder named 71731ea7... holds that too.
+    assert "Graph" not in flat and not re.search(r"\b\d/7 [A-Z]", flat)
 
 
 def test_a_failed_last_step_is_a_no_go(tmp_path, machine, monkeypatch):  # noqa: F811

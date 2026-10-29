@@ -15,12 +15,15 @@ import importlib.util
 import json
 import os
 import plistlib
+import posixpath
 import re
 import shlex
 import shutil
 import sqlite3
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -33,7 +36,7 @@ from varyz import connectors as connector_registry
 from varyz import mac_app
 from varyz.config import Config, load_config
 from varyz.connectors.base import get_connector
-from varyz.db.connection import LockHeldError, WriteLock, open_db
+from varyz.db.connection import FileLock, LockHeldError, WriteLock, open_db
 from varyz.domain import iso, utc_now
 from varyz.legacy import LEGACY_DAEMON_PREFIX, LEGACY_NAME, LEGACY_REGISTRATION_MARKER
 from varyz.pipeline import windows_are_shipped
@@ -44,6 +47,9 @@ from varyz.vault import Vault
 CLAIM_MAX_AGE = timedelta(hours=4)
 DAEMON_PREFIX = "VaryzAutoSync"
 DAEMON_HEARTBEAT_MAX_AGE = timedelta(seconds=30)
+# Background embedding shares the machine with the owner and their agents: onnx
+# would otherwise take every core for as long as a large sync takes.
+BACKGROUND_THREADS = 2
 REGISTRATION_MARKER = "Managed by Varyz autosync"
 
 
@@ -271,8 +277,59 @@ def is_schedule_due(cfg: Config, *, now: datetime | None = None) -> bool:
     return current - finished >= timedelta(minutes=interval)
 
 
+# How long a dead daemon may stay dead while agents use Varyz, and how often
+# one may be started on its behalf.
+REVIVE_INTERVAL = timedelta(minutes=10)
+
+
+def revive_path(cfg: Config) -> Path:
+    return autosync_dir(cfg) / "revive.json"
+
+
+def maybe_revive_daemon(
+    cfg: Config,
+    config_path: Path | None,
+    *,
+    now: datetime | None = None,
+    start: Callable[[Path], bool] | None = None,
+) -> bool:
+    """Start the daemon again when it is enabled but no process holds its lock.
+
+    The login registration starts it once per login, and on macOS the app
+    that starts it exits 0 whatever the daemon did, so launchd's KeepAlive
+    cannot tell a crash from a clean stop. This is the watchdog: whenever an
+    agent uses Varyz, a daemon that died (a full disk, a crash) is started
+    again, at most once per REVIVE_INTERVAL.
+    """
+    if config_path is None or not config_path.is_file() or not is_enabled(cfg):
+        return False
+    beat = _parse_time(_read_json(daemon_heartbeat_path(cfg)).get("heartbeat_at"))
+    current = now or utc_now()
+    if beat is not None and current - beat <= DAEMON_HEARTBEAT_MAX_AGE:
+        return False
+    last = _parse_time(_read_json(revive_path(cfg)).get("attempted_at"))
+    if last is not None and timedelta(0) <= current - last < REVIVE_INTERVAL:
+        return False
+    probe = FileLock(daemon_lock_path(cfg))
+    try:
+        free = probe.acquire()
+    except OSError:
+        return False
+    if not free:
+        return False  # alive, between heartbeats or in a long hand-off
+    probe.release()
+    with contextlib.suppress(OSError):
+        _atomic_json(revive_path(cfg), {"attempted_at": iso(current)})
+    try:
+        return (start or spawn_daemon)(config_path)
+    except Exception:
+        return False
+
+
 def maybe_trigger_on_use(cfg: Config, config_path: Path | None) -> str:
     """Start a detached refresh when stale; never delay the current read."""
+    with contextlib.suppress(Exception):
+        maybe_revive_daemon(cfg, config_path)
     if not is_due(cfg):
         return "fresh_or_disabled"
     if config_path is None or not config_path.is_file():
@@ -444,7 +501,9 @@ def run_once(
                             )
                         )
                     try:
-                        embedded = embed_pending(conn, cfg, Embedder(cfg))
+                        embedded = embed_pending(
+                            conn, cfg, Embedder(cfg, threads=BACKGROUND_THREADS)
+                        )
                     except Exception as exc:
                         details.append(f"Embedding failed: {_safe_error(exc)}")
                     # The alpha holds the windows back (docs/SHIPPING.md).
@@ -578,10 +637,14 @@ def run_once(
             unread = _unread_conversations(conn)
             if cfg.conversations.read_on_sync and unread and not is_paused(cfg):
                 if not cfg.autosync.semantic_graph:
+                    from varyz.pipeline import windows_are_shipped as has_command
+
+                    # The command exists only where conversation windows ship;
+                    # 0.1.5 on a Mac named it anyway.
+                    command = "run `varyz conversations read` or " if has_command() else ""
                     notes.append(
                         f"{unread} conversations unread: background local inference "
-                        "is disabled; run `varyz conversations read` or set "
-                        "autosync.semantic_graph = true"
+                        f"is disabled; {command}set autosync.semantic_graph = true"
                     )
                 elif out_of_time():
                     expired = True
@@ -873,7 +936,7 @@ def _partition_conversations(
         # Cutting a conversation invalidates its vector, so the two run
         # together or the index quietly describes messages that have since
         # changed.
-        embed_windows(conn, cfg, Embedder(cfg))
+        embed_windows(conn, cfg, Embedder(cfg, threads=BACKGROUND_THREADS))
     except Exception as exc:
         details.append(f"Conversation partition failed: {_safe_error(exc)}")
 
@@ -1042,6 +1105,11 @@ def _launchd_plist(config_path: Path, cfg: Config) -> str:
             "ProgramArguments": daemon_command(config_path, wait=True),
             "WorkingDirectory": str(config_path.parent),
             "RunAtLoad": True,
+            # Started again after a crash, not after a clean stop (disabled, or
+            # another copy already running). Through the Varyz app the exit is
+            # always clean, so `maybe_revive_daemon` covers that case.
+            "KeepAlive": {"SuccessfulExit": False},
+            "ThrottleInterval": 120,
             # Background: macOS schedules it below anything the owner is using.
             "ProcessType": "Background",
             "EnvironmentVariables": {"PATH": _launchd_path()},
@@ -1060,10 +1128,22 @@ def _launchd_plist(config_path: Path, cfg: Config) -> str:
 _MAC_TOOL_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin")
 
 
+# What the daemon starts by name: the agents' CLIs for the rule reader, and
+# the tools its sources and updates call.
+_DAEMON_TOOLS = ("claude", "codex", "uv", "git", "gh", "node", "varyz")
+
+
 def _launchd_path() -> str:
-    """The PATH the agent runs with: the installing shell's, then the usual folders."""
+    """The PATH the agent runs with: the folders of the tools it calls, then the
+    usual ones.
+
+    It used to copy the installing shell's whole PATH into the plist, which
+    went stale when that PATH changed and showed every folder on it.
+    """
     entries: list[str] = []
-    for value in [*os.environ.get("PATH", "").split(os.pathsep), *_MAC_TOOL_DIRS]:
+    found = [shutil.which(name) for name in _DAEMON_TOOLS]
+    folders = [posixpath.dirname(path) for path in found if path]
+    for value in [posixpath.dirname(sys.executable), *folders, *_MAC_TOOL_DIRS]:
         if value.startswith("/") and value not in entries:
             entries.append(value)
     return ":".join(entries)
@@ -1736,7 +1816,9 @@ def daemon_status(config_path: Path, *, now: datetime | None = None) -> DaemonSt
     if running:
         detail = f"pid {heartbeat.get('pid', '?')}; {heartbeat.get('status', 'unknown')}"
     elif heartbeat:
-        detail = f"last heartbeat {heartbeat.get('heartbeat_at', '?')}"
+        # The file keeps the last status it was given ("idle") after the
+        # process is gone; that is not the daemon's state now.
+        detail = f"not running; last heartbeat {heartbeat.get('heartbeat_at', '?')}"
     else:
         detail = "no heartbeat yet"
     return DaemonStatus(registered=registered, running=running, detail=detail)
@@ -1934,6 +2016,56 @@ def process_alive(pid: int) -> bool:
     return True
 
 
+def process_started_at(pid: int) -> float | None:
+    """When this pid's process started, as a Unix time; None when unknown."""
+    if pid <= 0:
+        return None
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.windll.kernel32
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return None
+            try:
+                times = [wintypes.FILETIME() for _ in range(4)]
+                if not kernel32.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
+                    return None
+                created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+                return created / 1e7 - 11644473600  # 100 ns ticks since 1601
+            finally:
+                kernel32.CloseHandle(handle)
+        out = subprocess.run(  # noqa: S603 - fixed system tool, numeric pid
+            ["ps", "-o", "etime=", "-p", str(pid)], capture_output=True, text=True,
+            timeout=5, check=False, stdin=subprocess.DEVNULL,
+        ).stdout.strip()
+        days, _, clock = out.rpartition("-")
+        parts = [int(part) for part in clock.split(":")]
+        seconds = sum(value * 60**index for index, value in enumerate(reversed(parts)))
+        return time.time() - seconds - int(days or 0) * 86400
+    except (OSError, ValueError, AttributeError, subprocess.SubprocessError):
+        return None
+
+
+def still_held_by(pid: int, recorded_at: float) -> bool:
+    """Is the process that wrote ``pid`` down at ``recorded_at`` still running?
+
+    A live pid is not enough: after the owner died its pid can be reused, and on
+    the test Mac several lock files named pids that were dead or reused. The
+    process that wrote a record started before it; a reused pid starts after.
+    An unknown start time counts as held, as process_alive does.
+    """
+    if not process_alive(pid):
+        return False
+    started = process_started_at(pid)
+    return started is None or started <= recorded_at + 2.0
+
+
 def _claim_pid(target: Path) -> int | None:
     with contextlib.suppress(OSError, ValueError):
         match = re.search(r"pid=(\d+)", target.read_text(encoding="utf-8"))
@@ -1953,7 +2085,8 @@ def _claim(cfg: Config) -> bool:
             pid = _claim_pid(target)
             modified = datetime.fromtimestamp(target.stat().st_mtime, tz=UTC)
             stale = utc_now() - modified > CLAIM_MAX_AGE
-            if stale or (pid is not None and not process_alive(pid)):
+            if stale or (pid is not None
+                          and not still_held_by(pid, target.stat().st_mtime)):
                 target.unlink()
     try:
         descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -2040,10 +2173,27 @@ def _simple_run(trigger: str, status: str, started: datetime, detail: str) -> Au
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
     temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        # A full disk leaves a partial file; the destination keeps its old value.
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+        raise
+    # On Windows a reader that has the destination open (doctor, a status
+    # check, antivirus) makes the rename fail with a sharing violation for a
+    # moment. One such collision must not end the daemon, so retry briefly.
+    for delay in (0.05, 0.1, 0.2, 0.4, 0.8, 1.6):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            time.sleep(delay)
     os.replace(temporary, path)
 
 

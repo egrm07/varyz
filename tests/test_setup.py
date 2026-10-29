@@ -85,7 +85,7 @@ def machine(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("varyz.install.client_paths", lambda: {})
     monkeypatch.setattr("varyz.hooks.doctor", lambda _cfg: [("daemon", True, "ok")])
-    monkeypatch.setattr(cli, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(cli, "Embedder", lambda _cfg, **_: FakeEmbedder())
     return SimpleNamespace(home=home, docs=docs)
 
 

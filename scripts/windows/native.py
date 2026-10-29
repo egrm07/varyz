@@ -179,7 +179,10 @@ def install(app: Path) -> dict:
     )
     wheel = destination / manifest["wheel"]
     if existing:
-        result = upgrade.upgrade(uv, wheel, config, expected, wheelhouse=destination / "wheelhouse")
+        result = upgrade.upgrade(
+            uv, wheel, config, expected, wheelhouse=destination / "wheelhouse",
+            python=destination / PYTHON_NAME,
+        )
     else:
         try:
             execute(
@@ -216,7 +219,42 @@ def install(app: Path) -> dict:
         "result": result,
     }
     atomic_json(app / STATE, state)
+    result["removed_old_runtimes"] = prune_versions(app, destination, environment)
     return result
+
+
+def runtime_home(environment: Path) -> Path | None:
+    """The folder of the interpreter the tool environment runs on."""
+    try:
+        text = (environment / "pyvenv.cfg").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == "home" and value.strip():
+            return Path(value.strip()).resolve()
+    return None
+
+
+def prune_versions(app: Path, keep: Path, environment: Path) -> list[str]:
+    """Delete release folders nothing runs on any more; keep the current one.
+
+    A folder the tool environment still runs on (an install from before the
+    tool was moved to each release's own Python) is never removed.
+    """
+    home = runtime_home(environment)
+    versions = (app / "versions").resolve()
+    removed = []
+    for folder in sorted(versions.iterdir()) if versions.is_dir() else []:
+        folder = folder.resolve()
+        if folder == keep.resolve() or not folder.is_dir() or folder.parent != versions:
+            continue
+        if home is None or home.is_relative_to(folder):
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
+        if not folder.exists():
+            removed.append(folder.name)
+    return removed
 
 
 def uninstall_check(app: Path) -> dict:

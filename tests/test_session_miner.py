@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from varyz.config import Config
 from varyz.db.connection import open_db
-from varyz.session_miner import MISSING, mine
+from varyz.session_miner import MISSING, STOPPED, mine
 from varyz.session_progress import Checkpoint, HistoryQuery, forget, history, pause_path, record
 
 
@@ -573,3 +573,193 @@ def test_findings_from_earlier_messages_are_kept_after_the_final_answer(archive)
         "Search takes 900 ms on 40k rows.",
     ]
     assert "query plan" not in json.dumps(report)
+
+
+def test_usage_limit_stop_is_marked_and_continue_keeps_the_goal(archive):
+    conn, cfg, root = archive
+    turns = [("user", "Prepare SEO for Varyz."),
+             ("assistant", "Added sitemap.\nBing verification pending.")]
+    claude(root / "seo.jsonl", turns)
+    assert mine(conn, cfg, project="varyz", apply=True)["reports"] == 1
+    # The stop notice arrives after the turn was already captured.
+    turns.append(("assistant", "You've hit your session limit \u00b7 resets 7:50pm"))
+    claude(root / "seo.jsonl", turns)
+    assert mine(conn, cfg, project="varyz", apply=True)["reports"] == 1
+    [stopped] = reports(conn, cfg)["reports"]
+    assert stopped["done"] == ["Added sitemap."]
+    assert stopped["pending"] == [STOPPED, "Bing verification pending.", MISSING]
+    assert stopped["evidence"]["stopped"] == "usage_limit"
+    turns += [("user", "continue"), ("assistant", "Submitted to Bing.\nSearch Console pending.")]
+    claude(root / "seo.jsonl", turns)
+    mine(conn, cfg, project="varyz", apply=True)
+    [current] = reports(conn, cfg)["reports"]
+    assert current["task"] == "Prepare SEO for Varyz."
+    assert current["pending"] == ["Search Console pending.", MISSING]
+    assert "stopped" not in current["evidence"]
+
+
+def test_sweep_limits_by_write_time_and_folder_names_the_project(archive, tmp_path):
+    conn, cfg, root = archive
+    work = tmp_path / "site" / "deploy"
+    work.mkdir(parents=True)
+    line = {"type": "user", "uuid": "u", "sessionId": "deploy", "cwd": str(work),
+            "timestamp": "2026-10-01T12:00:00Z",
+            "message": {"role": "user", "content": "Deploy the site."}}
+    answer = {**line, "type": "assistant", "uuid": "a", "timestamp": "2026-10-01T12:00:05Z",
+              "message": {"role": "assistant", "content": "Built.\nUpload pending."}}
+    path = root / "deploy.jsonl"
+    path.write_text(json.dumps(line) + "\n" + json.dumps(answer) + "\n", encoding="utf-8")
+    os.utime(path, (1_000_000, 1_000_000))
+    assert mine(conn, cfg, project="site", folder=tmp_path / "site",
+                modified_since=2_000_000)["files"] == 0
+    assert mine(conn, cfg, project="site")["reports"] == 0  # mining names it "deploy"
+    assert mine(conn, cfg, project="site", folder=tmp_path / "site", apply=True)["reports"] == 1
+    [report] = history(conn, HistoryQuery(project="site"), cfg=cfg)["reports"]
+    assert report["pending"] == ["Upload pending.", MISSING]
+
+
+def codex_rollout(path, rows, session="codex-chat"):
+    head = {"type": "session_meta", "payload": {"id": session, "cwd": "C:/projects/varyz"}}
+    path.write_text("".join(json.dumps(r) + "\n" for r in [head, *rows]), encoding="utf-8")
+
+
+def codex_message(role, text, at):
+    return {"type": "response_item", "timestamp": at,
+            "payload": {"type": "message", "role": role, "content": text}}
+
+
+CODEX_STOP = {
+    "type": "event_msg", "timestamp": "2026-10-02T12:05:00Z",
+    "payload": {"type": "task_complete", "turn_id": "t1", "last_agent_message": None,
+                "error": {"message": "You\u2019ve hit your usage limit. Upgrade to Pro "
+                          "(https://chatgpt.com/explore/pro), visit "
+                          "https://chatgpt.com/settings/usage to purchase more credits or "
+                          "try again at Oct 24th, 2026 10:40 PM.",
+                          "codex_error_info": "usage_limit_exceeded"}},
+}
+
+
+def test_codex_usage_stop_is_marked(archive):
+    conn, cfg, root = archive
+    rows = [codex_message("user", "Prepare SEO for Varyz.", "2026-10-02T12:00:00Z"),
+            codex_message("assistant", "Added sitemap.\nBing verification pending.",
+                          "2026-10-02T12:01:00Z"),
+            CODEX_STOP]
+    codex_rollout(root / "rollout-seo.jsonl", rows)
+    assert mine(conn, cfg, project="varyz", apply=True, adapter_id="codex")["reports"] == 1
+    [stopped] = reports(conn, cfg)["reports"]
+    assert stopped["done"] == ["Added sitemap."]
+    assert stopped["pending"][0] == STOPPED
+    assert stopped["evidence"]["stopped"] == "usage_limit"
+    assert "chatgpt.com" not in json.dumps(stopped)
+
+
+def test_written_work_before_a_stop_counts_as_done(archive):
+    conn, cfg, root = archive
+    rows = [codex_message("user", "Write the changelog.", "2026-10-02T12:00:00Z"),
+            codex_message("assistant", "Drafted the Unreleased section.\nWrote the upgrade "
+                          "notes.", "2026-10-02T12:01:00Z"), CODEX_STOP]
+    codex_rollout(root / "rollout-notes.jsonl", rows)
+    mine(conn, cfg, project="varyz", apply=True, adapter_id="codex")
+    [stopped] = reports(conn, cfg)["reports"]
+    assert stopped["done"] == ["Drafted the Unreleased section.", "Wrote the upgrade notes."]
+
+
+def test_codex_stop_with_an_unknown_message_and_other_errors(archive):
+    conn, cfg, root = archive
+    other = {"type": "event_msg", "timestamp": "2026-10-02T12:02:00Z",
+             "payload": {"type": "task_complete", "turn_id": "t0",
+                         "error": {"message": "Stream disconnected", "codex_error_info": "x"}}}
+    bare = {**CODEX_STOP, "payload": {**CODEX_STOP["payload"], "error": {
+        "message": "", "codex_error_info": "usage_limit_exceeded"}}}
+    rows = [codex_message("user", "Prepare SEO for Varyz.", "2026-10-02T12:00:00Z"),
+            codex_message("assistant", "Added sitemap.", "2026-10-02T12:01:00Z"), other, bare]
+    codex_rollout(root / "rollout-seo.jsonl", rows)
+    mine(conn, cfg, project="varyz", apply=True, adapter_id="codex")
+    [stopped] = reports(conn, cfg)["reports"]
+    assert stopped["evidence"]["stopped"] == "usage_limit"
+    assert stopped["done"] == ["Added sitemap."]
+
+
+def test_codex_subagent_stop_is_not_the_owners_chat(archive):
+    conn, cfg, root = archive
+    head = {"type": "session_meta", "payload": {"id": "child", "cwd": "C:/projects/varyz",
+                                                "thread_source": "subagent"}}
+    rows = [head, codex_message("user", "Review this.", "2026-10-02T12:00:00Z"), CODEX_STOP]
+    (root / "rollout-child.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    assert mine(conn, cfg, project="varyz", apply=True, adapter_id="codex")["reports"] == 0
+
+
+def test_a_journaled_turn_that_stopped_is_labelled_for_the_hand_off(archive):
+    from datetime import UTC, datetime, timedelta
+
+    from varyz import handoff
+
+    conn, cfg, root = archive
+    now = datetime.now(UTC)
+
+    def at(seconds):
+        return (now + timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
+
+    record(conn, Checkpoint.model_validate({
+        "project": "varyz", "conversation_id": "seo", "checkpoint_id": "own",
+        "task": "Prepare SEO", "pending": ["Submit sitemap"]}), agent_id="claude")
+    lines = [
+        {"type": "user", "uuid": "u", "sessionId": "seo", "cwd": "C:/projects/varyz",
+         "timestamp": at(-60), "message": {"role": "user", "content": "Prepare SEO."}},
+        {"type": "assistant", "uuid": "a", "sessionId": "seo", "cwd": "C:/projects/varyz",
+         "timestamp": at(-30), "message": {"role": "assistant", "content": "Added sitemap."}},
+        {"type": "assistant", "uuid": "s", "sessionId": "seo", "cwd": "C:/projects/varyz",
+         "timestamp": at(5), "message": {"role": "assistant",
+                                         "content": "You've hit your session limit"}},
+    ]
+    (root / "seo.jsonl").write_text("".join(json.dumps(x) + "\n" for x in lines),
+                                    encoding="utf-8")
+    assert mine(conn, cfg, project="varyz", apply=True)["reports"] == 0  # its own report stands
+    mark = handoff._signals(cfg.data_dir)["varyz\nseo"]
+    assert mark["kind"] == "usage_limit"
+    [own] = reports(conn, cfg)["reports"]
+    assert handoff._signal_applies(mark, own)
+    # Without a stop, nothing is noted.
+    lines.pop()
+    (root / "quiet.jsonl").write_text("".join(
+        json.dumps({**x, "sessionId": "quiet"}) + "\n" for x in lines), encoding="utf-8")
+    mine(conn, cfg, project="varyz", apply=True)
+    assert "varyz\nquiet" not in handoff._signals(cfg.data_dir)
+
+
+def test_a_claude_code_folder_is_mined_once_and_its_limit_note_is_no_task(tmp_path):
+    """On 2026-10-29 every configured folder was also read as OpenClaw history:
+    720 mined reports were duplicates, and one was titled with Claude Code's
+    usage-limit note, an `isMeta` harness line the OpenClaw reader kept."""
+    root = tmp_path / ".claude" / "projects"
+    (root / "p").mkdir(parents=True)
+    note = ("[Usage limit reached; a short grace allowance remains, then this turn is cut "
+            "off without warning. Either way, end by telling the user.]")
+    lines = [
+        {"type": "user", "uuid": "u1", "sessionId": "hq", "cwd": "C:/projects/varyz",
+         "timestamp": "2026-10-29T01:00:00Z",
+         "message": {"role": "user", "content": "Build the HQ dashboard."}},
+        {"type": "assistant", "uuid": "a1", "sessionId": "hq", "cwd": "C:/projects/varyz",
+         "timestamp": "2026-10-29T01:10:00Z",
+         "message": {"role": "assistant", "content": "Built the metrics lane.\n3 tests passed."}},
+        {"type": "user", "uuid": "u2", "isMeta": True, "sessionId": "hq",
+         "cwd": "C:/projects/varyz", "timestamp": "2026-10-29T03:36:21Z",
+         "message": {"role": "user", "content": note}},
+        {"type": "assistant", "uuid": "a2", "sessionId": "hq", "cwd": "C:/projects/varyz",
+         "timestamp": "2026-10-29T03:37:05Z",
+         "message": {"role": "assistant", "content": "Usage ran out; HQ is built."}},
+    ]
+    (root / "p" / "hq.jsonl").write_text(
+        "".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+    cfg = Config(base_dir=tmp_path, connectors={"ai_conversations": {
+        "approved": True, "adapters": ["claude_code", "openclaw"], "paths": [str(root)]}})
+    conn = open_db(tmp_path / "archive.db")
+    try:
+        mine(conn, cfg, project="varyz", apply=True)
+        rows = conn.execute("SELECT agent_id, payload_json FROM session_progress").fetchall()
+    finally:
+        conn.close()
+    assert [row[0] for row in rows] == ["history:claude_code"]
+    assert json.loads(rows[0][1])["task"] == "Build the HQ dashboard."

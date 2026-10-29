@@ -23,7 +23,7 @@ unverified. These results apply to r27, not the newer working tree or signed byt
 1. Download `VaryzSetup-<version>-windows-x64.exe` and verify its published SHA-256.
    The initial release has no publisher signature; later signed releases must also
    pass Windows Authenticode verification.
-2. Close Varyz agents and stop its daemon/background sync before upgrading. The installer refuses active tools or unsupported receipts; it never force-kills them.
+2. To upgrade by hand, close Varyz agents and stop its daemon/background sync first. The installer refuses active tools or unsupported receipts; it never force-kills them. Saying "update Varyz" to an agent (`varyz update apply`) needs none of this: it downloads and checks the installer, then runs it silently in the background once the agents' Varyz connections have paused, and they reconnect by themselves.
 3. Run the installer, review the licence, and finish installation. Leave **Open Varyz setup in your browser** selected for first setup.
 4. Choose sources and agent connections on the setup page. No account is needed for local use. Cloud selection and uploads require separate approval.
 5. Reopen **Varyz Setup** from the Start menu to resume setup. Setup messages are recorded privately in the installation's `setup.log`.

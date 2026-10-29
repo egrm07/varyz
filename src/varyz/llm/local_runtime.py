@@ -507,9 +507,32 @@ def installer_is_shipped() -> bool:
         return False
 
 
+# The managed model with its runtime and room for the owner's other apps;
+# the same line setup draws before it offers local learning.
+MANAGED_MEMORY_BYTES = 15 * 1024**3
+
+
+def too_little_memory() -> int | None:
+    """This computer's memory in whole GB when it is too small for the managed
+    model, else None (enough, or unknown)."""
+    import platform
+
+    from varyz.setup_machine import memory
+
+    total = memory(platform.system())[0]
+    if total is None or total >= MANAGED_MEMORY_BYTES:
+        return None
+    return round(total / 1024**3)
+
+
 def install_hint() -> str:
     """What to do about a managed model that is not installed."""
 
+    # The test Mac (8 GB) was told the model was configured and to install it.
+    gigabytes = too_little_memory()
+    if gigabytes is not None:
+        return (f"this computer has {gigabytes} GB of memory and the local model needs 16 GB; "
+                "Varyz learns from your agents' conversations instead")
     if installer_is_shipped():
         return "run: varyz local-model install"
     return "this build of varyz does not install it"
@@ -585,6 +608,19 @@ def _process_alive(pid: int) -> bool:
     except (PermissionError, OSError):
         return True
     return True
+
+
+def _same_server(state: dict[str, object], pid: int) -> bool:
+    """The recorded server is still this pid, not a later process that got its
+    number (after a reboot, say): only then may this runtime stop it."""
+    from varyz.autosync import process_started_at
+
+    if not _process_alive(pid):
+        return False
+    recorded = state.get("last_used")
+    started = process_started_at(pid)
+    return (not isinstance(recorded, int | float) or started is None
+            or started <= float(recorded) + 2.0)
 
 
 class _PidProcess:
@@ -1277,7 +1313,7 @@ class ManagedLlamaRuntime:
         # down when it started it. Deliberately narrower than
         # `Reset-LocalModel`, which kills every llama-server on the machine.
         stale_pid = _state_pid(prior, "server_pid")
-        if prior is not None and stale_pid > 0 and _process_alive(stale_pid):
+        if prior is not None and stale_pid > 0 and _same_server(prior, stale_pid):
             log.info(
                 "stopping the managed server at pid %d: it serves %s and this run needs %s",
                 stale_pid,

@@ -29,12 +29,10 @@ from varyz.analytics_schema import (
 from varyz.config import Config
 
 ORIGIN = "https://cloud.varyzai.com"
-CONSENT_TITLE = "Join the Varyz network"
+CONSENT_TITLE = "Consent"
 CONSENT_MESSAGE = (
-    "How many times have you corrected your AI agent this week? The Varyz network pools "
-    "anonymized corrections from everyone who uses Varyz, so your agents learn common "
-    "mistakes before making them with you. Repeat yourself less, redo less, spend fewer "
-    "tokens."
+    "Choose whether to share data to help improve Varyz and AI models. "
+    "This is optional. You can use Varyz either way."
 )
 CONSENT_COUNTS = (
     "Questions your agents asked Varyz and the answers they got, how you "
@@ -152,43 +150,6 @@ def consent(cfg: Config, enabled: bool) -> None:
         _put(db, "consent", CONSENT_VERSION if enabled else "")
         _put(db, "since", datetime.now(UTC).isoformat())
         _audit(db, "consent_on" if enabled else "consent_off")
-
-
-OFFER_GAP = timedelta(days=30)
-OFFER_LIMIT = 2  # shown once, then offered again at most once
-
-
-def _offer_due(db: sqlite3.Connection, now: datetime) -> bool:
-    """Read from the append-only audit, which turning sharing on or off never clears."""
-    rows = db.execute(
-        "SELECT at,action FROM audit WHERE action IN ('consent_on','consent_off','offer_shown')"
-        " ORDER BY seq"
-    ).fetchall()
-    if _get(db, "consent") == CONSENT_VERSION or any(r["action"] == "consent_on" for r in rows):
-        return False  # Sharing, or turned it off after sharing: never asked again.
-    shown = sum(r["action"] == "offer_shown" for r in rows)
-    # A no given before any popup (terminal setup, varyz data off) counts as the first offer.
-    asked = shown + (bool(rows) and rows[0]["action"] == "consent_off")
-    last = max((datetime.fromisoformat(r["at"]) for r in rows), default=None)
-    return asked < OFFER_LIMIT and (last is None or now - last >= OFFER_GAP)
-
-
-def claim_offer(cfg: Config, *, now: datetime | None = None) -> bool:
-    """Whether rules review shows the network popup now; showing it is recorded at once.
-
-    Only after the trial window (onboarding.trial_over), and 30 days after a no.
-    """
-    from varyz import onboarding
-
-    now = now or datetime.now(UTC)
-    if not onboarding.trial_over(cfg, now=now.timestamp()):
-        return False
-    with connection(cfg) as db:
-        db.execute("BEGIN IMMEDIATE")
-        if not _offer_due(db, now):
-            return False
-        db.execute("INSERT INTO audit(at,action) VALUES(?,?)", (now.isoformat(), "offer_shown"))
-        return True
 
 
 def pause(cfg: Config, paused: bool) -> None:

@@ -105,6 +105,20 @@ TOOL: dict[str, Any] = {
 }
 
 
+# Said once at setup: feedback is on by default, and the test Mac only found
+# out from `varyz feedback status`.
+SETUP_NOTE = (
+    "When an agent finds a problem in Varyz itself, it sends the Varyz developer a short "
+    "report with names, paths and keys removed, and tells you each time. "
+    "`varyz feedback off` stops it."
+)
+
+
+def setup_note(cfg: Config) -> str | None:
+    """The setup line about feedback, or None when it is already off."""
+    return None if _off(cfg).exists() else SETUP_NOTE
+
+
 def folder(cfg: Config) -> Path:
     return cfg.data_dir / "feedback"
 

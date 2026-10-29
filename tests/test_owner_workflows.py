@@ -587,7 +587,7 @@ def test_autosync_learns_workflows_after_new_turns(tmp_path: Path, monkeypatch) 
     cfg = load_config(config_path)
     open_db(cfg.db_path).close()
     autosync.enable(cfg, config_path)
-    monkeypatch.setattr(autosync, "Embedder", lambda _cfg: FakeEmbedder())
+    monkeypatch.setattr(autosync, "Embedder", lambda _cfg, **_: FakeEmbedder())
 
     def fake_sync(conn, vault, connector, config):
         turns = _Turns(conn)

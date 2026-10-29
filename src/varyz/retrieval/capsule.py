@@ -128,15 +128,21 @@ class Evidence:
     # The owner's local model read the shortlist and its picks are the passage
     # channel's answer, rather than a score cut. See `varyz.retrieval.judge`.
     judged: bool = False
+    # Set when the answer is less checked than usual (slow or busy machine),
+    # in words an agent can act on.
+    note: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "query": self.query,
             "found": len(self.capsules),
             "evidence": [capsule.as_dict() for capsule in self.capsules],
             "withheld_sensitive": self.withheld_sensitive,
             "abstained": self.abstained,
         }
+        if self.note:
+            result["note"] = self.note
+        return result
 
 
 def _excerpt(hit: SearchHit, max_chars: int) -> str:

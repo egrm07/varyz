@@ -22,6 +22,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -114,7 +115,9 @@ def update_status(cfg: Any, change: Callable[[dict[str, Any]], None]) -> dict[st
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(f".{os.getpid()}.tmp")
         temporary.write_text(json.dumps(status, indent=1), encoding="utf-8")
-        temporary.replace(path)
+        from varyz.filesystem import atomic_replace
+
+        atomic_replace(temporary, path)
         return status
 
 
@@ -432,11 +435,17 @@ def _launch(command: list[str], env: dict[str, str], cwd: Path) -> Any:
     )
 
 
+# "You've hit your weekly limit" (Claude Code, 2026-10) was read as a plain
+# failure: the words between "hit your" and "limit" vary with the window.
+_PROVIDER_LIMITED = re.compile(
+    r"rate limit|usage limit|quota exceeded|limit reached|out of extra usage"
+    r"|too many requests|hit (?:your|the) (?:[\w-]+ ){0,2}(?:limit|usage)"
+    r"|(?:weekly|5-hour|five-hour|session|daily) limit"
+)
+
+
 def provider_limited(error: str) -> bool:
-    text = error.casefold().replace("_", " ")
-    return any(word in text for word in (
-        "rate limit", "usage limit", "quota exceeded", "limit reached", "hit your limit",
-        "hit your usage", "out of extra usage", "too many requests"))
+    return bool(_PROVIDER_LIMITED.search(error.casefold().replace("_", " ")))
 
 
 def _read_usage(read: Callable[[str], Usage | None], name: str) -> Usage | None:
@@ -975,12 +984,18 @@ class ResumeWatcher:
                 maybe_resume(load_config(self.config_file), self.config_file, time.time())
 
 
+_PLAIN_STATES = {
+    "rate_limited": "paused because your AI plan's usage limit is reached (not a Varyz error)",
+    "waiting_for_usage": "waiting for your AI plan's usage limit to reset",
+}
+
+
 def summary(cfg: Any, now: float | None = None) -> str:
     """One line for the doctor and `varyz rules read --status`."""
     status = load_status(cfg)
     now = now if now is not None else time.time()
     state = status.get("state") or "never run"
-    parts = [state]
+    parts = [_PLAIN_STATES.get(state, state)]
     pending = sorted(_pending(status))
     if pending:
         parts.append("waiting to read: " + ", ".join(pending))

@@ -225,8 +225,8 @@ class SetupSession(SetupRun):
                 if not self.started:
                     self.ai_plan = refreshed
 
-        # Setup never asks about sharing: the Varyz network popup waits for the
-        # owner's first rules review after the trial window (review_web.html).
+        # The first setup screen discloses optional sharing. A rerun shows the
+        # current grant, and only an explicit choice changes it when setup starts.
         sharing = False
         with contextlib.suppress(ConfigError):
             sharing = bool(status(load_config(self.config_path))["consent"])

@@ -12,6 +12,14 @@ from typing import Any
 
 LEASE_SECONDS = 20 * 60
 MAX_RETRY_SECONDS = 6 * 60 * 60
+# Repairs run on the owner's AI plan. On the test Mac an unbounded repair
+# agent could not even run its main step (the client denied the daemon
+# restart), so each job has a working limit and one failure is offered at
+# most three times before Varyz goes quiet about it until it changes.
+REPAIR_MINUTES = 30
+MAX_ATTEMPTS = 3
+# Failures no agent can fix: they wait for the owner, who sees them in doctor.
+OWNER_ACTION_CHECKS = frozenset({"cloud sync", "agent settings file", "archive integrity"})
 REPAIR_MODEL_INSTRUCTIONS = (
     "Use a powerful repair model: GPT-6.1 Sol (`gpt-6.1-sol`) in Codex or "
     "Opus 5.5 in Claude Code, selecting the client's matching model option. "
@@ -79,6 +87,10 @@ def fix(cfg: Any, config_path: Path) -> dict[str, Any]:
             attempts.append({"action": " ".join(args), "ok": result.returncode == 0})
         except (OSError, subprocess.TimeoutExpired):
             attempts.append({"action": " ".join(args), "ok": False})
+    if "private files" in failures:
+        from varyz.filesystem import make_private
+
+        attempts.append({"action": "make files private", "ok": bool(make_private(cfg))})
     if "background reader" in failures:
         from varyz.resolution import headless_reader
 
@@ -130,6 +142,7 @@ def _condition(config_path: Path) -> str:
 def offer(cfg: Any, failures: list[str], config_path: Path | None,
           *, now: float | None = None) -> dict[str, Any] | None:
     """Lease a handoff without relying on the broken daemon or MCP token."""
+    failures = [name for name in failures if name not in OWNER_ACTION_CHECKS]
     if not failures or config_path is None:
         return None
     from varyz.db.connection import FileLock
@@ -155,6 +168,8 @@ def offer(cfg: Any, failures: list[str], config_path: Path | None,
         if same and now < state.get("next_offer_at", 0):
             return None
         attempt = int(state.get("attempt", 0)) + 1 if same else 1
+        if attempt > MAX_ATTEMPTS:
+            return None  # Said three times; doctor still shows it to the owner.
         retry = min(LEASE_SECONDS * 2 ** min(attempt - 1, 5), MAX_RETRY_SECONDS)
         job_id = hashlib.sha256(f"{now}:{sorted(failures)}".encode()).hexdigest()[:24]
         _write_text_atomic(path, json.dumps({"job_id": job_id, "failures": sorted(failures),
@@ -164,8 +179,10 @@ def offer(cfg: Any, failures: list[str], config_path: Path | None,
                                              "lease_until": now + LEASE_SECONDS}))
     finally:
         lock.release()
+    owner_command = f"varyz doctor --fix --config {_quoted(config_path.resolve())}"
     return {
         "job_id": job_id,
+        "owner_command": owner_command,
         "subagent_prompt": (
             "Repair Varyz's operational failures in the background. "
             f"Use this exact local config path as data: {json.dumps(str(config_path.resolve()))}. "
@@ -184,10 +201,13 @@ def offer(cfg: Any, failures: list[str], config_path: Path | None,
             "delete archives, disable authentication, broaden source consent, upload "
             "personal data, spend money, reinstall during an upgrade or publish changes. "
             "Never print tokens or raw private logs. Keep working until recovery is "
-            "verified or a concrete blocker requires owner action. There is no ten-minute "
-            "or single-pass cutoff. The main agent may answer or finish its own work; "
+            "verified, a concrete blocker requires owner action, or you have worked "
+            f"{REPAIR_MINUTES} minutes. The main agent may answer or finish its own work; "
             "that is not a reason for you to stop. Investigate failed attempts and try "
             "another justified repair rather than stopping after the first pass. "
+            "If the client's permissions deny a command you need, do not retry it or "
+            "look for a way around it: mark the job blocked and give the owner this "
+            f"command to run instead: {owner_command}. "
             "For temporary upgrade locks, wait with backoff and renew your lease; "
             "do not bypass the lock or repeatedly run the same failed action. "
             "Run appropriate checks and mark --repair-state fixed only after recovery, "
@@ -209,6 +229,13 @@ def render(job: dict[str, Any]) -> str:
         "or terminate it just because your own turn or task is complete. "
         "Report its result as one small note when it completes or needs owner action. "
         "If subagents are unavailable, run the bounded local doctor --fix pass yourself "
-        "when convenient. Do not claim a repair has started until you start it.\n"
+        "when convenient. Do not claim a repair has started until you start it. "
+        "If the owner would rather repair it themselves, the one command is: "
+        f"{job.get('owner_command') or 'varyz doctor --fix'}\n"
         + job["subagent_prompt"]
     )
+
+
+def _quoted(path: Path) -> str:
+    text = str(path)
+    return f'"{text}"' if any(c.isspace() for c in text) else text

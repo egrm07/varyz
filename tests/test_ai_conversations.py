@@ -753,6 +753,11 @@ def test_a_program_started_session_is_not_the_person_speaking(cfg, conn, vault, 
         ("/btw still working?", True),
         ("/goal ship the site by Friday", True),
         ("I pressed stop: [Request interrupted by user] was me.", True),
+        ("[Usage limit reached; a short grace allowance remains, then this turn is cut off "
+         "without warning. Either way, end by telling the user what's left.]", False),
+        ("[Earlier usage-limit notes no longer apply. Continue working normally. Don't "
+         "mention this to the user.]", False),
+        ("It said [Usage limit reached; a short grace allowance remains] and stopped.", True),
         ("fix the padding", True),
     ],
 )
@@ -971,3 +976,76 @@ def test_managed_worktree_is_still_a_real_project(tmp_path):
     project.mkdir(parents=True)
     (project / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
     assert _project_name(str(project)) == "my-product"
+
+
+def test_a_tools_own_folder_is_read_only_by_that_tool(tmp_path):
+    from varyz.connectors.ai_conversations import ADAPTERS_BY_ID, configured_roots
+
+    claude = tmp_path / ".claude" / "projects"
+    codex = tmp_path / ".codex" / "sessions"
+    export = tmp_path / "exported"
+    folders = [claude, codex, export]
+    assert configured_roots(ADAPTERS_BY_ID["claude_code"], folders) == [claude, export]
+    assert configured_roots(ADAPTERS_BY_ID["codex"], folders) == [codex, export]
+    assert configured_roots(ADAPTERS_BY_ID["openclaw"], folders) == [export]
+
+
+def test_a_shared_folder_gives_each_file_to_its_own_reader(cfg, conn, vault, tmp_path):
+    """A folder no tool owns holds a Claude Code chat and an OpenClaw one.
+
+    Every adapter used to share one position per file, so Claude Code's reader
+    passed over the OpenClaw file first and OpenClaw found nothing left in it.
+    """
+    from varyz.connectors.ai_conversations import file_reader
+
+    export = tmp_path / "exported"
+    claude = export / "chat.jsonl"
+    _jsonl(claude, [_claude_line("cc-1", "u1", "Keep the archive on this machine.")])
+    openclaw = export / "agent.jsonl"
+    _jsonl(openclaw, [{"session_id": "oc-1", "timestamp": "2026-03-01T08:00:00Z",
+                       "message": {"role": "user", "content": "Keep the kill switch reachable."}}])
+    rollout = export / "rollout-2026-09-22T20-06-11-019c2515.jsonl"
+    _codex_rollout(export, rollout.name, {"id": "019c2515"}, "Ship the fix tonight.")
+
+    both = ["claude_code", "codex", "openclaw"]
+    assert file_reader(claude, both) == "claude_code"
+    assert file_reader(openclaw, both) == "openclaw"
+    assert file_reader(rollout, both) == "codex"
+    # A file is not read as another tool's when its own is not selected.
+    assert file_reader(rollout, ["claude_code", "openclaw"]) is None
+
+    cfg.connectors["ai_conversations"] = {
+        "approved": True, "adapters": both, "paths": [str(export)]}
+    sync_connector(conn, vault, get_connector("ai_conversations"), cfg)
+    ids = sorted(row["external_id"].rsplit(":", 1)[0]
+                 for row in conn.execute("SELECT external_id FROM entries"))
+    assert ids == ["claude_code:cc-1", "codex:019c2515", "openclaw:oc-1"]
+
+
+def test_a_line_another_reader_took_is_read_once_more(cfg, conn, vault, tmp_path):
+    """The archive before readers had their own positions.
+
+    A line appended between Claude Code's pass and OpenClaw's was read by
+    OpenClaw only, and Claude Code's position already stood past it.
+    """
+    root = tmp_path / ".claude" / "projects"
+    chat = root / "C--Users-user-projects-varyz" / "cc-1.jsonl"
+    _jsonl(chat, [_claude_line("cc-1", "u1", "Keep the archive on this machine.")])
+    cfg.connectors["ai_conversations"] = _options(root, "claude_code")
+    connector = get_connector("ai_conversations")
+    sync_connector(conn, vault, connector, cfg)
+
+    with chat.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(_claude_line("cc-1", "u2", "Ask before you publish.")) + "\n")
+    # The old shared position: past the new line, saying nothing of its reader.
+    [cursor] = [json.loads(row["cursor_json"]) for row in conn.execute(
+        "SELECT cursor_json FROM sync_state WHERE connector_id='ai_conversations'")]
+    cursor.pop("reader_rules")
+    cursor["files"][str(chat)] = {"lines": 2, "size": chat.stat().st_size}
+    conn.execute("UPDATE sync_state SET cursor_json=? WHERE connector_id='ai_conversations'",
+                 (json.dumps(cursor),))
+    conn.commit()
+
+    again = sync_connector(conn, vault, connector, cfg)
+    assert again.new == 1
+    assert sync_connector(conn, vault, connector, cfg).new == 0

@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: 26 October 2026
+Last updated: 29 October 2026
 
 This is the privacy notice for the Varyz website (varyzai.com) and for the Varyz software it
 distributes. It is the canonical copy: the website's privacy page is generated from this file
@@ -65,12 +65,13 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
 
 ## The software
 
-- Varyz runs on your own computer and needs no account. Sharing with the Varyz network is
-  off by default and governed by one choice: a single popup, `varyz data on` or
-  `varyz data off`. Setup starts with sharing off and does not show the popup. It appears
-  when you first save a rules review after your first 3 conversations and 24 hours with
-  Varyz. Closing the popup means no; after a no it is offered again at most once, no
-  sooner than 30 days later. If you opt in, Varyz sends two things to
+- Varyz runs on your own computer and needs no account. Optional data sharing is
+  off by default. The **Consent** popup opens before browser setup and explains what is
+  collected, why, who receives it, the limits of automatic cleaning and how to withdraw.
+  **Accept** enables sharing when setup starts; the top-right **X** or Escape keeps it off and continues
+  setup. Opening or abandoning setup does not change an existing grant. Rules review
+  does not ask again. You can also choose with `varyz data on` or `varyz data off`.
+  If you opt in, Varyz sends two things to
   Egor Menshikov, Varyz's creator, at cloud.varyzai.com. The first is daily usage and
   reliability counts (UTC day, app version and OS family, no content), such as how many
   conversations used an answer or rule you saved in an earlier one; received count
@@ -128,9 +129,16 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
   nothing about you or your archive. Like any page request it reaches the website's server
   logs with your IP address, the time and the Varyz version. News is on by default; run
   `varyz news off` to stop the requests, and `varyz news on` to start them again.
+- Updates: once a day, on the first use of the day, Varyz checks whether a new version is
+  out, and your agent tells you once per new version. A copy from the installers asks
+  GitHub for the latest release; a copy installed from GitHub or a folder asks git for
+  the latest commit. The request carries nothing about you or your archive; GitHub sees
+  your IP address, the time and the Varyz version. When you ask for the update, Varyz
+  downloads the new installer from GitHub. The check is on by default; set
+  `[update] mode = "off"` in your config to stop it.
 - Feedback reports: when something in Varyz does not work and `varyz doctor` did not
   catch it, your AI agent can send a short report to Egor Menshikov at cloud.varyzai.com,
-  and it tells you each time it does. A report holds the problem in a few words, what
+  and it tells you each time it does. Setup says this once, with how to turn it off. A report holds the problem in a few words, what
   happened and what was expected, the area, whether you or the agent noticed it, the
   agent and model, the Varyz version, the OS family, the day and which doctor checks
   failed. Before it leaves, Varyz replaces names of people it knows, project names,
@@ -140,7 +148,7 @@ Egor Menshikov, Anthony Fokkerlaan 3, 2024 JA Harlem, Netherlands, is responsibl
   temporary hashed rate limit. Reports are used to fix Varyz and are kept until you
   delete them. `varyz feedback off` stops sending and drops unsent reports, and
   `varyz feedback forget` deletes every report your installation sent.
-- Apart from the news check and feedback reports, it only connects to outside services you
+- Apart from the news check, the update check and feedback reports, it only connects to outside services you
   choose to connect it to yourself, such as a mail account you ask it to read, or an AI
   provider you configure.
   Those connections go directly from your computer to that service.

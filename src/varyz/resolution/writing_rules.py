@@ -86,13 +86,68 @@ _EMOJI = re.compile(
 )
 
 
+# A rule about a screen that happens to say "capitalize" (a tab's titles, a
+# font) is a design rule for that screen, not one for every text. On the test
+# Mac one such SAN7 rule was shown as a text rule in every project.
+_INTERFACE = re.compile(
+    r"(?<![\w-])(?:fonts?|tabs?|buttons?|screens?|layouts?|icons?|colou?rs?|padding|"
+    r"margins?|cards?|shaders?|animations?|pixels?|px)(?![\w-])",
+    re.IGNORECASE,
+)
+_FILLER = frozenset({
+    "a", "an", "the", "and", "or", "of", "in", "on", "to", "for", "with", "any", "all",
+    "do", "not", "don't", "never", "no", "use", "it", "its", "them", "they", "be", "is",
+    "are", "must", "should", "always", "only", "this", "that",
+})
+
+
 def _statement(rule: RuleLike) -> str:
     return _EVIDENCE.sub("", unicodedata.normalize("NFKC", rule.statement))
 
 
 def is_text_rule(rule: RuleLike) -> bool:
     """A rule about how any text reads: a punctuation mark, emoji, case or spelling."""
-    return rule.kind == "rule" and bool(_TYPOGRAPHY.search(_statement(rule)))
+    text = _statement(rule)
+    return (rule.kind == "rule" and bool(_TYPOGRAPHY.search(text))
+            and not _INTERFACE.search(text))
+
+
+def _marks(rule: RuleLike) -> frozenset[str]:
+    """The marks a rule forbids, by name: {"em dash"} for "Never use em dashes"."""
+    text = _statement(rule)
+    if not _FORBIDS.search(text):
+        return frozenset()
+    return frozenset(
+        re.sub(r"[ -]", "", match.casefold()).removesuffix("es").removesuffix("s")
+        for match in _TYPOGRAPHY.findall(text)
+    )
+
+
+def _words(rule: RuleLike) -> set[str]:
+    return set(re.findall(r"[\w']+", _statement(rule).casefold())) - _FILLER
+
+
+def _drop_restatements[R: RuleLike](rules: list[R]) -> list[R]:
+    """One rule per prohibition and scope: "Do not use em dashes" beside "Never
+    use em dashes in writing or code comments; ..." is one rule said twice, and
+    the test Mac's briefings showed three of them. Of the rules in one scope
+    that forbid the same one mark, an owner rule wins over a trial, then the one
+    that says most. A rule in another scope is never merged: more words there
+    can mean narrower ("in acquisition emails"), not fuller."""
+    def rank(rule: R) -> tuple[bool, int]:
+        return not rule.trial, len(_words(rule))
+
+    kept: list[R] = []
+    for index, rule in enumerate(rules):
+        marks = _marks(rule)
+        beaten = len(marks) == 1 and any(
+            other.scope == rule.scope and _marks(other) == marks
+            and (rank(other), -position) > (rank(rule), -index)
+            for position, other in enumerate(rules) if position != index
+        )
+        if not beaten:
+            kept.append(rule)
+    return kept
 
 
 def is_message_rule(rule: RuleLike) -> bool:
@@ -153,7 +208,7 @@ def select_writing[R: RuleLike](
             message_rules.append(rule)
 
     def ordered(found: list[R], cap: int) -> list[R]:
-        collapsed = {id(rule) for rule in collapse(found)[0]}
+        collapsed = {id(rule) for rule in _drop_restatements(collapse(found)[0])}
         kept = [rule for rule in found if id(rule) in collapsed]
         # Owner rules before trials, this project's own before general ones, then
         # newest first (callers pass newest first).
